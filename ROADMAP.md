@@ -10,16 +10,15 @@
 ## Stav (2026-06-17)
 
 - ✅ Schéma + iniciálna migrácia (`20260616120000_init_aim_schema.sql`, D-025)
-- ✅ Seed dáta (`supabase/seed.sql`) — previazanosť overená na Supabase Cloud
+- ✅ Seed dáta (`supabase/seed.sql`) — plná previazanosť: hierarchia, type–occurrence, aktori, dokumenty, klasifikácie, GUID história
 - ✅ S0 — Next.js skeleton + Vercel deploy + Supabase connection (D-026)
 - ✅ S1 — Priestorová hierarchia: strom + route per uzol (D-027)
 - ✅ S2 — Asset karta: dedičnosť + provenance, klasifikácie, type route (D-028)
-- 🟢 **Teraz:** AIM Viewer — S3 (dokumenty + zodpovednosti) nižšie
+- 🟢 **Teraz:** S3 — dokumenty + zodpovednosti + GUID história
 - ⏸️ ETL pipeline (Python + ifcopenshell) — **paralelná vetva**, nie blocker
 - ⏸️ LLM interface — **parkované** (S-LLM), doladíme neskôr
 
-**Máme:** Supabase Cloud (projekt `acwoupricatirhlfkhvk`) + GitHub repo
-(`AssetinSpace/AIMviewer`). **Nemáme zatiaľ:** Vercel projekt, vlastnú doménu.
+**Máme:** Supabase Cloud (projekt `acwoupricatirhlfkhvk`) + GitHub repo (`AssetinSpace/AIMviewer`) + Vercel deploy (auto-deploy z `main`). **Chýba zatiaľ:** vlastná doména (príde v S4).
 
 ---
 
@@ -37,10 +36,10 @@
 
 | Sprint | Cieľ (demovateľný výstup) | Kľúčové dáta |
 |---|---|---|
-| **S0 — Skeleton & deploy** | Next.js app beží lokálne aj na Verceli (default `*.vercel.app`), Supabase klient pripojený, test-fetch z `objects`. Repo prepojené s Vercelom (auto-deploy z `main`). | `objects` |
-| **S1 — Priestorová hierarchia** | Strom Site→Building→Floor→Space→Asset; klik na space → zoznam assetov. Data-access vrstva nad `objects` / `rel_located_in`. | `rel_located_in`, `v_floors` |
-| **S2 — Asset karta (jadro)** | Detail assetu: zmergované properties (Pset vs custom oddelené), zdedený `predefined_type`, link na type, breadcrumb polohy, klasifikácie s badge `occurrence`/`type`. **Tu sa ukáže dedičnosť.** | `v_asset_effective`, `v_asset_classifications` |
-| **S3 — Dokumenty + zodpovednosti** | Na karte: dokumenty (`rel_has_document`), zodpovedné osoby/firmy s rolami a platnosťou (`rel_responsible_for`, `rel_member_of`), panel histórie IFC GUID. | `documents`, `persons`, `ifc_guid_history` |
+| **S0 — Skeleton & deploy** ✅ | Next.js app beží lokálne aj na Verceli (default `*.vercel.app`), Supabase klient pripojený, test-fetch z `objects`. Repo prepojené s Vercelom (auto-deploy z `main`). | `objects` |
+| **S1 — Priestorová hierarchia** ✅ | Strom Site→Building→Floor→Space→Asset; klik na space → zoznam assetov. Data-access vrstva nad `objects` / `rel_located_in`. | `rel_located_in`, `v_floors` |
+| **S2 — Asset karta (jadro)** ✅ | Detail assetu: properties s provenance (vlastné/zdedené/prepísané), zdedený `predefined_type`, link na type `/type/[id]`, breadcrumb, klasifikácie s badge `occurrence`/`type`. **Tu sa ukáže dedičnosť.** | `v_asset_effective`, `v_asset_classifications` |
+| **S3 — Dokumenty + zodpovednosti** 🟢 | Na karte: dokumenty (`rel_has_document`), zodpovedné osoby/firmy s rolami a platnosťou (`rel_responsible_for`, `rel_member_of`), panel histórie IFC GUID. | `documents`, `persons`, `ifc_guid_history` |
 | **S4 — Polish & launch** | Vizuálny polish, responsivita, empty states; výmena seedu za reálne ETL dáta z diplomky; vlastná doména + verejné spustenie. | — |
 
 ### Detail
@@ -85,4 +84,4 @@
 - 3D / IFC.js geometria (D-007: sme dátový viewer, nie geometrický).
 
 ---
-*Vytvorené 2026-06-17 po dokončení seedu. Ďalej: S0 — Next.js skeleton + Vercel.*
+*Posledná aktualizácia: 2026-06-17 — S0–S2 hotové, deploy na Verceli. Ďalej: S3 (dokumenty + zodpovednosti + GUID história).*

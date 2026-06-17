@@ -354,4 +354,4 @@ celej migrácie, deep-merge dedičnosť v `v_asset_effective`, partial-unique
 `updated_at` trigger. Pri prvom `supabase db reset` s Dockerom musí prejsť rovnako.
 
 ---
-*v0.4 — §2 implementovaná (migrácia 20260616120000). Ďalej: ETL / seed dáta.*
+*v0.4 — §2 implementovaná (migrácia 20260616120000). Seed hotový (`supabase/seed.sql`). Viewer S0–S2 nasadený na Verceli. Schéma sa od iniciálnej migrácie nemenila — všetky nové features (Viewer S1–S3) sú čisto na aplikačnej vrstve. Ďalšia migrácia príde s S4 (ETL reálne dáta) alebo aditívnymi features (RLS, actor model C).*

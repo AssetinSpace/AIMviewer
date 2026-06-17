@@ -253,5 +253,4 @@ bez typu, všetko vlastné, žiadne klasifikácie. `tsc --noEmit` + `eslint` či
 
 ---
 
-*Posledná aktualizácia: seed dáta hotové + Viewer sprintový plán (D-026, ROADMAP.md)*
-*Ďalší krok: execution chat — S0 (Next.js skeleton + Vercel)*
+*Posledná aktualizácia: 2026-06-17 — S0–S2 hotové + deploy na Verceli (D-026–D-028). Ďalej: S3 (dokumenty + zodpovednosti + GUID história).*
