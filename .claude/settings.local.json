@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(supabase --version)",
+      "Bash(docker --version)",
+      "Bash(npm --version)",
+      "Bash(npx supabase *)",
+      "Bash('/c/Program Files/PostgreSQL/17/bin/pg_isready')",
+      "Bash(PGPASSWORD=postgres '/c/Program Files/PostgreSQL/17/bin/psql' -U postgres -h localhost -c 'select version\\(\\);')"
+    ]
+  }
+}
