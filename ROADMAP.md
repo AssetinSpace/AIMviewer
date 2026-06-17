@@ -70,6 +70,8 @@
 - Akceptačné ✅: na AHU-01 vidno manuál (link), Jána Nováka (operator, člen TZB Servis)
   a 2 GUID záznamy; klik na osobu → jej 2 zodpovednosti + členstvo; klik na dokument →
   „pripojené k AHU-01".
+- Polish (D-030): sidebar nav na typy/osoby/organizácie/dokumenty; ISR cache
+  (`unstable_cache`, revalidate 60 s) + `loading.tsx` — TTFB na Verceli ~1.9 s → ~0.3 s.
 
 **S4 — Polish & launch**
 - Závisí od ETL vetvy (reálne dáta). Doména + verejné spustenie (D-007 otvorená otázka).

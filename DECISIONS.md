@@ -273,6 +273,30 @@ bez GUID histórie (empty states). `/node/{person}`: členstvo + 2 zodpovednosti
 metadáta + „pripojené k AHU-01". Priestorové uzly: prázdne sekcie. `next build` +
 `tsc --noEmit` + `eslint` čisté.
 
+### D-030 — Viewer výkon (ISR cache) + navigácia ne-priestorových uzlov
+**Rozhodnutie:** (1) **Sidebar navigácia**: pod priestorovým stromom (D-027) pribudli
+ploché zoznamy ne-priestorových uzlov — typy assetov, osoby, organizácie, dokumenty
+(`lib/data/nav.ts` + `components/sidebar-nav.tsx`). Typy vedú na `/type/[id]`, ostatné
+na `/node/[id]`. Strom ostáva jediný zdroj priestorovej hierarchie; tieto uzly polohu
+nemajú, preto ploché zoznamy. (2) **Výkon**: page-level čítania v `lib/data/*` sú obalené
+do `unstable_cache` (revalidate 60 s, tag `"aim"`): `fetchSpatialTree`, `fetchNode`,
+`fetchSidebarNav`, `fetchAsset`, `fetchAssetType`, `fetchNodeSections`, `fetchObjectMeta`,
+`fetchPerson`, `fetchOrganization`, `fetchDocument`. Doplnkovo: React `cache()` na
+`loadGraph` (per-request dedupe layout↔page), `loading.tsx` skeleton, paralelizácia
+nezávislých dotazov (`Promise.all`). Stránky `(viewer)` majú `revalidate = 60`;
+`/health` ostáva `force-dynamic` (živý connection test).
+**Dôvod:** Pôvodné `force-dynamic` + sekvenčné Supabase dotazy dávali na Verceli TTFB
+~1.9 s na klik. Kľúčové zistenie: samotný `revalidate` necachuje — Supabase fetche sú
+v Next 16 *uncached*, takže routy ostávajú dynamické (`X-Vercel-Cache: MISS`). Cachovať
+treba **dáta** (`unstable_cache`) → pri opakovanom prístupe sa Supabase netrafí. Viewer
+je verejný read-only (žiadne auth/cookies/per-user dáta), takže cache je bezpečná.
+Výsledok: TTFB ~1.9 s → ~0.3 s (≈6×), `loading.tsx` dáva okamžitú odozvu na klik.
+**Dôsledok:** Daň je staleness — zmena seedu sa v prevádzke prejaví po ≤60 s (v `next dev`
+sa cache neuplatní, build je čerstvý). Sub-50 ms (edge `X-Vercel-Cache HIT`) by si vyžiadalo
+`generateStaticParams` — **neurobené zámerne**, lebo S4 vymení seed za ETL dáta a prerender
+konkrétnych ID by sa zahodil. Pri zmene dát mimo revalidačného okna existuje `revalidateTag("aim")`.
+Schéma sa nemení (čisto aplikačná vrstva).
+
 ---
 
 ## 7. Otvorené otázky (ešte neriešené)
@@ -288,4 +312,4 @@ metadáta + „pripojené k AHU-01". Priestorové uzly: prázdne sekcie. `next b
 
 ---
 
-*Posledná aktualizácia: 2026-06-17 — S0–S2 hotové + deploy na Verceli (D-026–D-028). Ďalej: S3 (dokumenty + zodpovednosti + GUID história).*
+*Posledná aktualizácia: 2026-06-17 — S0–S3 hotové + deploy na Verceli (D-026–D-030). Ďalej: S4 (polish & launch — čaká na ETL reálne dáta + doménu).*
