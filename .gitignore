@@ -12,6 +12,13 @@ node_modules/
 .next/
 out/
 
+# TypeScript (auto-generované)
+*.tsbuildinfo
+next-env.d.ts
+
+# Vercel
+.vercel
+
 # Supabase local stack (Docker)
 supabase/.branches/
 supabase/.temp/
