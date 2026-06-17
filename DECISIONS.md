@@ -1,0 +1,197 @@
+# DECISIONS.md — Architektonické rozhodnutia AIM Platform
+
+> Tento dokument je živý log rozhodnutí prijatých počas brainstormu.
+> Každé rozhodnutie má kontext a dôvod — nie len výsledok.
+> Pred akýmkoľvek návrhom schémy alebo feature — prečítaj celý dokument.
+
+---
+
+## 1. Produkt a stratégia
+
+### D-001 — Biznis model
+**Rozhodnutie:** Primárna aktivita je BIM konzultácia. Nástroj vzniká paralelne ako vedľajší produkt konzultačnej práce.
+**Dôvod:** Konzultácia je distribučný kanál — zákazníci vidia reálne výsledky nástroja v praxi bez cold outreach.
+**Dôsledok:** Nástroj musí byť použiteľný v reálnych projektoch od začiatku, nie len demo.
+
+### D-002 — Demo projekt
+**Rozhodnutie:** Administratívna budova z diplomovej práce ako verejný sandbox.
+**Dôvod:** Reálna budova, žiadne autorské obmedzenia, dobre ohraničený rozsah.
+**Dôsledok:** IFC model bude upravený tak aby bol ideálny pre tento účel.
+
+### D-003 — Prvý use case: AIM Viewer
+**Rozhodnutie:** Prvý cieľ je ukážka konečného stavu — správne previazané dáta a možnosti práce s nimi. Nie ukážka procesov.
+**Dôvod:** Zákazník musí vidieť KAM to smeruje, nie AKO sa tam dostane.
+**Dôsledok:** Viewer zobrazuje priestorovú hierarchiu, asset karty, dokumenty, zodpovednosti a LLM interface.
+
+### D-004 — Vibecoding prístup
+**Rozhodnutie:** Claude Code (primárne) + Cursor ako hlavné vývojové nástroje.
+**Dôvod:** Minimálne skúsenosti s kódom — spolieháme sa na kvalitne nastavené AI nástroje.
+**Dôsledok:** Kvalita CLAUDE.md a dokumentácie je kritická. Každý kontext musí byť jasný.
+
+---
+
+## 2. Technický stack
+
+### D-005 — Databáza: Supabase / Postgres
+**Rozhodnutie:** Supabase ako primárne úložisko (Postgres pod kapotou).
+**Dôvod:** Backend as a Service — databáza, API, auth, storage out of the box. Vibecoding friendly. LLM text-to-SQL funguje. Migrovateľné na Azure Postgres ak treba.
+**Alternatívy zvažované:** Azure, AWS (príliš veľa DevOps overhead pre túto fázu), Neo4j (slabší LLM tooling).
+**Dôsledok:** Nie sme locked-in. Postgres je štandard.
+
+### D-006 — Frontend: Next.js + Vercel
+**Rozhodnutie:** Next.js na Vercel, vlastná doména cez Websupport DNS.
+**Dôvod:** Štandardný stack, dobrá dokumentácia, Vercel má priameho sprievodcu pre Websupport DNS.
+**Dôsledok:** Doména nasmerovaná na Vercel cez A record alebo CNAME.
+
+### D-007 — IFC Parser: ifcopenshell (Python)
+**Rozhodnutie:** ifcopenshell ako ETL nástroj pre import z IFC do Supabase.
+**Dôvod:** De facto štandard pre IFC parsing v Pythone. Open source, aktívna komunita.
+**Dôsledok:** Python ETL pipeline: IFC → transformácia → Supabase.
+
+### D-008 — RDF / ICDD ako export formát
+**Rozhodnutie:** RDF nie je interná databáza — je to výstupný formát pre handover a archiváciu.
+**Dôvod:** LLM text-to-SQL je vyriešený, text-to-SPARQL nie. Interná práca zostáva v Postgres.
+**Nástroj:** Python rdflib pre generovanie RDF súborov z Postgres dát.
+**Dôsledok:** Export do ICDD kontajnera (ISO 21597) pre interoperabilitu so štandardmi.
+
+---
+
+## 3. Databázová architektúra
+
+### D-009 — Schéma navrhnutá ako graph v relačnej DB
+**Rozhodnutie:** Tabuľky sú uzly, rel_ tabuľky sú hrany s atribútmi. Myslíme v trojiciach.
+**Dôvod:** IFC je prirodzene graph. Relačná DB to simuluje ale zachováva LLM kompatibilitu. Migrácia na graph DB neskôr je mechanická transformácia — nie rewriting.
+**Dôsledok:** Každá rel_ tabuľka má typ hrany, atribúty vzťahu a históriu.
+
+### D-010 — Trojvrstvová identita objektu
+**Rozhodnutie:** Každý objekt má tri vrstvy identity:
+1. **Master UUID** — generovaný tvojou DB, nikdy sa nemení, kotva pre všetko
+2. **Classification ID / object_ref** — ľudsky čitateľný, fyzicky použiteľný (QR kód), stabilný
+3. **IFC GUID** — len atribút s históriou zmien, nie primárna identita
+**Dôvod:** IFC GUID sa mení pri reexporte, prepísaní objektu alebo zmene softvéru. Tvoja DB musí vlastniť identitu.
+**Dôsledok:** Tabuľka `ifc_guid_history` pre sledovanie zmien GUIDov v čase.
+
+### D-011 — Klasifikačný systém: flexibilný
+**Rozhodnutie:** Žiadny pevne daný klasifikačný systém. IFC entity `IfcClassification` a `IfcClassificationReference` — môže ich byť viac naraz.
+**Dôvod:** Každý projekt môže mať iný systém (Uniclass, OmniClass, CCI, vlastný).
+**Dôsledok:** Schéma podporuje viacero klasifikácií na jeden objekt bez zmeny štruktúry.
+
+### D-012 — IFC-aligned schéma, nie priama IFC implementácia
+**Rozhodnutie:** Schéma je inšpirovaná IFC 4.3 ale nie je priama implementácia. Vlastné tabuľky s ifc_guid stĺpcom a JSONB pre property sety.
+**Dôvod:** Priama IFC implementácia je príliš komplexná pre vibecoding fázu. IFC-aligned schéma umožňuje prirodzený import/export bez lock-in.
+**Dôsledok:** Každá tabuľka ktorá má IFC ekvivalent má `ifc_guid` stĺpec a `ifc_type` stĺpec.
+
+---
+
+## 4. Ontológia a štandardy
+
+### D-013 — Priestorová hierarchia podľa IFC
+**Rozhodnutie:** Site → Building → Floor → Space → Asset. Priamo z IFC priestorovej hierarchie.
+**Dôvod:** Štandardizovaná, dobre zdokumentovaná, prirodzená pre import z IFC modelu.
+
+### D-014 — Dokumenty podľa IfcDocumentInformation logiky
+**Rozhodnutie:** Dokumenty majú: Identification, Name, Location (URL), Purpose, Revision, DocumentOwner, ValidFrom, ValidUntil, Status.
+**Dôvod:** IfcDocumentInformation pokrýva všetky potrebné atribúty. Prepojenie na ľubovoľný objekt cez rel_ tabuľku.
+
+### D-015 — ICDD (ISO 21597) ako export štandard
+**Rozhodnutie:** Keď zákazník chce dáta odniesť — generujeme ICDD kontajner s RDF prepojeniami.
+**Dôvod:** ISO štandard, vendor-neutral, podporovaný buildingSMART ekosystémom.
+**Štruktúra:** ZIP s index.rdf, payload_documents/, payload_triples/.
+
+---
+
+## 5. Vývojový proces
+
+### D-016 — Typy chatov
+**Rozhodnutie:** Striktné oddelenie typov konverzácií:
+- **Brainstorm chat** — strategické rozhodnutia, nový chat pre každú tému
+- **Planning chat** — návrh konkrétnej časti, výstup je MD dokument
+- **Execution chat** — Claude Code implementácia podľa plánu, nový chat pre každý feature
+**Dôvod:** Zmiešanie plánovania a exekúcie degraduje kontext a kvalitu výstupu.
+
+### D-017 — Dokumentačná štruktúra projektu
+```
+projekt/
+├── CLAUDE.md          ← max 100 riadkov, core kontext
+├── docs/
+│   ├── DECISIONS.md   ← tento dokument
+│   ├── SCHEMA.md      ← databázová schéma (živý dokument)
+│   ├── STACK.md       ← technologické rozhodnutia
+│   └── ROADMAP.md     ← fázy a priority
+└── .claude/
+    └── commands/      ← slash commandy pre opakované workflow
+```
+
+---
+
+## 6. Schéma AIM Viewer (návrh dátového modelu)
+
+### D-018 — Objektový model: centrálna `objects` + typové prípony
+**Rozhodnutie:** Všetky uzly (site, building, floor, space, asset, asset_type, document, person, organization) sú riadky v jednej tabuľke `objects` (Master UUID, `object_type`, `object_ref`, `ifc_guid`, `ifc_type`, `properties`). Typovo-špecifické stĺpce žijú v tenkých 1:1 príponách (`floors`, `documents`, `persons`) s `id` ako FK na `objects(id) ON DELETE CASCADE`. Hrany `rel_` majú čisté FK na `objects(id)`.
+**Dôvod:** Master UUID vlastní jedna tabuľka — skutočná „kotva pre všetko" (D-010). Čisté FK dávajú referenčnú integritu a cascade (žiadne osirelé hrany). Pridanie nového typu uzla aj vzťahu je čisto aditívne. Viewer aj LLM čítajú ľubovoľný uzol jedným dotazom na `objects`. Migrácia do graph DB ostáva mechanická: `objects` = uzly, `rel_*` = hrany, `object_type` = label.
+**Alternatívy zvažované:** Polymorfné hrany (`from_table`/`from_id`) — graph-faithful, ale bez integrity na strane subjektu a s kostrbatými JOINmi; samostatná tabuľka pre každý typ — fragmentuje identitu.
+**Dôsledok:** `object_type` validuje ETL/app (nie CHECK), aby pridanie typu zostalo aditívne.
+
+### D-019 — Klasifikácia: dvojúrovňová, referenčné dáta
+**Rozhodnutie:** `classification_systems` (IfcClassification) a `classification_references` (IfcClassificationReference). Nie sú to objekty. Väzba objektu na kód cez `rel_has_classification`.
+**Dôvod:** Jeden kód (napr. `Ss_25_30_20`) zdieľa veľa objektov a systém má vlastné metadáta (edícia, vydavateľ) — jedna tabuľka by ich opakovala a sťažila viac systémov naraz (D-011). V IFC tiež nie sú `IfcRoot` (nemajú GUID), patria medzi referenčné dáta.
+**Dôsledok:** Spresňuje pôvodnú jednu `classifications` tabuľku na dve.
+
+### D-020 — Zodpovednosti od v1
+**Rozhodnutie:** Aktori sú typ objektu; zodpovednosť cez hranu `rel_responsible_for` s `role` (IfcActorRole) a platnosťou `valid_from`/`valid_until`.
+**Dôvod:** Prenos zodpovednosti pri handovere (zhotoviteľ → prevádzkovateľ) je jadro BIM→FM prechodu, ktorý AIM demonštruje (D-003). Mapuje sa na `IfcRelAssignsToActor`.
+**Dôsledok:** `documents.document_owner` (text) je dočasné a neskôr ho nahradí `rel_responsible_for(role='owner')`. Granularitu aktorov spresňuje D-024.
+
+### D-021 — Type–Occurrence vzor
+**Rozhodnutie:** Type aj occurrence sú uzly v `objects`. Occurrence (`object_type='asset'`) má polohu (`rel_located_in`); type (`object_type='asset_type'`) **nikdy** nie je v priestorovej štruktúre. Väzba `rel_defined_by_type` (occurrence → type), 1:N. Dedičnosť **s prepisom**: type nesie zdieľané, occurrence prepíše. Effective hodnoty počíta `v_asset_effective` (merge properties + PredefinedType).
+**Dôvod:** IFC stojí na Generic–Specific–Occurrence paradigme cez `IfcRelDefinesByType`. Type nesie spoločné property sety a parametre, occurrence polohu/sériové číslo/dátum. Pri kolízii type vyhráva, pokiaľ occurrence neprepíše; rovnako PredefinedType (occurrence ho použije len ak je type `NOTDEFINED`). Ukladať type hodnoty na occurrence (Revit workaround) zahadzuje zdieľanú vrstvu.
+**Dôsledok:** `ObjectType`/`ElementType` (USERDEFINED) je IFC **atribút**, nie entita → stĺpec `user_defined_type`. Vzor je generický (process/resource types) — neskôr použijú tú istú hranu.
+
+### D-022 — Properties: tri vrstvy, rozlíšené názvom
+**Rozhodnutie:** (1) IFC **atribúty** → stĺpce na `objects`; (2) **štandardné psety** (buildingSMART, názov `Pset_`/`Qto_`) a (3) **custom psety** (akýkoľvek iný názov) → spolu v jednom `properties` JSONB, vnorené podľa názvu psetu. Štandard vs custom sa rozlišuje prefixom názvu.
+**Dôvod:** IFC nemá pre štandard/custom samostatný príznak — diskriminátorom je názov psetu; `Pset_`/`Qto_` sú rezervované pre buildingSMART. Jeden JSONB priestor drží round-trip do IFC triviálny a merge type→occurrence beží nad jedným priestorom.
+**Dôsledok:** ETL: čo nezačína `Pset_`/`Qto_`, je custom. Kľúče začínajúce `_` nie sú psety, ale meta/zachytené dáta. Voliteľná `property_set_templates` (bSDD validácia) odložená.
+
+### D-023 — Klasifikácia na type aj occurrence (union faset)
+**Rozhodnutie:** `rel_has_classification` povolená na type aj occurrence. Efektívna klasifikácia occurrence = **zjednotenie** vlastných + zdedených z type (`v_asset_classifications`), nie override.
+**Dôvod:** `IfcRelAssociatesClassification` priraďuje klasifikáciu k `IfcObjectDefinition` (typy aj occurrence). V praxi nesú rôzne fasety: produktový kód (Uniclass Pr) na type, systémový/lokačný (Ss, SL) na occurrence — nekonkurujú si, hromadia sa.
+**Dôsledok:** Schéma sa nemení. Líši sa logika oproti properties: properties = merge s prepisom, klasifikácia = union.
+
+### D-024 — Actor model: B teraz, C plánované
+**Rozhodnutie:** Aktori na úrovni **B**: `person` (prípona `persons`: given_name, family_name, email, phone) a `organization` (`objects` riadok, name = názov firmy), väzba `rel_member_of` (person → organization) ≙ `IfcPersonAndOrganization`. `rel_responsible_for` ide z osoby aj z organizácie. Úroveň **C** (org↔org hierarchia, štruktúrované adresy, intrinsic roly ako entita) **budeme implementovať v budúcnosti** ako aditívne rozšírenie.
+**Dôvod:** Objektový model (D-018) robí prechod B→C čisto aditívnym — nič v B sa neprerába. Demo ukazuje previazanosť, nie úplnosť (D-003); reálny náklad C nie je schéma, ale ETL + Viewer + testovacie dáta + bloat kontextu, ktoré by sme nevyužili. Jediné riziko odloženia je strata adries/org-väzieb pri importe.
+**Dôsledok:** Spresňuje D-020 (`object_type='actor'` → `person`/`organization`). Dve miesta rolí: `rel_responsible_for.role` (acting rola) vs `rel_member_of.role` (rola vo firme). **Capture-don't-structure**: kým nie je C, ETL uloží surové adresy/org-väzby do `_contact`/`_org` v `properties`.
+
+### D-025 — Iniciálna migrácia: rozsah a implementačné rozhodnutia
+**Rozhodnutie:** SCHEMA.md §2 je implementovaná ako jediná aditívna migrácia
+`supabase/migrations/20260616120000_init_aim_schema.sql`. Pri implementácii:
+(1) **RLS sa nezapína** — doplní sa aditívne s auth/frontendom; (2) implementované
+sú **len 4 explicitne menované views**, „analogické" (`v_documents`/`v_assets`/
+`v_spaces`) prídu neskôr; (3) `updated_at` triggery len na tabuľkách s tým stĺpcom
+(`objects`, `classification_systems`, `classification_references`).
+**Dôvod:** Držať scope iniciálnej migrácie presne na §2; RLS aj doplnkové views sú
+čisto aditívne (D-018) a viažu sa na komponenty, ktoré ešte neexistujú — pridať ich
+teraz by znamenalo hádať politiky/tvary bez konzumenta.
+**Verifikácia:** Docker nebol dostupný → namiesto `supabase db reset` overené na
+čistej lokálnej PostgreSQL 17 cez `psql` (aplikácia migrácie, dedičnosť
+`v_asset_effective`, partial-unique `uniq_active_location`, `updated_at` trigger).
+**Dôsledok:** Detail odchýlok je v SCHEMA.md §8. Ďalšie zmeny schémy = nové migrácie,
+táto sa nikdy needituje ani nemaže.
+
+---
+
+## 7. Otvorené otázky (ešte neriešené)
+
+- **IFC model diplomky** — doladiť property sety, klasifikácie, priestorovú hierarchiu (prerekvizita ETL)
+- **LLM interface** — konkrétne queries ktoré demo ukáže (schéma to zvládne)
+- **Verejné spustenie** — termín a forma (LinkedIn, standalone URL)
+- **Ďalší rozvoj po AIM Vieweri** — procesy, MIDP/TIDP generovanie
+- **property_set_templates** — voliteľná referenčná tabuľka pre bSDD validáciu psetov (až pri validácii handoveru)
+- **Actor model C** — org-hierarchia, štruktúrované adresy, intrinsic roly (plánované aditívne, viď D-024)
+
+**Vyriešené počas návrhu schémy:** dátový model AIM Viewer (D-018–D-024), type vs occurrence (D-021), actor granularita (D-024).
+
+---
+
+*Posledná aktualizácia: po implementácii iniciálnej migrácie (D-025)*
+*Ďalší krok: execution chat — ETL pipeline (IFC → Supabase) / seed dáta*
