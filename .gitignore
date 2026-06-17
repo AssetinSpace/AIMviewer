@@ -26,3 +26,14 @@ supabase/.temp/
 # OS
 .DS_Store
 Thumbs.db
+
+# Python (ETL)
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+etl/.venv/
+
+# IFC modely (veľké, lokálne — necommitovať)
+*.ifc
+etl/data/

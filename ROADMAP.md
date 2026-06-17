@@ -16,7 +16,7 @@
 - ✅ S2 — Asset karta: dedičnosť + provenance, klasifikácie, type route (D-028)
 - ✅ S3 — Dokumenty + zodpovednosti + GUID história, generický object route (D-029)
 - 🟢 **Teraz:** S4 — polish & launch (čaká na ETL reálne dáta + doménu)
-- ⏸️ ETL pipeline (Python + ifcopenshell) — **paralelná vetva**, nie blocker
+- 🟡 ETL pipeline (Python + ifcopenshell, D-031) — **scaffold hotový** (`etl/`), čaká na IFC z diplomky; paralelná vetva, nie blocker
 - ⏸️ LLM interface — **parkované** (S-LLM), doladíme neskôr
 
 **Máme:** Supabase Cloud (projekt `acwoupricatirhlfkhvk`) + GitHub repo (`AssetinSpace/AIMviewer`) + Vercel deploy (auto-deploy z `main`). **Chýba zatiaľ:** vlastná doména (príde v S4).
@@ -83,8 +83,10 @@
 - **S-LLM — LLM interface** (parkované, doladíme neskôr): chat nad dátami,
   Claude text-to-SQL (D-005) s guardrailmi (read-only, whitelist views, row limit).
   Model sa vyberie pri spustení (`claude-opus-4-8` vs lacnejší pre demo).
-- **ETL pipeline** (paralelná vetva): `ifcopenshell` IFC → `objects`/`rel_*`,
-  nahradí ručný seed reálnymi dátami z diplomky (vstup pre S4).
+- **ETL pipeline** (paralelná vetva, D-031): `ifcopenshell` IFC → `objects`/`rel_*`,
+  nahradí ručný seed reálnymi dátami z diplomky (vstup pre S4). **Scaffold v `etl/`**
+  (extract/transform/load, idempotentný upsert, CLI) hotový a syntakticky overený;
+  ostáva doladiť mapovanie (`TODO(model)`) a spustiť end-to-end na reálnom IFC.
 
 ## Mimo scope (zatiaľ)
 - Auth + RLS (príde s verejným/multi-user prístupom — aditívne, D-025).
