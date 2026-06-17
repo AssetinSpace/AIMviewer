@@ -14,7 +14,8 @@
 - ✅ S0 — Next.js skeleton + Vercel deploy + Supabase connection (D-026)
 - ✅ S1 — Priestorová hierarchia: strom + route per uzol (D-027)
 - ✅ S2 — Asset karta: dedičnosť + provenance, klasifikácie, type route (D-028)
-- 🟢 **Teraz:** S3 — dokumenty + zodpovednosti + GUID história
+- ✅ S3 — Dokumenty + zodpovednosti + GUID história, generický object route (D-029)
+- 🟢 **Teraz:** S4 — polish & launch (čaká na ETL reálne dáta + doménu)
 - ⏸️ ETL pipeline (Python + ifcopenshell) — **paralelná vetva**, nie blocker
 - ⏸️ LLM interface — **parkované** (S-LLM), doladíme neskôr
 
@@ -39,8 +40,8 @@
 | **S0 — Skeleton & deploy** ✅ | Next.js app beží lokálne aj na Verceli (default `*.vercel.app`), Supabase klient pripojený, test-fetch z `objects`. Repo prepojené s Vercelom (auto-deploy z `main`). | `objects` |
 | **S1 — Priestorová hierarchia** ✅ | Strom Site→Building→Floor→Space→Asset; klik na space → zoznam assetov. Data-access vrstva nad `objects` / `rel_located_in`. | `rel_located_in`, `v_floors` |
 | **S2 — Asset karta (jadro)** ✅ | Detail assetu: properties s provenance (vlastné/zdedené/prepísané), zdedený `predefined_type`, link na type `/type/[id]`, breadcrumb, klasifikácie s badge `occurrence`/`type`. **Tu sa ukáže dedičnosť.** | `v_asset_effective`, `v_asset_classifications` |
-| **S3 — Dokumenty + zodpovednosti** 🟢 | Na karte: dokumenty (`rel_has_document`), zodpovedné osoby/firmy s rolami a platnosťou (`rel_responsible_for`, `rel_member_of`), panel histórie IFC GUID. | `documents`, `persons`, `ifc_guid_history` |
-| **S4 — Polish & launch** | Vizuálny polish, responsivita, empty states; výmena seedu za reálne ETL dáta z diplomky; vlastná doména + verejné spustenie. | — |
+| **S3 — Dokumenty + zodpovednosti** ✅ | Na karte (a genericky na každom uzle): dokumenty (`rel_has_document`), zodpovedné osoby/firmy s rolami a platnosťou (`rel_responsible_for`, `rel_member_of`), panel histórie IFC GUID. Klikateľné detaily person/organization/document — generický object route (D-029). | `documents`, `persons`, `ifc_guid_history` |
+| **S4 — Polish & launch** 🟢 | Vizuálny polish, responsivita, empty states; výmena seedu za reálne ETL dáta z diplomky; vlastná doména + verejné spustenie. | — |
 
 ### Detail
 
@@ -61,10 +62,14 @@
 - Provenance per property (vlastné/zdedené/prepísané) z diffu raw type↔occurrence; link na type → `/type/[id]`.
 - Akceptačné ✅: AHU-01 ukáže `AirFlowRate:4800` (override) + zdedené z type + obe klasifikácie.
 
-**S3 — Dokumenty + zodpovednosti**
+**S3 — Dokumenty + zodpovednosti** ✅ (D-029)
 - `rel_has_document` → `documents`; `rel_responsible_for` (role, platnosť) + `rel_member_of`.
-- Panel `ifc_guid_history` (aktívny + archivované).
-- Akceptačné: na AHU-01 vidno manuál, Jána Nováka (operator) a 2 GUID záznamy.
+- Panel `ifc_guid_history` (aktívny + archivované). Sekcie generické na každom uzle.
+- Generický object route `/node/[id]` (person/organization/document detail) + obojsmerné
+  prelinkovanie; `asset_type` → redirect na `/type/[id]`.
+- Akceptačné ✅: na AHU-01 vidno manuál (link), Jána Nováka (operator, člen TZB Servis)
+  a 2 GUID záznamy; klik na osobu → jej 2 zodpovednosti + členstvo; klik na dokument →
+  „pripojené k AHU-01".
 
 **S4 — Polish & launch**
 - Závisí od ETL vetvy (reálne dáta). Doména + verejné spustenie (D-007 otvorená otázka).
@@ -84,4 +89,4 @@
 - 3D / IFC.js geometria (D-007: sme dátový viewer, nie geometrický).
 
 ---
-*Posledná aktualizácia: 2026-06-17 — S0–S2 hotové, deploy na Verceli. Ďalej: S3 (dokumenty + zodpovednosti + GUID história).*
+*Posledná aktualizácia: 2026-06-17 — S0–S3 hotové, deploy na Verceli. Ďalej: S4 (polish & launch — čaká na ETL reálne dáta + doménu).*
