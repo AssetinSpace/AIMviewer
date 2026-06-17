@@ -1,9 +1,13 @@
 import "server-only";
 
+import { unstable_cache } from "next/cache";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import type { ObjectType } from "@/lib/object-type";
+
+/** Spoločné ISR nastavenie pre cachované čítania (D-029 perf). */
+const AIM_CACHE = { revalidate: 60, tags: ["aim"] };
 
 /**
  * Data-access pre generický object route (S3, D-029): ľahká meta pre dispatch
@@ -96,7 +100,7 @@ export interface DocumentDetail {
 }
 
 /** Ľahká identita objektu pre dispatch v route. `null`, ak neexistuje. */
-export async function fetchObjectMeta(id: string): Promise<ObjectMeta | null> {
+async function fetchObjectMetaImpl(id: string): Promise<ObjectMeta | null> {
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
     .from("objects")
@@ -171,7 +175,7 @@ async function loadResponsibilitiesOf(
 }
 
 /** Detail osoby: kontakt, členstvá vo firmách, za čo zodpovedá. */
-export async function fetchPerson(id: string): Promise<PersonDetail | null> {
+async function fetchPersonImpl(id: string): Promise<PersonDetail | null> {
   const supabase = getSupabaseAdmin();
 
   // Nezávislé dotazy naraz; orgLinks závisí od členstiev → až potom.
@@ -239,7 +243,7 @@ export async function fetchPerson(id: string): Promise<PersonDetail | null> {
 }
 
 /** Detail organizácie: zachytený kontakt, členovia, za čo zodpovedá. */
-export async function fetchOrganization(
+async function fetchOrganizationImpl(
   id: string
 ): Promise<OrganizationDetail | null> {
   const supabase = getSupabaseAdmin();
@@ -300,7 +304,7 @@ export async function fetchOrganization(
 }
 
 /** Detail dokumentu: IfcDocumentInformation polia + „pripojené k" (reverz). */
-export async function fetchDocument(id: string): Promise<DocumentDetail | null> {
+async function fetchDocumentImpl(id: string): Promise<DocumentDetail | null> {
   const supabase = getSupabaseAdmin();
 
   // Objekt, metadáta dokumentu a väzby „pripojené k" naraz.
@@ -366,3 +370,21 @@ export async function fetchDocument(id: string): Promise<DocumentDetail | null> 
     attachedTo,
   };
 }
+
+// Cachované per id (ISR, D-029 perf) — render uzlov je tým eligible pre Full Route Cache.
+export const fetchObjectMeta = unstable_cache(
+  fetchObjectMetaImpl,
+  ["fetch-object-meta"],
+  AIM_CACHE
+);
+export const fetchPerson = unstable_cache(fetchPersonImpl, ["fetch-person"], AIM_CACHE);
+export const fetchOrganization = unstable_cache(
+  fetchOrganizationImpl,
+  ["fetch-organization"],
+  AIM_CACHE
+);
+export const fetchDocument = unstable_cache(
+  fetchDocumentImpl,
+  ["fetch-document"],
+  AIM_CACHE
+);

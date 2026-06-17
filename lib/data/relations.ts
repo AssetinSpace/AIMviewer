@@ -1,6 +1,11 @@
 import "server-only";
 
+import { unstable_cache } from "next/cache";
+
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+
+/** Spoločné ISR nastavenie pre cachované čítania (D-029 perf). */
+const AIM_CACHE = { revalidate: 60, tags: ["aim"] };
 
 /**
  * Data-access vrstva pre generické sekcie uzla (S3, D-029): dokumenty,
@@ -62,7 +67,7 @@ export interface NodeSectionsData {
 }
 
 /** Tri generické sekcie uzla naraz (paralelne) — jeden vstupný bod pre Viewer. */
-export async function fetchNodeSections(
+async function fetchNodeSectionsImpl(
   objectId: string
 ): Promise<NodeSectionsData> {
   const [documents, responsibilities, guidHistory] = await Promise.all([
@@ -72,6 +77,13 @@ export async function fetchNodeSections(
   ]);
   return { documents, responsibilities, guidHistory };
 }
+
+/** Cachované per id (ISR, D-029 perf). */
+export const fetchNodeSections = unstable_cache(
+  fetchNodeSectionsImpl,
+  ["fetch-node-sections"],
+  AIM_CACHE
+);
 
 /** Dokumenty pripojené na uzol (`rel_has_document` → `documents`, D-014). */
 export async function fetchDocuments(objectId: string): Promise<DocumentRef[]> {

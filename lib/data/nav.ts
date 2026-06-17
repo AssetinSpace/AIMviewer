@@ -1,6 +1,6 @@
 import "server-only";
 
-import { cache } from "react";
+import { unstable_cache } from "next/cache";
 
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
@@ -26,7 +26,7 @@ export interface SidebarNavData {
 
 const NAV_TYPES = ["asset_type", "person", "organization", "document"] as const;
 
-export const fetchSidebarNav = cache(async (): Promise<SidebarNavData> => {
+export const fetchSidebarNav = unstable_cache(async (): Promise<SidebarNavData> => {
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
     .from("objects")
@@ -65,4 +65,4 @@ export const fetchSidebarNav = cache(async (): Promise<SidebarNavData> => {
   groups.documents.sort(byLabel);
 
   return groups;
-});
+}, ["sidebar-nav"], { revalidate: 60, tags: ["aim"] });

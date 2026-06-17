@@ -1,8 +1,12 @@
 import "server-only";
 
 import { cache } from "react";
+import { unstable_cache } from "next/cache";
 
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+
+/** Spoločné ISR nastavenie pre cachované čítania (D-029 perf). */
+const AIM_CACHE = { revalidate: 60, tags: ["aim"] };
 
 /**
  * Data-access vrstva pre priestorovú hierarchiu (S1).
@@ -143,14 +147,18 @@ function buildSubtree(id: string, graph: Graph): SpatialNode {
 /**
  * Celý strom priestorovej hierarchie. Korene = uzly bez rodiča (typicky `site`).
  */
-export async function fetchSpatialTree(): Promise<SpatialNode[]> {
-  const graph = await loadGraph();
-  const roots: ObjectRow[] = [];
-  for (const row of graph.byId.values()) {
-    if (!graph.parentOf.has(row.id)) roots.push(row);
-  }
-  return roots.sort(compareNodes).map((r) => buildSubtree(r.id, graph));
-}
+export const fetchSpatialTree = unstable_cache(
+  async (): Promise<SpatialNode[]> => {
+    const graph = await loadGraph();
+    const roots: ObjectRow[] = [];
+    for (const row of graph.byId.values()) {
+      if (!graph.parentOf.has(row.id)) roots.push(row);
+    }
+    return roots.sort(compareNodes).map((r) => buildSubtree(r.id, graph));
+  },
+  ["spatial-tree"],
+  AIM_CACHE
+);
 
 export interface NodeDetail {
   node: ObjectRow;
@@ -173,27 +181,31 @@ function toRef(row: ObjectRow): NodeRef {
  * Detail jedného uzla + breadcrumb (chôdza nahor po `rel_located_in`)
  * a priami potomkovia. `null`, ak uzol neexistuje / nie je priestorový.
  */
-export async function fetchNode(id: string): Promise<NodeDetail | null> {
-  const graph = await loadGraph();
-  const node = graph.byId.get(id);
-  if (!node) return null;
+export const fetchNode = unstable_cache(
+  async (id: string): Promise<NodeDetail | null> => {
+    const graph = await loadGraph();
+    const node = graph.byId.get(id);
+    if (!node) return null;
 
-  // Breadcrumb: nazbieraj predkov a otoč na poradie root → … → rodič.
-  const breadcrumb: NodeRef[] = [];
-  let cursor = graph.parentOf.get(id);
-  const guard = new Set<string>(); // poistka proti cyklu
-  while (cursor && !guard.has(cursor)) {
-    guard.add(cursor);
-    const parent = graph.byId.get(cursor);
-    if (parent) breadcrumb.push(toRef(parent));
-    cursor = graph.parentOf.get(cursor);
-  }
-  breadcrumb.reverse();
+    // Breadcrumb: nazbieraj predkov a otoč na poradie root → … → rodič.
+    const breadcrumb: NodeRef[] = [];
+    let cursor = graph.parentOf.get(id);
+    const guard = new Set<string>(); // poistka proti cyklu
+    while (cursor && !guard.has(cursor)) {
+      guard.add(cursor);
+      const parent = graph.byId.get(cursor);
+      if (parent) breadcrumb.push(toRef(parent));
+      cursor = graph.parentOf.get(cursor);
+    }
+    breadcrumb.reverse();
 
-  const children = (graph.childrenOf.get(id) ?? [])
-    .map((cid) => graph.byId.get(cid)!)
-    .sort(compareNodes)
-    .map(toRef);
+    const children = (graph.childrenOf.get(id) ?? [])
+      .map((cid) => graph.byId.get(cid)!)
+      .sort(compareNodes)
+      .map(toRef);
 
-  return { node, breadcrumb, children };
-}
+    return { node, breadcrumb, children };
+  },
+  ["node"],
+  AIM_CACHE
+);

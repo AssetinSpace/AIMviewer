@@ -1,8 +1,12 @@
 import "server-only";
 
+import { unstable_cache } from "next/cache";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+
+/** Spoločné ISR nastavenie pre cachované čítania (D-029 perf). */
+const AIM_CACHE = { revalidate: 60, tags: ["aim"] };
 
 /**
  * Data-access vrstva pre asset kartu (S2) — jadro previazanosti.
@@ -226,7 +230,7 @@ interface EffRow {
  * Detail assetu (occurrence): efektívne atribúty, property sety s provenance,
  * väzba na type a union klasifikácií. `null`, ak `id` nie je `object_type='asset'`.
  */
-export async function fetchAsset(id: string): Promise<AssetDetail | null> {
+async function fetchAssetImpl(id: string): Promise<AssetDetail | null> {
   const supabase = getSupabaseAdmin();
 
   // Effective view, raw occurrence a klasifikácie sú navzájom nezávislé →
@@ -309,7 +313,7 @@ export async function fetchAsset(id: string): Promise<AssetDetail | null> {
  * Detail asset_type: zdieľané atribúty/psety, vlastné klasifikácie a zoznam
  * occurrence, ktoré ho používajú. `null`, ak `id` nie je `object_type='asset_type'`.
  */
-export async function fetchAssetType(id: string): Promise<AssetTypeDetail | null> {
+async function fetchAssetTypeImpl(id: string): Promise<AssetTypeDetail | null> {
   const supabase = getSupabaseAdmin();
 
   const { data: rows, error } = await supabase
@@ -390,3 +394,13 @@ export async function fetchAssetType(id: string): Promise<AssetTypeDetail | null
     occurrences,
   };
 }
+
+/** Detail assetu (occurrence) — cachované per id (ISR, D-029 perf). */
+export const fetchAsset = unstable_cache(fetchAssetImpl, ["fetch-asset"], AIM_CACHE);
+
+/** Detail asset_type — cachované per id (ISR, D-029 perf). */
+export const fetchAssetType = unstable_cache(
+  fetchAssetTypeImpl,
+  ["fetch-asset-type"],
+  AIM_CACHE
+);
