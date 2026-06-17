@@ -178,12 +178,26 @@ teraz by znamenalo hádať politiky/tvary bez konzumenta.
 **Dôsledok:** Detail odchýlok je v SCHEMA.md §8. Ďalšie zmeny schémy = nové migrácie,
 táto sa nikdy needituje ani nemaže.
 
+### D-026 — AIM Viewer: stack a dátový prístup
+**Rozhodnutie:** Viewer je **Next.js (App Router) + TypeScript + Tailwind + shadcn/ui**
+na **Verceli** (D-006). Dáta sa čítajú **server-side** (Server Components / route
+handlers) cez Supabase `service_role` kľúč; anon kľúč sa do prehliadača nedáva.
+Sprintový plán je v `ROADMAP.md` (S0–S4; LLM interface a ETL sú parkované/paralelné).
+**Dôvod:** Server-only `service_role` necháva DB nevystavenú a umožňuje **odložiť RLS**
+presne v línii D-025 (RLS sa doplní aditívne s auth). shadcn/ui + Tailwind je
+vibecoding-friendly a bez runtime lock-inu. Sprinty idú podľa narastajúcej
+previazanosti dát (hierarchia → asset karta s dedičnosťou → dokumenty/zodpovednosti),
+aby každý mal demovateľný výstup (D-003) a jadro (dedičnosť/union) prišlo skoro.
+**Dôsledok:** Kým nie je auth, žiadny verejný endpoint nečíta DB s anon kľúčom.
+LLM interface (text-to-SQL, D-005) a vlastná doména sa riešia až po S3. Reálne dáta
+z ETL nahradia seed v S4 — dovtedy Viewer stavia na `supabase/seed.sql`.
+
 ---
 
 ## 7. Otvorené otázky (ešte neriešené)
 
 - **IFC model diplomky** — doladiť property sety, klasifikácie, priestorovú hierarchiu (prerekvizita ETL)
-- **LLM interface** — konkrétne queries ktoré demo ukáže (schéma to zvládne)
+- **LLM interface** — konkrétne queries ktoré demo ukáže (schéma to zvládne); parkované do S-LLM (D-026)
 - **Verejné spustenie** — termín a forma (LinkedIn, standalone URL)
 - **Ďalší rozvoj po AIM Vieweri** — procesy, MIDP/TIDP generovanie
 - **property_set_templates** — voliteľná referenčná tabuľka pre bSDD validáciu psetov (až pri validácii handoveru)
@@ -193,5 +207,5 @@ táto sa nikdy needituje ani nemaže.
 
 ---
 
-*Posledná aktualizácia: po implementácii iniciálnej migrácie (D-025)*
-*Ďalší krok: execution chat — ETL pipeline (IFC → Supabase) / seed dáta*
+*Posledná aktualizácia: seed dáta hotové + Viewer sprintový plán (D-026, ROADMAP.md)*
+*Ďalší krok: execution chat — S0 (Next.js skeleton + Vercel)*
