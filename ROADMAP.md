@@ -13,7 +13,8 @@
 - ✅ Seed dáta (`supabase/seed.sql`) — previazanosť overená na Supabase Cloud
 - ✅ S0 — Next.js skeleton + Vercel deploy + Supabase connection (D-026)
 - ✅ S1 — Priestorová hierarchia: strom + route per uzol (D-027)
-- 🟢 **Teraz:** AIM Viewer — S2 (asset karta) nižšie
+- ✅ S2 — Asset karta: dedičnosť + provenance, klasifikácie, type route (D-028)
+- 🟢 **Teraz:** AIM Viewer — S3 (dokumenty + zodpovednosti) nižšie
 - ⏸️ ETL pipeline (Python + ifcopenshell) — **paralelná vetva**, nie blocker
 - ⏸️ LLM interface — **parkované** (S-LLM), doladíme neskôr
 
@@ -55,10 +56,11 @@
 - Navigovateľný strom; výber space → assety v ňom.
 - Akceptačné: prejdem z site až po konkrétny asset cez seed dáta.
 
-**S2 — Asset karta (jadro previazanosti)**
+**S2 — Asset karta (jadro previazanosti)** ✅ (D-028)
 - Čítať `v_asset_effective` (merge + dedičnosť), `v_asset_classifications` (union faset).
 - Properties zoskupené podľa psetu; `Pset_`/`Qto_` = štandard, ostatné = custom; `_kľúče` skryté.
-- Akceptačné: AHU-01 ukáže `AirFlowRate:4800` (override) + zdedené z type + obe klasifikácie.
+- Provenance per property (vlastné/zdedené/prepísané) z diffu raw type↔occurrence; link na type → `/type/[id]`.
+- Akceptačné ✅: AHU-01 ukáže `AirFlowRate:4800` (override) + zdedené z type + obe klasifikácie.
 
 **S3 — Dokumenty + zodpovednosti**
 - `rel_has_document` → `documents`; `rel_responsible_for` (role, platnosť) + `rel_member_of`.

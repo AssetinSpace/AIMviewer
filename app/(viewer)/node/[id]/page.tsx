@@ -2,11 +2,13 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { fetchNode, type NodeRef } from "@/lib/data/spatial";
+import { fetchAsset } from "@/lib/data/asset";
 import { OBJECT_TYPE_LABEL } from "@/lib/object-type";
+import { PropertySets } from "@/components/property-sets";
+import { ClassificationList } from "@/components/classification-list";
 import {
   Card,
   CardContent,
-  CardDescription,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
@@ -40,6 +42,80 @@ function Field({ label, value }: { label: string; value: React.ReactNode }) {
   );
 }
 
+/** Detail assetu (S2): atribúty s dedeným PredefinedType + linkom na type,
+ *  property sety s provenance a union klasifikácií. */
+async function AssetDetailView({ id }: { id: string }) {
+  const asset = await fetchAsset(id);
+  if (!asset) notFound();
+
+  const predef = asset.predefinedType.value && (
+    <span className="flex flex-wrap items-center gap-2">
+      <span>{asset.predefinedType.value}</span>
+      {asset.predefinedType.inherited && (
+        <span className="rounded bg-secondary px-1.5 py-0.5 text-[0.65rem] font-medium uppercase tracking-wide text-secondary-foreground">
+          zdedené z typu
+        </span>
+      )}
+    </span>
+  );
+
+  return (
+    <>
+      <Card className="mb-6">
+        <CardHeader>
+          <CardTitle>Atribúty</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <dl className="divide-y divide-border">
+            <Field label="IFC typ" value={asset.ifc_type} />
+            <Field label="PredefinedType" value={predef} />
+            <Field label="ObjectType" value={asset.userDefinedType} />
+            <Field label="IFC GUID" value={asset.ifc_guid} />
+            <Field
+              label="Typ"
+              value={
+                asset.type ? (
+                  <Link
+                    href={`/type/${asset.type.id}`}
+                    className="text-foreground underline decoration-dotted underline-offset-2 hover:decoration-solid"
+                  >
+                    {asset.type.name ?? asset.type.object_ref ?? asset.type.id}
+                  </Link>
+                ) : (
+                  <span className="text-muted-foreground">bez typu</span>
+                )
+              }
+            />
+          </dl>
+        </CardContent>
+      </Card>
+
+      <Card className="mb-6">
+        <CardHeader>
+          <CardTitle>Properties</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <PropertySets groups={asset.propertySets} />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>
+            Klasifikácie{" "}
+            <span className="text-muted-foreground">
+              ({asset.classifications.length})
+            </span>
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <ClassificationList facets={asset.classifications} />
+        </CardContent>
+      </Card>
+    </>
+  );
+}
+
 export default async function NodePage({
   params,
 }: {
@@ -69,35 +145,8 @@ export default async function NodePage({
         )}
       </header>
 
-      <Card className="mb-6">
-        <CardHeader>
-          <CardTitle>Atribúty</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <dl className="divide-y divide-border">
-            <Field label="IFC typ" value={node.ifc_type} />
-            <Field label="PredefinedType" value={node.predefined_type} />
-            <Field label="IFC GUID" value={node.ifc_guid} />
-            {node.object_type === "floor" && (
-              <Field
-                label="Elevation"
-                value={node.elevation !== null ? `${node.elevation} m` : null}
-              />
-            )}
-          </dl>
-        </CardContent>
-      </Card>
-
       {isAsset ? (
-        <Card>
-          <CardHeader>
-            <CardTitle>Detail assetu</CardTitle>
-            <CardDescription>
-              Zmergované properties, dedičnosť z typu, klasifikácie, dokumenty
-              a zodpovednosti pribudnú v ďalšom sprinte (S2 / S3).
-            </CardDescription>
-          </CardHeader>
-        </Card>
+        <AssetDetailView id={id} />
       ) : (
         <Card>
           <CardHeader>
