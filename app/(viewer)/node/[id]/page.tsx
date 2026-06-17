@@ -25,7 +25,8 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 
-export const dynamic = "force-dynamic";
+// ISR — render uzla sa cachuje a po 60 s revaliduje (viewer je verejný read-only).
+export const revalidate = 60;
 
 function Breadcrumb({ trail }: { trail: NodeRef[] }) {
   if (trail.length === 0) return null;

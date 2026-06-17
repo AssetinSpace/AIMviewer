@@ -5,8 +5,10 @@ import { fetchSidebarNav } from "@/lib/data/nav";
 import { SpatialTree } from "@/components/spatial-tree";
 import { SidebarNav } from "@/components/sidebar-nav";
 
-// Strom čítame server-side pri každom requeste (seed sa mení v dev).
-export const dynamic = "force-dynamic";
+// ISR: viewer je verejný read-only (žiadne auth/cookies), tak render cachujeme
+// a každých 60 s revalidujeme. Warm navigácia je takmer okamžitá a Next routy
+// prefetchne. V `next dev` sa cache neuplatní → počas vývoja vždy čerstvé.
+export const revalidate = 60;
 
 export default async function ViewerLayout({
   children,

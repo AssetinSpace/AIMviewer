@@ -11,7 +11,8 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 
-export const dynamic = "force-dynamic";
+// ISR — render typu sa cachuje a po 60 s revaliduje (viewer je verejný read-only).
+export const revalidate = 60;
 
 function Field({ label, value }: { label: string; value: React.ReactNode }) {
   if (value === null || value === undefined || value === "") return null;

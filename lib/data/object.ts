@@ -174,32 +174,36 @@ async function loadResponsibilitiesOf(
 export async function fetchPerson(id: string): Promise<PersonDetail | null> {
   const supabase = getSupabaseAdmin();
 
-  const { data: objRows, error } = await supabase
-    .from("objects")
-    .select("id, object_ref, name")
-    .eq("id", id)
-    .eq("object_type", "person")
-    .limit(1);
-  if (error) throw new Error(error.message);
-  const obj = objRows?.[0];
+  // Nezávislé dotazy naraz; orgLinks závisí od členstiev → až potom.
+  const [objRes, pRes, memRes, responsibilities] = await Promise.all([
+    supabase
+      .from("objects")
+      .select("id, object_ref, name")
+      .eq("id", id)
+      .eq("object_type", "person")
+      .limit(1),
+    supabase
+      .from("persons")
+      .select("given_name, family_name, email, phone")
+      .eq("id", id)
+      .limit(1),
+    supabase
+      .from("rel_member_of")
+      .select("to_id, role, valid_from, valid_until")
+      .eq("from_id", id)
+      .is("valid_until", null),
+    loadResponsibilitiesOf(supabase, id),
+  ]);
+
+  if (objRes.error) throw new Error(objRes.error.message);
+  const obj = objRes.data?.[0];
   if (!obj) return null;
 
-  const { data: pRows, error: pErr } = await supabase
-    .from("persons")
-    .select("given_name, family_name, email, phone")
-    .eq("id", id)
-    .limit(1);
-  if (pErr) throw new Error(pErr.message);
-  const p = pRows?.[0];
+  if (pRes.error) throw new Error(pRes.error.message);
+  const p = pRes.data?.[0];
 
-  // Členstvá (rel_member_of, aktívne).
-  const { data: memRows, error: memErr } = await supabase
-    .from("rel_member_of")
-    .select("to_id, role, valid_from, valid_until")
-    .eq("from_id", id)
-    .is("valid_until", null);
-  if (memErr) throw new Error(memErr.message);
-  const memberRows = (memRows ?? []) as {
+  if (memRes.error) throw new Error(memRes.error.message);
+  const memberRows = (memRes.data ?? []) as {
     to_id: string;
     role: string | null;
     valid_from: string | null;
@@ -221,8 +225,6 @@ export async function fetchPerson(id: string): Promise<PersonDetail | null> {
     };
   });
 
-  const responsibilities = await loadResponsibilitiesOf(supabase, id);
-
   return {
     id: obj.id as string,
     object_ref: (obj.object_ref as string | null) ?? null,
@@ -242,14 +244,24 @@ export async function fetchOrganization(
 ): Promise<OrganizationDetail | null> {
   const supabase = getSupabaseAdmin();
 
-  const { data: objRows, error } = await supabase
-    .from("objects")
-    .select("id, object_ref, name, properties")
-    .eq("id", id)
-    .eq("object_type", "organization")
-    .limit(1);
-  if (error) throw new Error(error.message);
-  const obj = objRows?.[0];
+  // Objekt, členovia a zodpovednosti sú nezávislé → naraz.
+  const [objRes, memRes, responsibilities] = await Promise.all([
+    supabase
+      .from("objects")
+      .select("id, object_ref, name, properties")
+      .eq("id", id)
+      .eq("object_type", "organization")
+      .limit(1),
+    supabase
+      .from("rel_member_of")
+      .select("from_id, role")
+      .eq("to_id", id)
+      .is("valid_until", null),
+    loadResponsibilitiesOf(supabase, id),
+  ]);
+
+  if (objRes.error) throw new Error(objRes.error.message);
+  const obj = objRes.data?.[0];
   if (!obj) return null;
 
   const props = (obj.properties ?? {}) as Record<string, unknown>;
@@ -259,14 +271,8 @@ export async function fetchOrganization(
       ? (contactRaw as Record<string, unknown>)
       : null;
 
-  // Členovia (rel_member_of, kde to_id = táto firma).
-  const { data: memRows, error: memErr } = await supabase
-    .from("rel_member_of")
-    .select("from_id, role")
-    .eq("to_id", id)
-    .is("valid_until", null);
-  if (memErr) throw new Error(memErr.message);
-  const memberRows = (memRows ?? []) as { from_id: string; role: string | null }[];
+  if (memRes.error) throw new Error(memRes.error.message);
+  const memberRows = (memRes.data ?? []) as { from_id: string; role: string | null }[];
   const personLinks = await loadObjectLinks(
     supabase,
     memberRows.map((m) => m.from_id)
@@ -283,8 +289,6 @@ export async function fetchOrganization(
     })
     .sort((a, b) => (a.personName ?? "").localeCompare(b.personName ?? "", "sk"));
 
-  const responsibilities = await loadResponsibilitiesOf(supabase, id);
-
   return {
     id: obj.id as string,
     object_ref: (obj.object_ref as string | null) ?? null,
@@ -299,34 +303,38 @@ export async function fetchOrganization(
 export async function fetchDocument(id: string): Promise<DocumentDetail | null> {
   const supabase = getSupabaseAdmin();
 
-  const { data: objRows, error } = await supabase
-    .from("objects")
-    .select("id, object_ref, name")
-    .eq("id", id)
-    .eq("object_type", "document")
-    .limit(1);
-  if (error) throw new Error(error.message);
-  const obj = objRows?.[0];
+  // Objekt, metadáta dokumentu a väzby „pripojené k" naraz.
+  const [objRes, dRes, relRes] = await Promise.all([
+    supabase
+      .from("objects")
+      .select("id, object_ref, name")
+      .eq("id", id)
+      .eq("object_type", "document")
+      .limit(1),
+    supabase
+      .from("documents")
+      .select(
+        "identification, description, location, purpose, revision, document_owner, status, valid_from, valid_until"
+      )
+      .eq("id", id)
+      .limit(1),
+    supabase
+      .from("rel_has_document")
+      .select("from_id, role")
+      .eq("to_id", id)
+      .is("valid_until", null),
+  ]);
+
+  if (objRes.error) throw new Error(objRes.error.message);
+  const obj = objRes.data?.[0];
   if (!obj) return null;
 
-  const { data: dRows, error: dErr } = await supabase
-    .from("documents")
-    .select(
-      "identification, description, location, purpose, revision, document_owner, status, valid_from, valid_until"
-    )
-    .eq("id", id)
-    .limit(1);
-  if (dErr) throw new Error(dErr.message);
-  const d = dRows?.[0];
+  if (dRes.error) throw new Error(dRes.error.message);
+  const d = dRes.data?.[0];
 
   // Pripojené k (rel_has_document, kde to_id = tento dokument).
-  const { data: relRows, error: relErr } = await supabase
-    .from("rel_has_document")
-    .select("from_id, role")
-    .eq("to_id", id)
-    .is("valid_until", null);
-  if (relErr) throw new Error(relErr.message);
-  const rels = (relRows ?? []) as { from_id: string; role: string | null }[];
+  if (relRes.error) throw new Error(relRes.error.message);
+  const rels = (relRes.data ?? []) as { from_id: string; role: string | null }[];
   const links = await loadObjectLinks(
     supabase,
     rels.map((r) => r.from_id)
