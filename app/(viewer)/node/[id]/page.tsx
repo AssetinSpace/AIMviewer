@@ -3,11 +3,7 @@ import { notFound, redirect } from "next/navigation";
 
 import { fetchNode, type NodeDetail, type NodeRef } from "@/lib/data/spatial";
 import { fetchAsset } from "@/lib/data/asset";
-import {
-  fetchDocuments,
-  fetchResponsibilities,
-  fetchGuidHistory,
-} from "@/lib/data/relations";
+import { fetchNodeSections, type NodeSectionsData } from "@/lib/data/relations";
 import {
   fetchObjectMeta,
   fetchPerson,
@@ -83,14 +79,17 @@ function NodeHeader({
 
 /**
  * Generické sekcie uzla (S3, D-029): dokumenty, zodpovednosti, história GUID.
- * Spoločné pre asset kartu aj priestorové uzly.
+ * Presentational — dáta dostane zvonku, aby ich volajúci mohol načítať paralelne
+ * s ostatným obsahom karty.
  */
-async function NodeSections({ id, ifcGuid }: { id: string; ifcGuid: string | null }) {
-  const [documents, responsibilities, guidHistory] = await Promise.all([
-    fetchDocuments(id),
-    fetchResponsibilities(id),
-    fetchGuidHistory(id),
-  ]);
+function NodeSectionsCards({
+  data,
+  ifcGuid,
+}: {
+  data: NodeSectionsData;
+  ifcGuid: string | null;
+}) {
+  const { documents, responsibilities, guidHistory } = data;
 
   return (
     <>
@@ -130,10 +129,20 @@ async function NodeSections({ id, ifcGuid }: { id: string; ifcGuid: string | nul
   );
 }
 
+/** Async wrapper — načíta sekcie sám (priestorové uzly, kde nie je čo paralelizovať). */
+async function NodeSections({ id, ifcGuid }: { id: string; ifcGuid: string | null }) {
+  const data = await fetchNodeSections(id);
+  return <NodeSectionsCards data={data} ifcGuid={ifcGuid} />;
+}
+
 /** Detail assetu (S2 jadro + S3 sekcie): atribúty, properties, klasifikácie,
  *  dokumenty, zodpovednosti, GUID história. */
 async function AssetDetailView({ id }: { id: string }) {
-  const asset = await fetchAsset(id);
+  // Asset karta aj jej S3 sekcie závisia len od `id` → načítaj ich paralelne.
+  const [asset, sections] = await Promise.all([
+    fetchAsset(id),
+    fetchNodeSections(id),
+  ]);
   if (!asset) notFound();
 
   const predef = asset.predefinedType.value && (
@@ -201,7 +210,7 @@ async function AssetDetailView({ id }: { id: string }) {
         </CardContent>
       </Card>
 
-      <NodeSections id={id} ifcGuid={asset.ifc_guid} />
+      <NodeSectionsCards data={sections} ifcGuid={asset.ifc_guid} />
     </>
   );
 }

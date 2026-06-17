@@ -1,5 +1,7 @@
 import "server-only";
 
+import { cache } from "react";
+
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 /**
@@ -56,8 +58,13 @@ interface Graph {
   parentOf: Map<string, string>;
 }
 
-/** Načíta celý priestorový graf jedným setom dotazov. */
-async function loadGraph(): Promise<Graph> {
+/**
+ * Načíta celý priestorový graf jedným setom dotazov.
+ * `cache()` dedupe-uje volania v rámci jedného requestu — layout (strom) aj
+ * page (`fetchNode`) zdieľajú jeden výsledok namiesto dvoch identických setov
+ * dotazov.
+ */
+const loadGraph = cache(async (): Promise<Graph> => {
   const supabase = getSupabaseAdmin();
 
   const [objectsRes, relsRes, floorsRes] = await Promise.all([
@@ -111,7 +118,7 @@ async function loadGraph(): Promise<Graph> {
   }
 
   return { byId, childrenOf, parentOf };
-}
+});
 
 /** Poradie potomkov: floory podľa elevation, inak podľa object_ref/name. */
 function compareNodes(a: ObjectRow, b: ObjectRow): number {

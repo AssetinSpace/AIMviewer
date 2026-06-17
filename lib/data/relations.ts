@@ -55,6 +55,24 @@ export interface GuidHistoryEntry {
   active: boolean;
 }
 
+export interface NodeSectionsData {
+  documents: DocumentRef[];
+  responsibilities: Responsibility[];
+  guidHistory: GuidHistoryEntry[];
+}
+
+/** Tri generické sekcie uzla naraz (paralelne) — jeden vstupný bod pre Viewer. */
+export async function fetchNodeSections(
+  objectId: string
+): Promise<NodeSectionsData> {
+  const [documents, responsibilities, guidHistory] = await Promise.all([
+    fetchDocuments(objectId),
+    fetchResponsibilities(objectId),
+    fetchGuidHistory(objectId),
+  ]);
+  return { documents, responsibilities, guidHistory };
+}
+
 /** Dokumenty pripojené na uzol (`rel_has_document` → `documents`, D-014). */
 export async function fetchDocuments(objectId: string): Promise<DocumentRef[]> {
   const supabase = getSupabaseAdmin();

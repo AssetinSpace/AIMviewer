@@ -1,7 +1,9 @@
 import Link from "next/link";
 
 import { fetchSpatialTree } from "@/lib/data/spatial";
+import { fetchSidebarNav } from "@/lib/data/nav";
 import { SpatialTree } from "@/components/spatial-tree";
+import { SidebarNav } from "@/components/sidebar-nav";
 
 // Strom čítame server-side pri každom requeste (seed sa mení v dev).
 export const dynamic = "force-dynamic";
@@ -11,7 +13,7 @@ export default async function ViewerLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const tree = await fetchSpatialTree();
+  const [tree, nav] = await Promise.all([fetchSpatialTree(), fetchSidebarNav()]);
 
   return (
     <div className="flex flex-1 overflow-hidden">
@@ -24,6 +26,7 @@ export default async function ViewerLayout({
         </div>
         <nav className="flex-1 overflow-y-auto p-2">
           <SpatialTree tree={tree} />
+          <SidebarNav nav={nav} />
         </nav>
       </aside>
 

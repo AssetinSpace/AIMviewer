@@ -229,32 +229,38 @@ interface EffRow {
 export async function fetchAsset(id: string): Promise<AssetDetail | null> {
   const supabase = getSupabaseAdmin();
 
-  // 1) Effective view — zapuzdruje dedičnosť (D-021). Žiadny riadok = nie je asset.
-  const { data: effRows, error: effErr } = await supabase
-    .from("v_asset_effective")
-    .select(
-      "id, object_ref, name, ifc_type, predefined_type, user_defined_type, type_id, type_name"
-    )
-    .eq("id", id)
-    .limit(1);
-  if (effErr) throw new Error(effErr.message);
-  const eff = (effRows?.[0] ?? null) as EffRow | null;
+  // Effective view, raw occurrence a klasifikácie sú navzájom nezávislé →
+  // spustíme ich paralelne (jeden round-trip namiesto troch za sebou).
+  const [effRes, occRes, classifications] = await Promise.all([
+    supabase
+      .from("v_asset_effective")
+      .select(
+        "id, object_ref, name, ifc_type, predefined_type, user_defined_type, type_id, type_name"
+      )
+      .eq("id", id)
+      .limit(1),
+    supabase
+      .from("objects")
+      .select("ifc_guid, predefined_type, properties")
+      .eq("id", id)
+      .limit(1),
+    fetchAssetClassifications(supabase, id),
+  ]);
+
+  // Effective view — zapuzdruje dedičnosť (D-021). Žiadny riadok = nie je asset.
+  if (effRes.error) throw new Error(effRes.error.message);
+  const eff = (effRes.data?.[0] ?? null) as EffRow | null;
   if (!eff) return null;
 
-  // 2) Raw occurrence — ifc_guid (vo view nie je) + raw properties pre provenance.
-  const { data: occRows, error: occErr } = await supabase
-    .from("objects")
-    .select("ifc_guid, predefined_type, properties")
-    .eq("id", id)
-    .limit(1);
-  if (occErr) throw new Error(occErr.message);
-  const occ = (occRows?.[0] ?? null) as {
+  // Raw occurrence — ifc_guid (vo view nie je) + raw properties pre provenance.
+  if (occRes.error) throw new Error(occRes.error.message);
+  const occ = (occRes.data?.[0] ?? null) as {
     ifc_guid: string | null;
     predefined_type: string | null;
     properties: PropertyBag | null;
   } | null;
 
-  // 3) Raw type — zdieľané properties (ak má occurrence typ).
+  // Raw type — zdieľané properties (závisí od eff.type_id → až po effective view).
   let typeProps: PropertyBag = {};
   let typeRef: TypeRef | null = null;
   if (eff.type_id) {
@@ -284,8 +290,6 @@ export async function fetchAsset(id: string): Promise<AssetDetail | null> {
     !!eff.type_id &&
     eff.predefined_type != null &&
     (occPredef == null || occPredef === "NOTDEFINED");
-
-  const classifications = await fetchAssetClassifications(supabase, id);
 
   return {
     id: eff.id,
