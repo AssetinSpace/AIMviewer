@@ -11,7 +11,9 @@
 
 - ✅ Schéma + iniciálna migrácia (`20260616120000_init_aim_schema.sql`, D-025)
 - ✅ Seed dáta (`supabase/seed.sql`) — previazanosť overená na Supabase Cloud
-- 🟢 **Teraz:** AIM Viewer — sprinty S0–S4 nižšie
+- ✅ S0 — Next.js skeleton + Vercel deploy + Supabase connection (D-026)
+- ✅ S1 — Priestorová hierarchia: strom + route per uzol (D-027)
+- 🟢 **Teraz:** AIM Viewer — S2 (asset karta) nižšie
 - ⏸️ ETL pipeline (Python + ifcopenshell) — **paralelná vetva**, nie blocker
 - ⏸️ LLM interface — **parkované** (S-LLM), doladíme neskôr
 

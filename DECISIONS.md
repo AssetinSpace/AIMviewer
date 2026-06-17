@@ -192,6 +192,22 @@ aby každý mal demovateľný výstup (D-003) a jadro (dedičnosť/union) prišl
 LLM interface (text-to-SQL, D-005) a vlastná doména sa riešia až po S3. Reálne dáta
 z ETL nahradia seed v S4 — dovtedy Viewer stavia na `supabase/seed.sql`.
 
+### D-027 — Viewer navigácia: route per uzol
+**Rozhodnutie:** Priestorová hierarchia (S1) je **route-first**: perzistentný sidebar
+so stromom (`app/(viewer)/layout.tsx`) + detail uzla na samostatnej URL
+`app/(viewer)/node/[id]`. Výber uzla žije v URL, nie v React state. Connection-test
+z S0 presunutý na `/health`. Data-access vrstva `lib/data/spatial.ts` (server-only)
+načíta `objects` + aktívne `rel_located_in` + `floors` jedným setom dotazov a poskladá
+strom v pamäti (~15 uzlov, žiadna rekurzia v DB).
+**Dôvod:** S2/S3 sú celé o detaile assetu (dedičnosť, klasifikácie, dokumenty,
+zodpovednosti) — prirodzene server-rendered stránky s vlastnou URL. Voľbou route-first
+sa strom píše raz a detail v S2 sa nemení na „presun výberu do URL"; navyše dostávame
+zdieľateľné odkazy a deep-linking zadarmo. Alternatíva (výber v React state) by si
+v S2 vyžiadala prepis dátového toku detailu.
+**Dôsledok:** Klik na asset v S1 vedie na placeholder („detail príde v S2"). Strom je
+jediný client komponent (expand/collapse, zvýraznenie aktívneho cez `usePathname`);
+zvyšok je server-side.
+
 ---
 
 ## 7. Otvorené otázky (ešte neriešené)

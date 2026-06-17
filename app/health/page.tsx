@@ -27,17 +27,15 @@ async function fetchObjectsCount(): Promise<
   }
 }
 
-export default async function Home() {
+export default async function Health() {
   const result = await fetchObjectsCount();
 
   return (
     <main className="flex flex-1 items-center justify-center p-8">
       <Card className="w-full max-w-md">
         <CardHeader>
-          <CardTitle>AIM Viewer — S0</CardTitle>
-          <CardDescription>
-            Next.js skeleton + Supabase connection test
-          </CardDescription>
+          <CardTitle>AIM Viewer — health</CardTitle>
+          <CardDescription>Supabase connection test</CardDescription>
         </CardHeader>
         <CardContent>
           {result.ok ? (
@@ -48,9 +46,7 @@ export default async function Home() {
               <p className="text-sm text-muted-foreground">
                 <code>select count(*) from objects</code>
               </p>
-              <p className="text-4xl font-semibold tabular-nums">
-                {result.count}
-              </p>
+              <p className="text-4xl font-semibold tabular-nums">{result.count}</p>
             </div>
           ) : (
             <div className="space-y-2">
