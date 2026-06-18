@@ -17,7 +17,7 @@
 - ✅ S3 — Dokumenty + zodpovednosti + GUID história, generický object route (D-029)
 - 🟢 **Teraz:** S4 — polish & launch (čaká na ETL reálne dáta + doménu)
 - 🟡 ETL pipeline (Python + ifcopenshell, D-031) — **scaffold hotový** (`etl/`); IFC z diplomky **dodaný** (`podklady/`); paralelná vetva, nie blocker
-- 🟡 Dokumenty + coding scheme (D-032/D-033) — **rozhodnuté**, čaká implementácia (viď ETL fázy nižšie)
+- 🟡 Dokumenty + coding scheme (D-032/D-033) — **rozhodnuté**, rozpísané do E-sprintov (E1–E5, viď paralelný track nižšie); **ďalší krok = E1**
 - ⏸️ LLM interface — **parkované** (S-LLM), doladíme neskôr
 
 **Máme:** Supabase Cloud (projekt `acwoupricatirhlfkhvk`) + GitHub repo (`AssetinSpace/AIMviewer`) + Vercel deploy (auto-deploy z `main`). **Chýba zatiaľ:** vlastná doména (príde v S4).
@@ -89,23 +89,58 @@
   (extract/transform/load, idempotentný upsert, CLI) hotový a syntakticky overený;
   ostáva doladiť mapovanie (`TODO(model)`) a spustiť end-to-end na reálnom IFC.
 
-### ETL fázy — dáta + dokumenty (D-031/D-032/D-033)
+## ETL + Dokumenty — paralelný track (E-sprinty)
 
-Poradie je dané závislosťou: všetko sa páruje cez `object_ref`, takže ten musí byť
-správny **prvý**. Vstup: `podklady/FINAL/` (IFC ASR+VZT, IDS, výkresy PDF, SNIM hierarchia).
+> Samostatný track popri Viewer sprintoch (S0–S4). Rovnaký princíp: **každý sprint
+> končí niečím demovateľným**, poradie ide podľa závislostí. Všetko sa páruje cez
+> `object_ref`, takže ten musí byť správny **prvý** (E1 je prerekvizita ostatných).
+> Vstup: `podklady/FINAL/` (IFC ASR+VZT, výkresy PDF, SNIM hierarchia).
+> Rozhodnutia: D-031 (ETL), D-032 (dokumenty), D-033 (coding scheme).
+>
+> **IDS validácia nie je v near-term scope** — coding scheme teraz slúži len na
+> extrakciu `object_ref`. Conformance/IDS je parkované (E6).
 
-| Fáza | Cieľ | Výstup |
+| Sprint | Cieľ (demovateľný výstup) | Kľúčové |
 |---|---|---|
-| **E1 — Identity spine** (D-033) | `etl/scheme.py` (field-source resolver + SNIM definícia); prepis `_RefAllocator` → `object_ref` zo schémy (type `DD01.06` + instance `DD01.06.03`), number→text padding; validačný report (mini-IDS). | `asset_type`/`asset` s SNIM `object_ref` v DB |
-| **E2 — Document pipeline** (D-032) | Supabase bucket `documents/`; `etl/doc_upload.py` (naming convention + `links.csv` fallback → upload + IfcDocument uzly + `rel_has_document`); `storage_type` migrácia. PDF text scan výkresov (`pdfplumber`, proximity match na `object_ref`). | dokumenty viazané na prvky/podlažia vo Vieweri |
-| **E3 — ICDD export** (D-015/D-032) | `etl/icdd_export.py` (rdflib): `linkset.ttl` z `rel_has_document`, `payload_documents/`, `--embed-payloads`. | ISO 21597 kontajner na handover |
+| **E1 — Coding scheme + object_ref** | `etl/scheme.py` (field-source resolver + SNIM definícia) a prepis `_RefAllocator` → `object_ref` zo schémy. `--dry-run` na ASR IFC vypíše objekty so SNIM kódom + **coverage report** (% prvkov s platným kódom vs fallback GUID). | D-033 |
+| **E2 — ETL load reálnych dát** | Doladiť mapovanie (`TODO(model)`: hierarchia, asset/asset_type, psety, klasifikácie), spustiť load do Supabase. Viewer ukazuje **reálnu budovu z IFC** namiesto seedu. | D-031 |
+| **E3 — Document storage + upload** | Supabase bucket `documents/` + `storage_type` migrácia; `etl/doc_upload.py` (naming convention + `links.csv` fallback → upload + IfcDocument uzly + `rel_has_document`). Nahrané PDF **viditeľné na karte prvku** vo Vieweri. | D-032 |
+| **E4 — PDF výkres auto-linking** | `pdfplumber` text + bbox; regex **odvodený zo schémy**; proximity match fragmentov (`DD01` + `06.03`). Pôdorys 1NP sa **automaticky prepojí** na typy prvkov v ňom. | D-032/D-033 |
+| **E5 — ICDD export** | `etl/icdd_export.py` (rdflib): `linkset.ttl` z `rel_has_document`, `payload_documents/`, prepínač `--embed-payloads`. **Stiahnuteľný ISO 21597 kontajner.** | D-015/D-032 |
+| **E6 — Validácia** ⏸️ parkované | Coding scheme + IDS súbory → conformance report (čo nesedí proti požiadavkám). Až keď bude treba. | D-033 |
 
-Pozn.: E1 je prerekvizita E2/E3. Otvorené body (INST padding, multi-projekt scoping,
-`rel_supersedes`, AI matching) sú v DECISIONS §7.
+### Detail
+
+**E1 — Coding scheme + object_ref** ← ĎALŠÍ KROK
+- `etl/scheme.py`: field-source resolver (`from: property|attribute|classification|type_property`,
+  voliteľné `extract` regex + `format` s `pad`), `applies_to` per IFC trieda.
+- SNIM definícia z `SNIM - Hierarchia.pdf` (dvere, steny, podlahy, podhľady, strechy,
+  fasáda, zámočnícke/klampiarske výrobky).
+- Prepis `_RefAllocator` v `transform.py`: `object_ref` zo schémy (type `DD01.06` +
+  instance `DD01.06.03`, zero-pad číselných polí); fallback `ifc_guid` len keď kód chýba.
+- Coverage report pri `--dry-run` (NIE IDS — len pokrytie).
+- Akceptačné: `--dry-run` na ASR IFC ukáže `asset_type`/`asset` so SNIM `object_ref`.
+
+**E2 — ETL load reálnych dát**
+- Doladiť `TODO(model)` v `transform.py`; load do Supabase (idempotentný upsert, D-031).
+- Akceptačné: Viewer (S1–S3) beží na reálnej budove namiesto seedu.
+
+**E3 — Document storage + upload**
+- Naming convention (pozičné polia + delimiter, Dalux štýl) + `links.csv` fallback.
+- Akceptačné: nahrané PDF priradené k prvku/podlažiu, klik z karty otvorí súbor.
+
+**E4 — PDF výkres auto-linking**
+- Akceptačné: výber pôdorysu → zoznam typov prvkov na ňom (z SNIM kódov vo výkrese).
+
+**E5 — ICDD export**
+- Akceptačné: vygenerovaný `.icdd` ZIP otvoriteľný, linkset drží väzby dokument↔prvok.
+
+Otvorené body (INST padding, multi-projekt scoping, `rel_supersedes`, AI matching,
+naming convention finálny tvar) sú v DECISIONS §7.
 
 ## Mimo scope (zatiaľ)
 - Auth + RLS (príde s verejným/multi-user prístupom — aditívne, D-025).
 - 3D / IFC.js geometria (D-007: sme dátový viewer, nie geometrický).
 
 ---
-*Posledná aktualizácia: 2026-06-18 — IFC + podklady dodané; D-032/D-033 rozhodnuté. Ďalej: ETL fázy E1 (identity spine) → E2 (dokumenty) → E3 (ICDD export).*
+*Posledná aktualizácia: 2026-06-18 — IFC + podklady dodané; D-032/D-033 rozhodnuté a rozpísané do E-sprintov (E1 coding scheme → E2 load → E3 storage → E4 PDF scan → E5 ICDD; E6 validácia parkovaná). Ďalší krok: E1.*
