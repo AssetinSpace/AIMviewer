@@ -329,6 +329,92 @@ priestorovú hierarchiu — doladenie modelu je otvorená otázka §7.
 **Verifikácia:** scaffold syntakticky overený (`py_compile`); end-to-end (IFC → DB →
 Viewer ukazuje reálne dáta) až po dodaní IFC súboru.
 
+### D-032 — PDF dokumenty: úložisko, model, prepojenie, export
+**Kontext:** `documents.location` je zatiaľ len textová URL. Treba uchopiť reálne PDF
+end-to-end: kam ich uložiť, ako ich zapísať do dátového modelu a ako ich exportovať.
+Validované o ICDD prax (ISO 21597) aj o Daluxov produktový prístup (file naming +
+metadata + hyperlinks).
+
+**Rozhodnutie (úložisko — hybrid s explicitnou typológiou):**
+- **Supabase Storage** pre nami nahrané súbory; `location` = hostovaná URL (signed).
+- **Externé URL** (SharePoint/web/BIM server) — držíme len odkaz as-is.
+- **Neresolvnuté** — dokument existuje (napr. z IFC), ale súbor nie je dostupný.
+- Nový stĺpec **`documents.storage_type`** (`supabase | external | unresolved`), aby
+  Viewer/Export vedel s `location` narábať bez parsovania URL schémy. Pridá sa **novou
+  migráciou** (aditívne, nikdy needitujeme existujúcu — viď SCHEMA §7/§8).
+
+**Rozhodnutie (model — ideme ďalej než Dalux):** dokument je **prvotriedny uzol grafu**,
+nie len vizuálny hyperlink nad PDF. Využíva existujúci D-014 model:
+`objects(object_type='document')` + prípona `documents` (IfcDocumentInformation polia) +
+typovaná hrana `rel_has_document(from=asset/floor/building, to=document, role)`. Výhoda
+oproti Daluxu: vzťah je **dotazovateľný, verziovaný a exportovateľný** (nie nakreslený na
+papieri). Schéma sa nemení (okrem `storage_type`).
+
+**Rozhodnutie (revízie/platnosť):** každá revízia = samostatný `objects` riadok
+(`documents.revision`, `valid_from/until` = platnosť obsahu; `rel_has_document.valid_*`
+= platnosť väzby). Supersession **implicitne** teraz (verzie s rovnakým name/identification
+zoradené podľa `valid_from`); explicitná hrana `rel_supersedes` je odložená (otvorené §7).
+
+**Rozhodnutie (export):** nový skript `etl/icdd_export.py` (rdflib) generuje ICDD
+kontajner (D-015): `linkset.ttl` z `rel_has_document` (IRI z `object_ref`),
+`payload_documents/` podľa prepínača **`--embed-payloads`** (embed = self-contained
+handover; reference = malý balík závislý na online dostupnosti).
+- `storage_type=supabase` → stiahnuť z Storage do payloadu (alebo IRI pri reference).
+- `storage_type=external` → IRI na externú URL (embed voliteľný).
+- `storage_type=unresolved` → len link záznam s poznámkou, mimo payloadu.
+
+**Dôsledok:** nový Storage bucket `documents/`; nový ETL `etl/doc_upload.py` (viď D-033
+pre matching); `storage_type` migrácia; ICDD export skript. Implementácia až po D-033
+identity spine (object_ref musí byť zdieľaný kľúč).
+
+### D-033 — Coding scheme: field-source resolver, object_ref a prepojenie dokumentov
+**Kontext:** dokument a prvok sa musia stretnúť na rovnakom kľúči = `object_ref`. ETL ho
+teraz skladá z IFC `Tag` (Revit interné číslo, napr. `959314`) — nepoužiteľné na
+párovanie s výkresmi. Reálny model diplomky používa **SNIM** (6-pozičný kód
+TSP·PSP·UOT·INST), kde dáta sú v psete (dvere: `IFC_Dvere.Assembly Code` = `DD01`,
+`Type Mark`=6→`06`, `Mark`=3→`03` ⇒ `DD01.06.03`, presne ako na výkrese). V inom projekte
+môže byť kód v `Name`, klasifikácii či inom psete. Diplomka už má aj **IDS** na validáciu.
+
+**Rozhodnutie (field-source resolver, projektovo-nezávislý):** kódovacia schéma sa
+definuje **pred projektom** (z informačných požiadaviek / EIR) ako **usporiadané typované
+polia + delimitery**, nie jeden hardcoded regex (poučené z Daluxových file naming
+templates). Každé pole má **deskriptor zdroja** — ETL má sadu resolverov, config ich
+zapojí:
+- `from: property` (pomenovaný pset alebo naprieč všetkými), `attribute` (`Name`/`Tag`/
+  `ObjectType`/`Description`), `classification` (system+identification), `type_property`
+  (z `IfcTypeObject`).
+- voliteľné `extract:` (regex capture — pre kódy zapečené v texte, napr. `Name` = `…CC:DD02.05…`)
+  a `format:` (number→text, **zero-pad** šírkou podľa výkresu, case, trim).
+- `applies_to` (applicability per IFC trieda) — rovnaká štruktúra ako IDS.
+
+**Rozhodnutie (object_ref):** `object_ref` sa **skladá zo schémy**, nie z `Tag`. Type-level
+(`DD01.06` → `asset_type`) aj instance-level (`DD01.06.03` → `asset`) — inštančné
+kódovanie v diplomke je kompletné (skorší blocker padol; išlo o zámenu IFC `Tag` atribútu
+s property `Mark`). Fallback na `ifc_guid` len keď kód v zdroji chýba. **Nahrádza
+provizórne určenie `object_ref` z D-031** (Tag/Name fallback GUID).
+
+**Rozhodnutie (jeden zdroj pravdy):** tá istá definícia (applicability + polia) poháňa
+**extrakciu** (ETL: odkiaľ čítať) aj **validáciu** (IDS: či to tam je) — obe z požiadaviek
+projektu. ETL sa dodáva generické; per-projekt dostane config (časom odvoditeľný z IDS).
+Žiadny nový štandard nevyžaduje zmenu kódu, len inú definíciu schémy.
+
+**Rozhodnutie (prepojenie dokument↔prvok — bez ručného IFC):** explicitný
+`IfcRelAssociatesDocument` sa v praxi nepoužíva → **zavrhnuté ako primárna cesta**.
+Primárne dve cesty:
+1. **Naming convention súborov** — pozičné polia + delimiter (Dalux štýl); pri uploade sa
+   názov rozseká → `object_ref` + `role`. Pre legacy archívy fallback **`links.csv`** manifest.
+2. **PDF text scan** (výkresy) — `pdfplumber` vyťahuje text + bounding boxy; regex je
+   **odvodený zo schémy**. Bublina na výkrese nie je jeden reťazec (`DD01` a `06.03`
+   zvlášť) → **proximity match** (tokeny v okruhu poskladané do kódu) + viacúrovňovo
+   (`DD01` = type/podlažie stačí; `.06.03` upresní inštanciu). Match na string zložený
+   z DB voči tomu, čo je v PDF (Daluxov caveat: fonty/medzery/bold ovplyvňujú detekciu).
+- AI content matching (LLM nad obsahom PDF) = budúce rozšírenie, nie teraz.
+
+**Dôsledok:** nový `etl/scheme.py` (field-source model + SNIM definícia z
+`SNIM - Hierarchia.pdf`); prepis `_RefAllocator` v `etl/transform.py` (object_ref zo
+schémy + padding + validačný report = náš mini-IDS); až potom dáva zmysel D-032 pipeline.
+**Poradie implementácie: identity spine (object_ref) → document pipeline → ICDD export.**
+
 ---
 
 ## 7. Otvorené otázky (ešte neriešené)
@@ -339,9 +425,18 @@ Viewer ukazuje reálne dáta) až po dodaní IFC súboru.
 - **Ďalší rozvoj po AIM Vieweri** — procesy, MIDP/TIDP generovanie
 - **property_set_templates** — voliteľná referenčná tabuľka pre bSDD validáciu psetov (až pri validácii handoveru)
 - **Actor model C** — org-hierarchia, štruktúrované adresy, intrinsic roly (plánované aditívne, viď D-024)
+- **Multi-projekt scoping** — dnes 1 Supabase = 1 budova; pre platformu pridať `project`
+  entitu + coding-scheme config per projekt (D-033). Aditívne, rieši sa pri 2. projekte.
+- **`rel_supersedes`** — explicitná väzba revízií dokumentov (D-032); zatiaľ implicitne
+  cez name + `valid_from`.
+- **Instance-level INST padding** — šírka číselných polí (`Mark` `03` vs generický `001`)
+  potvrdiť per pole podľa toho, čo je vytlačené na výkrese (D-033 `format.pad`).
+- **AI/LLM matching dokumentov** — content-based párovanie PDF↔prvok keď naming/scan
+  nestačí (D-033); až s reálnymi dátami z viacerých projektov.
 
 **Vyriešené počas návrhu schémy:** dátový model AIM Viewer (D-018–D-024), type vs occurrence (D-021), actor granularita (D-024).
+**Vyriešené v dokumentovom brainstorme:** úložisko + model + export PDF (D-032), coding scheme + object_ref + linking (D-033). Z otvorených odstránené „dokument-element linking" a spresnený zdroj `object_ref`.
 
 ---
 
-*Posledná aktualizácia: 2026-06-17 — S0–S3 hotové + deploy na Verceli (D-026–D-030). Ďalej: S4 (polish & launch — čaká na ETL reálne dáta + doménu).*
+*Posledná aktualizácia: 2026-06-18 — dokumentový brainstorm: D-032 (PDF úložisko/model/export) + D-033 (coding scheme, object_ref, linking). Ďalej: ETL identity spine → document pipeline → ICDD export.*

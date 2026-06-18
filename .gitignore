@@ -37,3 +37,6 @@ etl/.venv/
 # IFC modely (veľké, lokálne — necommitovať)
 *.ifc
 etl/data/
+
+# Podklady z diplomky (~79 MB binárok: IFC/PDF/IDS) — držané v OneDrive, necommitovať
+podklady/

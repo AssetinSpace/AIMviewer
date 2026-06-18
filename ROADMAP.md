@@ -16,7 +16,8 @@
 - ✅ S2 — Asset karta: dedičnosť + provenance, klasifikácie, type route (D-028)
 - ✅ S3 — Dokumenty + zodpovednosti + GUID história, generický object route (D-029)
 - 🟢 **Teraz:** S4 — polish & launch (čaká na ETL reálne dáta + doménu)
-- 🟡 ETL pipeline (Python + ifcopenshell, D-031) — **scaffold hotový** (`etl/`), čaká na IFC z diplomky; paralelná vetva, nie blocker
+- 🟡 ETL pipeline (Python + ifcopenshell, D-031) — **scaffold hotový** (`etl/`); IFC z diplomky **dodaný** (`podklady/`); paralelná vetva, nie blocker
+- 🟡 Dokumenty + coding scheme (D-032/D-033) — **rozhodnuté**, čaká implementácia (viď ETL fázy nižšie)
 - ⏸️ LLM interface — **parkované** (S-LLM), doladíme neskôr
 
 **Máme:** Supabase Cloud (projekt `acwoupricatirhlfkhvk`) + GitHub repo (`AssetinSpace/AIMviewer`) + Vercel deploy (auto-deploy z `main`). **Chýba zatiaľ:** vlastná doména (príde v S4).
@@ -88,9 +89,23 @@
   (extract/transform/load, idempotentný upsert, CLI) hotový a syntakticky overený;
   ostáva doladiť mapovanie (`TODO(model)`) a spustiť end-to-end na reálnom IFC.
 
+### ETL fázy — dáta + dokumenty (D-031/D-032/D-033)
+
+Poradie je dané závislosťou: všetko sa páruje cez `object_ref`, takže ten musí byť
+správny **prvý**. Vstup: `podklady/FINAL/` (IFC ASR+VZT, IDS, výkresy PDF, SNIM hierarchia).
+
+| Fáza | Cieľ | Výstup |
+|---|---|---|
+| **E1 — Identity spine** (D-033) | `etl/scheme.py` (field-source resolver + SNIM definícia); prepis `_RefAllocator` → `object_ref` zo schémy (type `DD01.06` + instance `DD01.06.03`), number→text padding; validačný report (mini-IDS). | `asset_type`/`asset` s SNIM `object_ref` v DB |
+| **E2 — Document pipeline** (D-032) | Supabase bucket `documents/`; `etl/doc_upload.py` (naming convention + `links.csv` fallback → upload + IfcDocument uzly + `rel_has_document`); `storage_type` migrácia. PDF text scan výkresov (`pdfplumber`, proximity match na `object_ref`). | dokumenty viazané na prvky/podlažia vo Vieweri |
+| **E3 — ICDD export** (D-015/D-032) | `etl/icdd_export.py` (rdflib): `linkset.ttl` z `rel_has_document`, `payload_documents/`, `--embed-payloads`. | ISO 21597 kontajner na handover |
+
+Pozn.: E1 je prerekvizita E2/E3. Otvorené body (INST padding, multi-projekt scoping,
+`rel_supersedes`, AI matching) sú v DECISIONS §7.
+
 ## Mimo scope (zatiaľ)
 - Auth + RLS (príde s verejným/multi-user prístupom — aditívne, D-025).
 - 3D / IFC.js geometria (D-007: sme dátový viewer, nie geometrický).
 
 ---
-*Posledná aktualizácia: 2026-06-17 — S0–S3 hotové, deploy na Verceli. Ďalej: S4 (polish & launch — čaká na ETL reálne dáta + doménu).*
+*Posledná aktualizácia: 2026-06-18 — IFC + podklady dodané; D-032/D-033 rozhodnuté. Ďalej: ETL fázy E1 (identity spine) → E2 (dokumenty) → E3 (ICDD export).*

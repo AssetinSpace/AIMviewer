@@ -324,6 +324,17 @@ Dovtedy **capture-don't-structure**: ETL uloží surové adresy/org-väzby do
 rezervovaných kľúčov (`_contact`, `_org`) v `properties`, nech sa dáta zo zdroja
 nestratia. Povýšenie na štruktúru (C) je neskôr čistá migrácia.
 
+**Plánované aditívne — dokumenty (D-032):**
+- **`documents.storage_type`** `text` (`supabase | external | unresolved`) — ako narábať
+  s `location`. Pridá sa **novou migráciou** (existujúca sa needituje).
+- Voliteľne neskôr **`rel_supersedes`** (revízie dokumentov) — zatiaľ implicitne cez
+  name + `valid_from`.
+
+**Plánované aditívne — coding scheme (D-033):** `object_ref` sa skladá z projektovej
+kódovacej schémy (field-source resolver: pset / atribút / klasifikácia + `extract`/`format`),
+nie z IFC `Tag`. Definícia schémy žije v ETL/projektovom configu (`etl/scheme.py`), nie
+nutne v DB. Multi-projekt `project` entita + per-projekt schéma = aditívne pri 2. projekte.
+
 **Trvalo mimo scope:** geometria / RepresentationMaps (sme dátový viewer);
 `property_set_templates` (bSDD validácia) — až pri validácii handoveru.
 

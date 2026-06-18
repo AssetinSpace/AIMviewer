@@ -14,9 +14,9 @@ Primárny use case: AIM Viewer — ukážka správne previazaných dát.
 - **rdflib** — RDF/ICDD export
 
 ## Kľúčové dokumenty — vždy čítaj pred prácou
-- `docs/DECISIONS.md` — všetky architektonické rozhodnutia s kontextom
-- `docs/SCHEMA.md` — aktuálna databázová schéma
-- `docs/ROADMAP.md` — fázy a priority
+- `DECISIONS.md` — všetky architektonické rozhodnutia s kontextom
+- `SCHEMA.md` — aktuálna databázová schéma
+- `ROADMAP.md` — fázy a priority
 
 ## Databázové konvencie
 
