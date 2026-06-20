@@ -731,6 +731,10 @@ región mieri na stránku **typu** (1 cieľ). Otvorené (nie blokujúce): hĺbka
     „Výkres"/„Dokument" podľa prítomnosti kódov. Overené: výkres (panel dokumentu →
     klik kódu → prvok → späť), bežné PDF bez kódov (badge Dokument, 0 boxov, panel),
     redirect `/node/[doc]`→`/drawing`.
+  - **Filter „Pripojené k" podľa typu objektu:** panel dokumentu zoskupuje naviazané
+    objekty podľa `object_type` (D-018) a ponúka filter-chipy (Podlažie / Asset / Typ
+    assetu / Dokument…) s počtami + „Všetko"; zoznam má max-výšku so scrollom. Pri 1NP:
+    58 = 1 podlažie + 33 asset + 24 typ assetu. Overené v preview.
 
 ---
 

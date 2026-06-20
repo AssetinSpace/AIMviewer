@@ -1,12 +1,17 @@
 "use client";
 
+import { useMemo, useState } from "react";
 import Link from "next/link";
 import { FileText } from "lucide-react";
+
+import { OBJECT_TYPE_LABEL, type ObjectType } from "@/lib/object-type";
 
 /**
  * Bočný panel s informáciami o **dokumente** (D-042 D+): predvolený obsah pravého
  * panela prehliadačky — mirror detail-stránky dokumentu (metadáta + „Pripojené k").
- * Po kliknutí na kód vo výkrese sa panel prepne na detail prvku (`ElementInfoPanel`).
+ * „Pripojené k" sa dá filtrovať podľa typu objektu (podlažie / typ assetu / dokument…)
+ * — podľa dátového modelu (D-018). Po kliknutí na kód vo výkrese sa panel prepne na
+ * detail prvku (`ElementInfoPanel`).
  */
 export interface DocAttachment {
   object: {
@@ -31,19 +36,55 @@ export interface DocumentPanelData {
   attachedTo: DocAttachment[];
 }
 
+// Poradie filter-chipov (priestor → prvky → ostatné), podľa hierarchie D-018.
+const TYPE_ORDER: ObjectType[] = [
+  "site",
+  "building",
+  "floor",
+  "space",
+  "asset",
+  "asset_type",
+  "document",
+  "person",
+  "organization",
+];
+
 function fmtDate(v: string | null): string | null {
   if (!v) return null;
   const d = new Date(v);
   return Number.isNaN(d.getTime()) ? v : d.toLocaleDateString("sk-SK");
 }
 
+function typeLabel(t: string): string {
+  return OBJECT_TYPE_LABEL[t as ObjectType] ?? t;
+}
+
 export function DocumentInfoPanel({ document }: { document: DocumentPanelData }) {
+  const [filter, setFilter] = useState<string>("all"); // "all" | object_type
+
   const validity = (() => {
     const from = fmtDate(document.validFrom);
     if (!from) return null;
     const until = fmtDate(document.validUntil);
     return until ? `${from} – ${until}` : from;
   })();
+
+  // Skupiny podľa object_type (len prítomné), v poradí TYPE_ORDER + neznáme na konci.
+  const groups = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const a of document.attachedTo) {
+      const t = a.object.object_type;
+      counts.set(t, (counts.get(t) ?? 0) + 1);
+    }
+    const ordered = TYPE_ORDER.filter((t) => counts.has(t));
+    const extra = [...counts.keys()].filter((t) => !TYPE_ORDER.includes(t as ObjectType));
+    return [...ordered, ...extra].map((t) => ({ type: t, count: counts.get(t)! }));
+  }, [document.attachedTo]);
+
+  const filtered =
+    filter === "all"
+      ? document.attachedTo
+      : document.attachedTo.filter((a) => a.object.object_type === filter);
 
   return (
     <div className="sticky top-4 space-y-4 rounded-md ring-1 ring-border bg-background p-4">
@@ -81,33 +122,81 @@ export function DocumentInfoPanel({ document }: { document: DocumentPanelData })
             Dokument nie je pripojený na žiadny objekt.
           </p>
         ) : (
-          <ul className="divide-y divide-border rounded-md ring-1 ring-border">
-            {document.attachedTo.map((a) => (
-              <li key={a.object.id}>
-                <Link
-                  href={`/${a.object.object_type === "asset_type" ? "type" : "node"}/${a.object.id}`}
-                  className="flex items-start justify-between gap-2 px-2.5 py-2 text-sm hover:bg-secondary/60"
-                >
-                  <span className="min-w-0">
-                    <span className="block truncate">
-                      {a.object.name ?? a.object.object_ref ?? a.object.id}
+          <>
+            {groups.length > 1 && (
+              <div className="mb-2 flex flex-wrap gap-1">
+                <FilterChip
+                  active={filter === "all"}
+                  onClick={() => setFilter("all")}
+                  label="Všetko"
+                  count={document.attachedTo.length}
+                />
+                {groups.map((g) => (
+                  <FilterChip
+                    key={g.type}
+                    active={filter === g.type}
+                    onClick={() => setFilter(g.type)}
+                    label={typeLabel(g.type)}
+                    count={g.count}
+                  />
+                ))}
+              </div>
+            )}
+            <ul className="max-h-80 divide-y divide-border overflow-auto rounded-md ring-1 ring-border">
+              {filtered.map((a) => (
+                <li key={a.object.id}>
+                  <Link
+                    href={`/${a.object.object_type === "asset_type" ? "type" : "node"}/${a.object.id}`}
+                    className="flex items-start justify-between gap-2 px-2.5 py-2 text-sm hover:bg-secondary/60"
+                  >
+                    <span className="min-w-0">
+                      <span className="block truncate">
+                        {a.object.name ?? a.object.object_ref ?? a.object.id}
+                      </span>
+                      {a.role && (
+                        <span className="text-xs text-muted-foreground">{a.role}</span>
+                      )}
                     </span>
-                    {a.role && (
-                      <span className="text-xs text-muted-foreground">{a.role}</span>
+                    {a.object.object_ref && (
+                      <span className="shrink-0 font-mono text-[0.7rem] text-muted-foreground">
+                        {a.object.object_ref}
+                      </span>
                     )}
-                  </span>
-                  {a.object.object_ref && (
-                    <span className="shrink-0 font-mono text-[0.7rem] text-muted-foreground">
-                      {a.object.object_ref}
-                    </span>
-                  )}
-                </Link>
-              </li>
-            ))}
-          </ul>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </>
         )}
       </div>
     </div>
+  );
+}
+
+function FilterChip({
+  active,
+  onClick,
+  label,
+  count,
+}: {
+  active: boolean;
+  onClick: () => void;
+  label: string;
+  count: number;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={
+        active
+          ? "inline-flex items-center gap-1 rounded-full bg-primary px-2 py-0.5 text-xs font-medium text-primary-foreground"
+          : "inline-flex items-center gap-1 rounded-full bg-secondary px-2 py-0.5 text-xs text-secondary-foreground hover:bg-secondary/70"
+      }
+    >
+      {label}
+      <span className="tabular-nums opacity-70">{count}</span>
+    </button>
   );
 }
 
