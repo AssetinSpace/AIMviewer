@@ -92,9 +92,12 @@ function NodeHeader({
 function NodeSectionsCards({
   data,
   ifcGuid,
+  nodeId,
 }: {
   data: NodeSectionsData;
   ifcGuid: string | null;
+  /** `objects.id` uzla — pre `?focus=` odkaz do prehliadačky výkresov (D-042 D). */
+  nodeId: string;
 }) {
   const { documents, drawings, responsibilities, guidHistory } = data;
 
@@ -121,7 +124,7 @@ function NodeSectionsCards({
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <DrawingList drawings={drawings} />
+            <DrawingList drawings={drawings} elementId={nodeId} />
           </CardContent>
         </Card>
       )}
@@ -153,7 +156,7 @@ function NodeSectionsCards({
 /** Async wrapper — načíta sekcie sám (priestorové uzly, kde nie je čo paralelizovať). */
 async function NodeSections({ id, ifcGuid }: { id: string; ifcGuid: string | null }) {
   const data = await fetchNodeSections(id);
-  return <NodeSectionsCards data={data} ifcGuid={ifcGuid} />;
+  return <NodeSectionsCards data={data} ifcGuid={ifcGuid} nodeId={id} />;
 }
 
 /**
@@ -254,7 +257,7 @@ async function AssetDetailView({ id }: { id: string }) {
         </CardContent>
       </Card>
 
-      <NodeSectionsCards data={sections} ifcGuid={asset.ifc_guid} />
+      <NodeSectionsCards data={sections} ifcGuid={asset.ifc_guid} nodeId={id} />
     </>
   );
 }

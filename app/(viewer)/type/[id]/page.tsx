@@ -101,7 +101,7 @@ export default async function TypePage({
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <DrawingList drawings={drawings} />
+            <DrawingList drawings={drawings} elementId={id} />
           </CardContent>
         </Card>
       )}

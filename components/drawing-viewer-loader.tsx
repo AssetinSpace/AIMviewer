@@ -25,6 +25,10 @@ const DrawingViewer = dynamic(
 export default function DrawingViewerLoader(props: {
   url: string;
   links: DrawingRegion[];
+  /** `objects.id` prvku na zvýraznenie (obojsmernosť, D-042 D). */
+  focus?: string;
+  /** Počiatočná strana (1-based). */
+  initialPage?: number;
 }) {
   return <DrawingViewer {...props} />;
 }

@@ -694,6 +694,16 @@ región mieri na stránku **typu** (1 cieľ). Otvorené (nie blokujúce): hĺbka
   „Prehliadačka" na karte prvku (`drawing-list.tsx`) aj podlažia (`drawing-elements.tsx`).
   Nová závislosť: `react-pdf@10` (+`pdfjs-dist@5`). Overené v dev/preview: 1NP render,
   57 boxov presne na kódoch, klik → detail typu, build zelený.
+- *Fáza D (hotová):* obojsmernosť. Route prijíma `?focus=<id>&page=<n>`; karty prvku
+  („Zobrazený vo výkrese", `drawing-list.tsx`) podávajú odkaz „Prehliadačka" s
+  `?focus=<objects.id>` (id uzla dotiahnuté cez `NodeSectionsCards`/type page). Viewer
+  zacieli región podľa `targetId === focus`, skočí na jeho stranu, priblíži (250 %),
+  odscrolluje na box (`scrollIntoView` center) a krátko ho rozpulzuje + trvalý `ring-2`
+  highlight. Soft-navigácia s iným `?focus=` znovu zacieli (`useEffect([focus])`).
+  **Odchýlka od D-042 (`focus={ref}`):** focus je `objects.id`, nie `object_ref` —
+  presná zhoda na `target_id` regiónu (dedupe per prvok), bez encodovania bodiek/medzier
+  v object_ref. Overené end-to-end v preview: klik „Prehliadačka" → výkres so zoomom,
+  zvýraznený a vycentrovaný box; opačný smer (klik kódu → detail) z fázy C.
 
 ---
 

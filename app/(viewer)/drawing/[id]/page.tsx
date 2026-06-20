@@ -15,12 +15,18 @@ export const revalidate = 60;
  */
 export default async function DrawingPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  /** `focus` = `objects.id` prvku na zvýraznenie; `page` = počiatočná strana (D-042 D). */
+  searchParams: Promise<{ focus?: string; page?: string }>;
 }) {
   const { id } = await params;
+  const { focus, page } = await searchParams;
   const drawing = await fetchDrawing(id);
   if (!drawing) notFound();
+
+  const initialPage = page ? Number.parseInt(page, 10) : undefined;
 
   return (
     <div className="mx-auto max-w-[1100px]">
@@ -53,7 +59,14 @@ export default async function DrawingPage({
         </div>
       </header>
 
-      <DrawingViewerLoader url={drawing.location} links={drawing.links} />
+      <DrawingViewerLoader
+        url={drawing.location}
+        links={drawing.links}
+        focus={focus}
+        initialPage={
+          initialPage && Number.isFinite(initialPage) ? initialPage : undefined
+        }
+      />
     </div>
   );
 }

@@ -6,9 +6,17 @@ import type { DrawingLink } from "@/lib/data/relations";
 /**
  * Výkresy, v ktorých je prvok zobrazený (E4 auto-linking, D-041). Názov vedie na
  * detail dokumentu (`/node/[id]`), „Prehliadačka" otvorí interaktívny výkres
- * (`/drawing/[id]`, D-042), ikona je priamy odkaz na PDF (`location`).
+ * (`/drawing/[id]`, D-042) — s `?focus=<elementId>` odscrolluje a zvýrazní práve
+ * tento prvok (obojsmernosť, fáza D); ikona je priamy odkaz na PDF (`location`).
  */
-export function DrawingList({ drawings }: { drawings: DrawingLink[] }) {
+export function DrawingList({
+  drawings,
+  elementId,
+}: {
+  drawings: DrawingLink[];
+  /** `objects.id` aktuálneho prvku — cieľ zvýraznenia vo výkrese (`?focus=`). */
+  elementId?: string;
+}) {
   if (drawings.length === 0) {
     return (
       <p className="text-sm text-muted-foreground">
@@ -31,7 +39,11 @@ export function DrawingList({ drawings }: { drawings: DrawingLink[] }) {
             {d.name ?? d.objectRef ?? d.id}
           </Link>
           <Link
-            href={`/drawing/${d.id}`}
+            href={
+              elementId
+                ? `/drawing/${d.id}?focus=${encodeURIComponent(elementId)}`
+                : `/drawing/${d.id}`
+            }
             className="ml-auto inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
           >
             <Eye className="size-3.5" /> Prehliadačka
