@@ -71,7 +71,7 @@ interface Graph {
 const loadGraph = cache(async (): Promise<Graph> => {
   const supabase = getSupabaseAdmin();
 
-  const [objectsRes, relsRes, floorsRes] = await Promise.all([
+  const [objectsRes, relsRes, floorsRes, spacesRes] = await Promise.all([
     supabase
       .from("objects")
       .select(
@@ -84,27 +84,41 @@ const loadGraph = cache(async (): Promise<Graph> => {
       .select("from_id, to_id")
       .is("valid_until", null),
     supabase.from("floors").select("id, elevation"),
+    supabase.from("spaces").select("id, long_name"),
   ]);
 
   if (objectsRes.error) throw new Error(objectsRes.error.message);
   if (relsRes.error) throw new Error(relsRes.error.message);
   if (floorsRes.error) throw new Error(floorsRes.error.message);
+  if (spacesRes.error) throw new Error(spacesRes.error.message);
 
   const elevationById = new Map<string, number | null>(
     (floorsRes.data ?? []).map((f) => [f.id as string, f.elevation as number | null])
   );
+  const longNameById = new Map<string, string | null>(
+    (spacesRes.data ?? []).map((s) => [s.id as string, s.long_name as string | null])
+  );
 
   const byId = new Map<string, ObjectRow>();
   for (const o of objectsRes.data ?? []) {
-    byId.set(o.id as string, {
-      id: o.id as string,
+    const id = o.id as string;
+    const rawName = (o.name as string | null) ?? null;
+    // Priestor: zobraz "číslo — popis funkcie" (D-040). Name = číslo (IfcSpace.Name),
+    // long_name = IfcSpace.LongName z prípony `spaces`.
+    const longName = longNameById.get(id) ?? null;
+    const displayName =
+      o.object_type === "space" && longName && rawName
+        ? `${rawName} — ${longName}`
+        : rawName;
+    byId.set(id, {
+      id,
       object_type: o.object_type as SpatialType,
       object_ref: (o.object_ref as string | null) ?? null,
-      name: (o.name as string | null) ?? null,
+      name: displayName,
       ifc_type: (o.ifc_type as string | null) ?? null,
       ifc_guid: (o.ifc_guid as string | null) ?? null,
       predefined_type: (o.predefined_type as string | null) ?? null,
-      elevation: elevationById.get(o.id as string) ?? null,
+      elevation: elevationById.get(id) ?? null,
     });
   }
 

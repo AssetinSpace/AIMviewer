@@ -46,6 +46,7 @@ class ObjectRow:
     properties: dict[str, Any] = field(default_factory=dict)
     # prípony (max jedna podľa typu):
     elevation: Optional[float] = None     # floor
+    long_name: Optional[str] = None       # space (IfcSpace.LongName — popis funkcie)
     document: Optional[DocumentExt] = None
     person: Optional[PersonExt] = None
 

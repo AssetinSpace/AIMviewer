@@ -134,6 +134,12 @@ def _load_appendices(cur, model: StagedModel, obj_ids: dict[str, str]) -> None:
                 "on conflict (id) do update set elevation = excluded.elevation",
                 (oid, o.elevation),
             )
+        if o.long_name is not None:
+            cur.execute(
+                "insert into spaces (id, long_name) values (%s, %s) "
+                "on conflict (id) do update set long_name = excluded.long_name",
+                (oid, o.long_name),
+            )
         if o.document is not None:
             d = o.document
             cur.execute(

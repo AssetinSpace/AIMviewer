@@ -302,7 +302,15 @@ def to_staged(model: ifcopenshell.file, coding: CodingScheme = scheme_mod.SNIM) 
             st, "floor", refs.generic_ref(st), elevation=_to_float(attr(st, "Elevation"))
         )
     for sp in model.by_type("IfcSpace"):
-        spatial_refs[sp.id()] = add_object(sp, "space", refs.generic_ref(sp))
+        # IfcSpace.Name = číslo miestnosti (→ objects.name), LongName = popis funkcie
+        # (Serverovňa, WC…) → prípona `spaces.long_name` (D-040). Generický Revit
+        # placeholder "Space" (nepomenovaná miestnosť) berieme ako prázdny.
+        long_name = attr(sp, "LongName")
+        if isinstance(long_name, str) and long_name.strip().lower() == "space":
+            long_name = None
+        spatial_refs[sp.id()] = add_object(
+            sp, "space", refs.generic_ref(sp), long_name=long_name
+        )
 
     def _spatial_ref(host: Any) -> Optional[str]:
         """Object_ref priestorového rodiča — podlažie premapuj na reálne (D-035)."""
