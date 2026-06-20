@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { ArrowUpRight, X } from "lucide-react";
+import { ArrowUpRight, FileText, X } from "lucide-react";
 
 import type { SelectedElement } from "@/lib/data/drawing";
 
@@ -11,6 +11,14 @@ interface ObjectLink {
   object_type: string;
   object_ref: string | null;
   name: string | null;
+}
+
+interface SummaryDocument {
+  id: string;
+  name: string | null;
+  objectRef: string | null;
+  role: string | null;
+  isDrawing: boolean;
 }
 
 interface NodeSummary {
@@ -23,7 +31,8 @@ interface NodeSummary {
   predefinedType: string | null;
   userDefinedType: string | null;
   type: ObjectLink | null;
-  counts: { classifications: number; documents: number; occurrences: number };
+  documents: SummaryDocument[];
+  counts: { classifications: number; occurrences: number };
 }
 
 const TYPE_LABEL: Record<string, string> = {
@@ -120,9 +129,47 @@ export function ElementInfoPanel({
 
           <div className="flex flex-wrap gap-1.5 text-xs">
             <Chip label="klasifikácie" value={data.counts.classifications} />
-            <Chip label="dokumenty" value={data.counts.documents} />
             {data.objectType === "asset_type" && (
               <Chip label="výskyty" value={data.counts.occurrences} />
+            )}
+          </div>
+
+          <div>
+            <h3 className="mb-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              Dokumenty ({data.documents.length})
+            </h3>
+            {data.documents.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                Bez priradených dokumentov.
+              </p>
+            ) : (
+              <ul className="divide-y divide-border rounded-md ring-1 ring-border">
+                {data.documents.map((d) => (
+                  <li key={d.id}>
+                    <Link
+                      href={`/node/${d.id}`}
+                      className="flex items-start gap-2 px-2.5 py-2 text-sm hover:bg-secondary/60"
+                    >
+                      <FileText className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate">
+                          {d.name ?? d.objectRef ?? d.id}
+                        </span>
+                        {d.objectRef && d.name && (
+                          <span className="block truncate font-mono text-[0.7rem] text-muted-foreground">
+                            {d.objectRef}
+                          </span>
+                        )}
+                      </span>
+                      {d.isDrawing && (
+                        <span className="mt-0.5 shrink-0 rounded bg-secondary px-1.5 py-0.5 text-[0.6rem] font-medium uppercase tracking-wide text-secondary-foreground">
+                          výkres
+                        </span>
+                      )}
+                    </Link>
+                  </li>
+                ))}
+              </ul>
             )}
           </div>
         </div>

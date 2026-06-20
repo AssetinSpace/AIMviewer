@@ -99,6 +99,17 @@ export interface DocumentDetail {
   attachedTo: DocumentAttachment[];
 }
 
+/** Priradený dokument prvku pre info-panel (klikateľný na `/node/[id]`). */
+export interface SummaryDocument {
+  id: string;
+  name: string | null;
+  objectRef: string | null;
+  /** rel_has_document.role ('drawing', 'manual'…). */
+  role: string | null;
+  /** True ak ide o auto-prepojený výkres (E4, `source='pdf_link (E4)'`). */
+  isDrawing: boolean;
+}
+
 /** Kompaktný súhrn prvku pre bočný info-panel prehliadačky výkresov (D-042 D). */
 export interface NodeSummary {
   id: string;
@@ -112,13 +123,17 @@ export interface NodeSummary {
   userDefinedType: string | null;
   /** Typ assetu (occurrence → type, len pri `asset`). */
   type: ObjectLink | null;
+  /** Všetky priradené dokumenty (vrátane auto-prepojených výkresov). */
+  documents: SummaryDocument[];
   counts: {
     classifications: number;
-    documents: number;
     /** Počet occurrences (len pri `asset_type`). */
     occurrences: number;
   };
 }
+
+/** `source` E4 auto-linkingu výkresov (D-041) — odlišuje výkres-väzby od bežných. */
+const PDF_LINK_SOURCE = "pdf_link (E4)";
 
 async function fetchNodeSummaryImpl(id: string): Promise<NodeSummary | null> {
   const supabase = getSupabaseAdmin();
@@ -138,7 +153,7 @@ async function fetchNodeSummaryImpl(id: string): Promise<NodeSummary | null> {
   const isAsset = objectType === "asset";
   const isType = objectType === "asset_type";
 
-  // Typ (occurrence → type), počty väzieb — nezávislé dotazy naraz.
+  // Typ (occurrence → type), klasifikácie/occurrences počty, dokumenty — naraz.
   const [typeRes, clsRes, docRes, occRes] = await Promise.all([
     isAsset
       ? supabase
@@ -155,7 +170,7 @@ async function fetchNodeSummaryImpl(id: string): Promise<NodeSummary | null> {
       .is("valid_until", null),
     supabase
       .from("rel_has_document")
-      .select("id", { count: "exact", head: true })
+      .select("to_id, role, source")
       .eq("from_id", id)
       .is("valid_until", null),
     isType
@@ -170,10 +185,48 @@ async function fetchNodeSummaryImpl(id: string): Promise<NodeSummary | null> {
   let type: ObjectLink | null = null;
   const typeId =
     typeRes && "data" in typeRes ? (typeRes.data?.[0]?.to_id as string | undefined) : undefined;
-  if (typeId) {
-    const links = await loadObjectLinks(supabase, [typeId]);
-    type = links.get(typeId) ?? null;
+
+  // Priradené dokumenty — meta (názov/ref) k to_id; typ vyžaduje aj svoj `type`.
+  if ((docRes as { error: unknown }).error) {
+    throw new Error(String((docRes as { error: { message: string } }).error.message));
   }
+  const docRows = ((docRes as { data: unknown }).data ?? []) as {
+    to_id: string;
+    role: string | null;
+    source: string | null;
+  }[];
+  // dedupe per dokument; výkres (E4) má prednosť pri príznaku isDrawing
+  const docOrder: string[] = [];
+  const docMeta = new Map<string, { role: string | null; isDrawing: boolean }>();
+  for (const r of docRows) {
+    const isDrawing = r.source === PDF_LINK_SOURCE;
+    const prev = docMeta.get(r.to_id);
+    if (!prev) {
+      docOrder.push(r.to_id);
+      docMeta.set(r.to_id, { role: r.role, isDrawing });
+    } else if (isDrawing) {
+      prev.isDrawing = true;
+    }
+  }
+
+  const linkIds = [...new Set([...(typeId ? [typeId] : []), ...docOrder])];
+  const links = await loadObjectLinks(supabase, linkIds);
+  if (typeId) type = links.get(typeId) ?? null;
+
+  const documents: SummaryDocument[] = docOrder.map((did) => {
+    const o = links.get(did);
+    const m = docMeta.get(did);
+    return {
+      id: did,
+      name: o?.name ?? null,
+      objectRef: o?.object_ref ?? null,
+      role: m?.role ?? null,
+      isDrawing: m?.isDrawing ?? false,
+    };
+  });
+  documents.sort((a, b) =>
+    (a.name ?? a.objectRef ?? "").localeCompare(b.name ?? b.objectRef ?? "", "sk")
+  );
 
   return {
     id: row.id as string,
@@ -185,9 +238,9 @@ async function fetchNodeSummaryImpl(id: string): Promise<NodeSummary | null> {
     predefinedType: (row.predefined_type as string | null) ?? null,
     userDefinedType: (row.user_defined_type as string | null) ?? null,
     type,
+    documents,
     counts: {
       classifications: (clsRes as { count: number | null }).count ?? 0,
-      documents: (docRes as { count: number | null }).count ?? 0,
       occurrences: (occRes as { count: number | null }).count ?? 0,
     },
   };

@@ -711,8 +711,10 @@ región mieri na stránku **typu** (1 cieľ). Otvorené (nie blokujúce): hĺbka
     vektorový render by chcel iný engine (pdf.js SVG backend je odstránený) — zámerne nie.
   - **Bočný info-panel namiesto novej stránky:** klik na kód prvok **vyberie** (nevyskočí
     na celú stránku) a vpravo sa zobrazí kompaktný panel (`element-info-panel.tsx`):
-    identita, IFC typ, PredefinedType, typ (pri asset), počty väzieb + „Otvoriť celý
-    detail". Dáta z `GET /api/element/[id]` (`fetchNodeSummary`, cachované). Plochu drží
+    identita, IFC typ, PredefinedType, typ (pri asset), klasifikácie/výskyty, **zoznam
+    všetkých priradených dokumentov** (klikateľné na `/node/[id]`, badge „výkres" pre E4)
+    + „Otvoriť celý detail". Dáta z `GET /api/element/[id]` (`fetchNodeSummary`, cachované,
+    `documents` = dedupe `rel_has_document`). Plochu drží
     `drawing-workspace.tsx` (riadený `selectedId`, `onSelect`); `?focus=` predvyberie
     prvok. Ctrl/⌘-klik na box stále otvorí celý detail v novej karte. `drawing-viewer-
     loader.tsx` nahradený `drawing-workspace.tsx`. Overené v preview (1440px): klik →
