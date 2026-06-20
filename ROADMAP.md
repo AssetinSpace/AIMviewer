@@ -105,7 +105,7 @@
 | **E1 — Coding scheme + object_ref** ✅ | `etl/scheme.py` (field-source resolver + SNIM definícia) a prepis `_RefAllocator` → `object_ref` zo schémy. `--dry-run` na ASR IFC vypíše objekty so SNIM kódom + **coverage report** (% prvkov s platným kódom vs fallback GUID). | D-033 |
 | **E2 — ETL load reálnych dát** ✅ | Rozsah importu policy (D-034) + konsolidácia podlaží (D-035) + 18 SNIM kategórií + doladené mapovanie (hierarchia, psety, klasifikácie, GUID). Idempotentný `--reset` load do Supabase. Viewer beží na **reálnej budove z IFC** namiesto seedu. | D-031/D-034/D-035 |
 | **E3 — Document storage + upload** ✅ | Naming convention = **CDE štandard** (D-036, `doc_scheme.py`); migrácia `documents.storage_type`; public bucket `documents/`; `etl/doc_upload.py` (manifest `docs.csv` → upload + document uzly + `rel_has_document`). **13 PDF nahraných**, viditeľné na karte budovy/podlažia vo Vieweri. | D-032/D-036 |
-| **E4 — PDF výkres auto-linking** | `pdfplumber` text + bbox; regex **odvodený zo schémy**; proximity match fragmentov (`DD01` + `06.03`). Pôdorys 1NP sa **automaticky prepojí** na typy prvkov v ňom. | D-032/D-033 |
+| **E4 — PDF výkres auto-linking** 🟢 scaffold | **PyMuPDF** (nie pdfplumber — `cryptography` DLL padá na Win/Py3.9) text + bbox; regex **odvodený zo schémy**; proximity match fragmentov (`SN11` + `01`). `etl/pdf_link.py` (číta výkresy `VD` z `docs.csv`, `--dry-run`/`--show-unmatched`). Dry-run: 1NP 59→51, 2NP 41→39, 3NP 39→37 prvkov. **Ostáva doladiť** proximity (false-pos `OV01.00.00`) + zápis do DB. | D-032/D-033 |
 | **E5 — ICDD export** | `etl/icdd_export.py` (rdflib): `linkset.ttl` z `rel_has_document`, `payload_documents/`, prepínač `--embed-payloads`. **Stiahnuteľný ISO 21597 kontajner.** | D-015/D-032 |
 | **E6 — Validácia** ⏸️ parkované | Coding scheme + IDS súbory → conformance report (čo nesedí proti požiadavkám). Až keď bude treba. | D-033 |
 
@@ -174,7 +174,16 @@
   identické počty (idempotencia). Viewer (`SpatialView` → `NodeSections`) zobrazí PDF
   na karte budovy/podlažia, klik otvorí súbor. `py_compile` čistý.
 
-**E4 — PDF výkres auto-linking**
+**E4 — PDF výkres auto-linking** 🟢 scaffold hotový, ostáva tuning + zápis
+- `etl/pdf_link.py`: PyMuPDF slová+bbox → detekcia SNIM kódov (regex zo `scheme.py`,
+  platné TSP prefixy) → proximity match holého kódu s číselným fragmentom → match na
+  `object_ref` (asset/asset_type) → `rel_has_document(prvok → výkres, role='drawing',
+  source='pdf_link (E4)')`. Vstup = výkresy `VD` z `docs.csv`. `--dry-run`, `--show-unmatched`.
+- **Overené (dry-run):** 1NP 59→51, 2NP 41→39, 3NP 39→37, strecha 31→24, Rez-A 31→24.
+- **TODO ďalší chat:** (1) doladiť `PROXIMITY_PT` / odfiltrovať false-pos (`OV01.00.00`,
+  `ZV01.02` — proximity berie aj čísla osí/miestností); (2) prefix-match pre holé typové
+  kódy bez Mark; (3) spustiť ostrý zápis (bez `--dry-run`); (4) Viewer: na karte
+  pôdorysu zoznam prvkov / na karte prvku „zobrazený vo výkrese".
 - Akceptačné: výber pôdorysu → zoznam typov prvkov na ňom (z SNIM kódov vo výkrese).
 
 **E5 — ICDD export**

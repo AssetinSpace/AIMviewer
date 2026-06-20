@@ -2,3 +2,6 @@
 ifcopenshell>=0.8.0
 psycopg[binary]>=3.1
 python-dotenv>=1.0
+# E4 — PDF výkres auto-linking (D-032/D-033). PyMuPDF (fitz): slová + bbox, jeden
+# wheel, bez `cryptography` (pdfplumber/pdfminer na Win/Py3.9 padá na DLL _rust).
+pymupdf>=1.24
