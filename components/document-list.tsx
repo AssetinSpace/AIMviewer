@@ -5,9 +5,8 @@ import { DOC_ROLE_LABEL, roleLabel } from "@/lib/object-type";
 import { formatDate } from "@/lib/utils";
 
 /**
- * Dokumenty pripojené na uzol (S3, D-014). Názov vedie na detail dokumentu
- * (`/node/[id]`), `location` je externý odkaz (placeholder v seede; reálne URL
- * príde s ETL dátami v S4, D-029).
+ * Dokumenty pripojené na uzol (S3, D-014). Názov otvorí dokument v prehliadačke
+ * (`/drawing/[id]` — PDF + bočný panel, D-042 D+), `location` je priamy odkaz na PDF.
  */
 export function DocumentList({ documents }: { documents: DocumentRef[] }) {
   if (documents.length === 0) {
@@ -23,7 +22,7 @@ export function DocumentList({ documents }: { documents: DocumentRef[] }) {
           <li key={d.id} className="rounded-md p-3 ring-1 ring-border">
             <div className="flex flex-wrap items-center gap-2">
               <Link
-                href={`/node/${d.id}`}
+                href={`/drawing/${d.id}`}
                 className="font-medium text-foreground underline decoration-dotted underline-offset-2 hover:decoration-solid"
               >
                 {d.name ?? d.identification ?? d.objectRef ?? d.id}

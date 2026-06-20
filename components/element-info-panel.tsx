@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { ArrowUpRight, FileText, X } from "lucide-react";
+import { ArrowLeft, ArrowUpRight, FileText } from "lucide-react";
 
 import type { SelectedElement } from "@/lib/data/drawing";
 
@@ -47,10 +47,11 @@ const TYPE_LABEL: Record<string, string> = {
  */
 export function ElementInfoPanel({
   selected,
-  onClose,
+  onBack,
 }: {
   selected: SelectedElement;
-  onClose: () => void;
+  /** Návrat na info o dokumente (prepnutie panela späť). */
+  onBack: () => void;
 }) {
   const [data, setData] = useState<NodeSummary | null>(null);
   const [state, setState] = useState<"loading" | "error" | "ok">("loading");
@@ -77,26 +78,23 @@ export function ElementInfoPanel({
 
   return (
     <div className="sticky top-4 rounded-md ring-1 ring-border bg-background p-4">
-      <div className="mb-3 flex items-start justify-between gap-2">
-        <div>
-          <span className="inline-block rounded-full bg-secondary px-2 py-0.5 text-xs font-medium text-secondary-foreground">
-            {TYPE_LABEL[data?.objectType ?? ""] ?? "Prvok"}
-          </span>
-          <h2 className="mt-1.5 font-heading text-base font-semibold leading-tight">
-            {data?.name ?? selected.label}
-          </h2>
-          <p className="font-mono text-xs text-muted-foreground">
-            {data?.objectRef ?? selected.label}
-          </p>
-        </div>
-        <button
-          type="button"
-          onClick={onClose}
-          aria-label="Zavrieť panel"
-          className="inline-flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground"
-        >
-          <X className="size-4" />
-        </button>
+      <button
+        type="button"
+        onClick={onBack}
+        className="mb-3 inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+      >
+        <ArrowLeft className="size-3.5" /> Späť na dokument
+      </button>
+      <div className="mb-3">
+        <span className="inline-block rounded-full bg-secondary px-2 py-0.5 text-xs font-medium text-secondary-foreground">
+          {TYPE_LABEL[data?.objectType ?? ""] ?? "Prvok"}
+        </span>
+        <h2 className="mt-1.5 font-heading text-base font-semibold leading-tight">
+          {data?.name ?? selected.label}
+        </h2>
+        <p className="font-mono text-xs text-muted-foreground">
+          {data?.objectRef ?? selected.label}
+        </p>
       </div>
 
       {state === "loading" && (
@@ -147,7 +145,7 @@ export function ElementInfoPanel({
                 {data.documents.map((d) => (
                   <li key={d.id}>
                     <Link
-                      href={`/node/${d.id}`}
+                      href={`/drawing/${d.id}`}
                       className="flex items-start gap-2 px-2.5 py-2 text-sm hover:bg-secondary/60"
                     >
                       <FileText className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />

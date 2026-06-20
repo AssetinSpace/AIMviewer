@@ -719,6 +719,18 @@ región mieri na stránku **typu** (1 cieľ). Otvorené (nie blokujúce): hĺbka
     prvok. Ctrl/⌘-klik na box stále otvorí celý detail v novej karte. `drawing-viewer-
     loader.tsx` nahradený `drawing-workspace.tsx`. Overené v preview (1440px): klik →
     panel vpravo, žiadna navigácia, render pri ratio 2×.
+  - **Prehliadačka = kanonické zobrazenie každého dokumentu:** `/drawing/[id]` slúži pre
+    **ľubovoľný PDF dokument** (všetkých 13 v seede je PDF), nielen výkresy. PDF vľavo
+    (overlay boxov len ak má `_drawing_links`), vpravo panel: **predvolene info o
+    dokumente** (`document-info-panel.tsx` — Metadáta + „Pripojené k", mirror pôvodnej
+    detail-stránky), po kliku na kód **detail prvku** so „← Späť na dokument"
+    (`ElementInfoPanel onBack`). Staré `/node/[docId]` (object_type=document) **presmeruje**
+    na `/drawing/[id]`; `DocumentView` odstránený. Odkazy na dokumenty (sidebar „Dokumenty",
+    `document-list`, `drawing-list`/`drawing-elements` názvy) vedú na `/drawing/[id]`. Dáta:
+    `fetchDocument` (panel) + `fetchDrawing` (PDF+regióny) paralelne v route. Badge hlavičky
+    „Výkres"/„Dokument" podľa prítomnosti kódov. Overené: výkres (panel dokumentu →
+    klik kódu → prvok → späť), bežné PDF bez kódov (badge Dokument, 0 boxov, panel),
+    redirect `/node/[doc]`→`/drawing`.
 
 ---
 

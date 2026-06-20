@@ -33,7 +33,7 @@ export function DrawingList({
           className="flex flex-wrap items-center gap-2 rounded-md p-3 ring-1 ring-border"
         >
           <Link
-            href={`/node/${d.id}`}
+            href={`/drawing/${d.id}`}
             className="font-medium text-foreground underline decoration-dotted underline-offset-2 hover:decoration-solid"
           >
             {d.name ?? d.objectRef ?? d.id}

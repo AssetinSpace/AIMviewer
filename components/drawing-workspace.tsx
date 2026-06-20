@@ -5,11 +5,16 @@ import { useState } from "react";
 
 import type { DrawingRegion, SelectedElement } from "@/lib/data/drawing";
 import { ElementInfoPanel } from "@/components/element-info-panel";
+import {
+  DocumentInfoPanel,
+  type DocumentPanelData,
+} from "@/components/document-info-panel";
 
 /**
- * Pracovná plocha prehliadačky výkresov (D-042 D): vľavo PDF viewer s klikateľnými
- * kódmi, vpravo bočný panel s detailom vybraného prvku. Klik na kód **neopúšťa
- * stránku** — len vyberie prvok a panel ukáže jeho súhrn.
+ * Pracovná plocha dokumentu/výkresu (D-042 D+): vľavo PDF viewer (s klikateľnými
+ * kódmi, ak ich výkres má), vpravo bočný panel. Panel **predvolene** ukazuje info
+ * o dokumente (metadáta + „Pripojené k"); klik na SNIM kód ho prepne na detail
+ * prvku (so „Späť na dokument"). Klik **neopúšťa stránku**.
  *
  * Viewer sa načíta výhradne v prehliadači (`ssr: false`) — pdf.js potrebuje DOM/Worker.
  */
@@ -26,15 +31,17 @@ const DrawingViewer = dynamic(
 );
 
 export default function DrawingWorkspace({
-  url,
+  pdfUrl,
   links,
   focus,
   initialPage,
+  document,
 }: {
-  url: string;
+  pdfUrl: string | null;
   links: DrawingRegion[];
   focus?: string;
   initialPage?: number;
+  document: DocumentPanelData;
 }) {
   // Predvybrať prvok z `?focus=` — panel sa otvorí rovno s ním (obojsmernosť).
   const initial = focus ? links.find((l) => l.targetId === focus) : undefined;
@@ -44,11 +51,22 @@ export default function DrawingWorkspace({
       : null
   );
 
+  const panel = selected ? (
+    <ElementInfoPanel selected={selected} onBack={() => setSelected(null)} />
+  ) : (
+    <DocumentInfoPanel document={document} />
+  );
+
+  // Dokument bez PDF (defenzívne — všetkých 13 je PDF): len panel.
+  if (!pdfUrl) {
+    return <div className="max-w-3xl">{panel}</div>;
+  }
+
   return (
     <div className="flex flex-col gap-4 lg:flex-row lg:items-start">
       <div className="min-w-0 flex-1">
         <DrawingViewer
-          url={url}
+          url={pdfUrl}
           links={links}
           focus={focus}
           initialPage={initialPage}
@@ -56,11 +74,7 @@ export default function DrawingWorkspace({
           onSelect={setSelected}
         />
       </div>
-      {selected && (
-        <aside className="shrink-0 lg:w-80">
-          <ElementInfoPanel selected={selected} onClose={() => setSelected(null)} />
-        </aside>
-      )}
+      <aside className="shrink-0 lg:w-80">{panel}</aside>
     </div>
   );
 }

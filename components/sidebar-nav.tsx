@@ -103,7 +103,7 @@ export function SidebarNav({ nav }: { nav: SidebarNavData }) {
         items={nav.organizations}
         hrefBase="/node"
       />
-      <Section title="Dokumenty" icon={FileText} items={nav.documents} hrefBase="/node" />
+      <Section title="Dokumenty" icon={FileText} items={nav.documents} hrefBase="/drawing" />
     </div>
   );
 }

@@ -1,8 +1,6 @@
 import Link from "next/link";
-import { Eye } from "lucide-react";
 import { notFound, redirect } from "next/navigation";
 
-import { fetchDrawing } from "@/lib/data/drawing";
 import { fetchNode, type NodeDetail, type NodeRef } from "@/lib/data/spatial";
 import { fetchAsset } from "@/lib/data/asset";
 import {
@@ -14,7 +12,6 @@ import {
   fetchObjectMeta,
   fetchPerson,
   fetchOrganization,
-  fetchDocument,
 } from "@/lib/data/object";
 import { OBJECT_TYPE_LABEL } from "@/lib/object-type";
 import { formatDate } from "@/lib/utils";
@@ -505,112 +502,6 @@ async function OrganizationView({ id }: { id: string }) {
   );
 }
 
-/** Detail dokumentu (S3, D-014): metadáta + na ktoré objekty je pripojený. */
-async function DocumentView({ id }: { id: string }) {
-  // Dokument + (ak je výkres) jeho klikateľné regióny — pre vstup do prehliadačky.
-  const [doc, drawing] = await Promise.all([fetchDocument(id), fetchDrawing(id)]);
-  if (!doc) notFound();
-
-  const hasViewer = drawing !== null && drawing.links.length > 0;
-
-  return (
-    <div className="mx-auto max-w-3xl">
-      <NodeHeader type="document" name={doc.name} objectRef={doc.object_ref} />
-
-      {hasViewer && (
-        <Link
-          href={`/drawing/${id}`}
-          className="mb-6 inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
-        >
-          <Eye className="size-4" />
-          Otvoriť interaktívnu prehliadačku
-          <span className="opacity-80">({drawing!.links.length} prvkov)</span>
-        </Link>
-      )}
-
-      <Card className="mb-6">
-        <CardHeader>
-          <CardTitle>Metadáta</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <dl className="divide-y divide-border">
-            <Field label="Identifikácia" value={doc.identification} />
-            <Field label="Popis" value={doc.description} />
-            <Field label="Účel" value={doc.purpose} />
-            <Field label="Revízia" value={doc.revision} />
-            <Field label="Status" value={doc.status} />
-            <Field label="Vlastník" value={doc.documentOwner} />
-            <Field
-              label="Platnosť"
-              value={
-                formatDate(doc.validFrom)
-                  ? `${formatDate(doc.validFrom)}${
-                      formatDate(doc.validUntil) ? ` – ${formatDate(doc.validUntil)}` : ""
-                    }`
-                  : null
-              }
-            />
-            <Field
-              label="Umiestnenie"
-              value={
-                doc.location ? (
-                  <a
-                    href={doc.location}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="break-all text-foreground underline decoration-dotted underline-offset-2 hover:decoration-solid"
-                  >
-                    {doc.location}
-                  </a>
-                ) : null
-              }
-            />
-          </dl>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>
-            Pripojené k{" "}
-            <span className="text-muted-foreground">({doc.attachedTo.length})</span>
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          {doc.attachedTo.length === 0 ? (
-            <p className="text-sm text-muted-foreground">
-              Dokument nie je pripojený na žiadny objekt.
-            </p>
-          ) : (
-            <ul className="divide-y divide-border">
-              {doc.attachedTo.map((a) => (
-                <li key={a.object.id}>
-                  <Link
-                    href={`/node/${a.object.id}`}
-                    className="flex items-center justify-between gap-2 py-2 text-sm hover:text-foreground"
-                  >
-                    <span>
-                      {a.object.name ?? a.object.object_ref ?? a.object.id}
-                      {a.role && (
-                        <span className="ml-2 text-xs text-muted-foreground">
-                          ({a.role})
-                        </span>
-                      )}
-                    </span>
-                    <span className="shrink-0 font-mono text-xs text-muted-foreground">
-                      {a.object.object_ref}
-                    </span>
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          )}
-        </CardContent>
-      </Card>
-    </div>
-  );
-}
-
 /**
  * Generický object route (D-029): priestorové uzly cez `fetchNode` (S1), inak
  * dispatch podľa `object_type`. `asset_type` patrí na `/type/[id]`.
@@ -638,7 +529,8 @@ export default async function NodePage({
     case "organization":
       return <OrganizationView id={id} />;
     case "document":
-      return <DocumentView id={id} />;
+      // Dokumenty sa zobrazujú v prehliadačke (PDF + bočný panel, D-042 D+).
+      redirect(`/drawing/${id}`);
     default:
       notFound();
   }

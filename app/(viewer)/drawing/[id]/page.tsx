@@ -1,17 +1,18 @@
-import Link from "next/link";
 import { notFound } from "next/navigation";
-import { FileText } from "lucide-react";
 
 import { fetchDrawing } from "@/lib/data/drawing";
+import { fetchDocument } from "@/lib/data/object";
 import DrawingWorkspace from "@/components/drawing-workspace";
+import type { DocumentPanelData } from "@/components/document-info-panel";
 
 // ISR — render sa cachuje a po 60 s revaliduje (viewer je verejný read-only, D-029).
 export const revalidate = 60;
 
 /**
- * Interaktívna prehliadačka výkresu (D-042 fáza C). Renderuje zdrojové PDF z
- * Supabase Storage + prekrytie klikateľných SNIM kódov (`_drawing_links`). Kód
- * vedie na detail prvku — vizuálne ukazuje previazanosť dát (jadro dema).
+ * Prehliadačka dokumentu/výkresu (D-042 C+D, rozšírené): kanonické zobrazenie
+ * **každého** PDF dokumentu — zdrojové PDF vľavo (s prekrytím klikateľných SNIM
+ * kódov, ak ich výkres má, `_drawing_links`), vpravo panel s info o dokumente,
+ * resp. po kliku na kód s detailom prvku. Vizualizuje previazanosť dát (jadro dema).
  */
 export default async function DrawingPage({
   params,
@@ -23,49 +24,57 @@ export default async function DrawingPage({
 }) {
   const { id } = await params;
   const { focus, page } = await searchParams;
-  const drawing = await fetchDrawing(id);
-  if (!drawing) notFound();
 
+  // Výkres (PDF + klikateľné regióny) + dokument (metadáta + „pripojené k") naraz.
+  const [drawing, document] = await Promise.all([
+    fetchDrawing(id),
+    fetchDocument(id),
+  ]);
+  if (!document) notFound(); // nie je dokument
+
+  const pdfUrl = drawing?.location ?? document.location;
+  const links = drawing?.links ?? [];
   const initialPage = page ? Number.parseInt(page, 10) : undefined;
+  const hasLinks = links.length > 0;
+
+  const documentPanel: DocumentPanelData = {
+    identification: document.identification,
+    description: document.description,
+    location: document.location,
+    purpose: document.purpose,
+    revision: document.revision,
+    status: document.status,
+    documentOwner: document.documentOwner,
+    validFrom: document.validFrom,
+    validUntil: document.validUntil,
+    attachedTo: document.attachedTo,
+  };
 
   return (
     <div className="mx-auto max-w-[1500px]">
       <header className="mb-4">
         <span className="inline-block rounded-full bg-secondary px-2 py-0.5 text-xs font-medium text-secondary-foreground">
-          Výkres
+          {hasLinks ? "Výkres" : "Dokument"}
         </span>
         <h1 className="mt-2 font-heading text-2xl font-semibold">
-          {drawing.name ?? drawing.objectRef ?? "—"}
+          {document.name ?? document.object_ref ?? "—"}
         </h1>
         <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
-          {drawing.objectRef && (
-            <span className="font-mono text-[0.8rem]">{drawing.objectRef}</span>
+          {document.object_ref && (
+            <span className="font-mono text-[0.8rem]">{document.object_ref}</span>
           )}
-          <span>{drawing.links.length} klikateľných prvkov</span>
-          <Link
-            href={`/node/${drawing.id}`}
-            className="hover:text-foreground hover:underline"
-          >
-            Detail dokumentu
-          </Link>
-          <a
-            href={drawing.location}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center gap-1 hover:text-foreground"
-          >
-            <FileText className="size-3.5" /> Pôvodné PDF
-          </a>
+          {hasLinks && <span>{links.length} klikateľných prvkov</span>}
         </div>
       </header>
 
       <DrawingWorkspace
-        url={drawing.location}
-        links={drawing.links}
+        pdfUrl={pdfUrl}
+        links={links}
         focus={focus}
         initialPage={
           initialPage && Number.isFinite(initialPage) ? initialPage : undefined
         }
+        document={documentPanel}
       />
     </div>
   );

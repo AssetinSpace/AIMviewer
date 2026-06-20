@@ -22,7 +22,7 @@ export function DrawingElements({ drawings }: { drawings: FloorDrawing[] }) {
         <div key={drawing.id}>
           <div className="mb-2 flex flex-wrap items-center gap-2">
             <Link
-              href={`/node/${drawing.id}`}
+              href={`/drawing/${drawing.id}`}
               className="text-sm font-medium text-foreground underline decoration-dotted underline-offset-2 hover:decoration-solid"
             >
               {drawing.name ?? drawing.objectRef ?? drawing.id}

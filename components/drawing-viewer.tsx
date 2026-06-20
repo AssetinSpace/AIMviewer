@@ -158,9 +158,11 @@ export function DrawingViewer({
           </button>
         </div>
 
-        <span className="text-xs text-muted-foreground">
-          {pageLinks.length} klikateľných prvkov na strane
-        </span>
+        {links.length > 0 && (
+          <span className="text-xs text-muted-foreground">
+            {pageLinks.length} klikateľných prvkov na strane
+          </span>
+        )}
       </div>
 
       {/* Plátno výkresu + overlay */}
