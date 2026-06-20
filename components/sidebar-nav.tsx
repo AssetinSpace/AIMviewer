@@ -1,8 +1,16 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Box, Building2, FileText, User, type LucideIcon } from "lucide-react";
+import {
+  Box,
+  Building2,
+  ChevronRight,
+  FileText,
+  User,
+  type LucideIcon,
+} from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import type { NavItem, SidebarNavData } from "@/lib/data/nav";
@@ -10,7 +18,8 @@ import type { NavItem, SidebarNavData } from "@/lib/data/nav";
 /**
  * Ploché navigačné zoznamy ne-priestorových uzlov pod stromom (S3 polish).
  * Typy assetov vedú na `/type/[id]`, ostatné na `/node/[id]`. Aktívny odkaz sa
- * zvýrazní cez `usePathname` (rovnako ako strom).
+ * zvýrazní cez `usePathname` (rovnako ako strom). Každá sekcia je zbaliteľná
+ * a defaultne zbalená (review polish — 149 typov by inak zahltilo panel).
  */
 function Section({
   title,
@@ -24,14 +33,27 @@ function Section({
   hrefBase: string;
 }) {
   const pathname = usePathname();
+  const [open, setOpen] = useState(false);
   if (items.length === 0) return null;
 
   return (
     <div className="mt-3">
-      <div className="flex items-center gap-2 px-2 py-1 text-[0.7rem] font-medium uppercase tracking-wide text-muted-foreground">
-        <Icon className="size-3.5" />
-        {title}
-      </div>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        className="flex w-full items-center gap-1.5 rounded-md px-2 py-1 text-[0.7rem] font-medium uppercase tracking-wide text-muted-foreground hover:bg-sidebar-accent/60 hover:text-foreground"
+      >
+        <ChevronRight
+          className={cn("size-3 shrink-0 transition-transform", open && "rotate-90")}
+        />
+        <Icon className="size-3.5 shrink-0" />
+        <span className="truncate">{title}</span>
+        <span className="ml-auto shrink-0 font-mono normal-case tracking-normal">
+          {items.length}
+        </span>
+      </button>
+      {open && (
       <ul className="space-y-0.5">
         {items.map((it) => {
           const href = `${hrefBase}/${it.id}`;
@@ -58,6 +80,7 @@ function Section({
           );
         })}
       </ul>
+      )}
     </div>
   );
 }
