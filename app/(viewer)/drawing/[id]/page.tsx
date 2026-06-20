@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import { FileText } from "lucide-react";
 
 import { fetchDrawing } from "@/lib/data/drawing";
-import DrawingViewerLoader from "@/components/drawing-viewer-loader";
+import DrawingWorkspace from "@/components/drawing-workspace";
 
 // ISR — render sa cachuje a po 60 s revaliduje (viewer je verejný read-only, D-029).
 export const revalidate = 60;
@@ -29,7 +29,7 @@ export default async function DrawingPage({
   const initialPage = page ? Number.parseInt(page, 10) : undefined;
 
   return (
-    <div className="mx-auto max-w-[1100px]">
+    <div className="mx-auto max-w-[1500px]">
       <header className="mb-4">
         <span className="inline-block rounded-full bg-secondary px-2 py-0.5 text-xs font-medium text-secondary-foreground">
           Výkres
@@ -59,7 +59,7 @@ export default async function DrawingPage({
         </div>
       </header>
 
-      <DrawingViewerLoader
+      <DrawingWorkspace
         url={drawing.location}
         links={drawing.links}
         focus={focus}

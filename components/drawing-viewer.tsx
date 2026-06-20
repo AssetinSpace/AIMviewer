@@ -1,11 +1,10 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import Link from "next/link";
 import { Document, Page, pdfjs } from "react-pdf";
 import { ChevronLeft, ChevronRight, ZoomIn, ZoomOut } from "lucide-react";
 
-import type { DrawingRegion } from "@/lib/data/drawing";
+import type { DrawingRegion, SelectedElement } from "@/lib/data/drawing";
 
 // Worker z CDN (verzia viazaná na nainštalovaný pdfjs) — robustné pod Turbopackom,
 // žiadne bundler-špecifické riešenie worker súboru.
@@ -14,33 +13,41 @@ pdfjs.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjs.vers
 const BASE_WIDTH = 1000; // px šírka strany pri zoom = 1
 const ZOOM_STEP = 0.25;
 const ZOOM_MIN = 0.5;
-const ZOOM_MAX = 3;
+const ZOOM_MAX = 5;
 // Pri vstupe s `focus` priblíž, nech je drobný kód čitateľný a zvýraznenie viditeľné.
 const FOCUS_ZOOM = 2.5;
+// Strop renderovaného rastra (px na šírku). Vyšší `devicePixelRatio` = ostrejšie tenké
+// čiary/text; strop chráni pred obrími canvasmi pri vysokom zoome (limit prehliadača).
+const MAX_RENDER_PX = 6000;
 
 type Dims = { width: number; height: number };
 
 /**
- * In-app prehliadačka výkresu (D-042 fáza C+D): render zdrojového PDF (react-pdf /
- * pdf.js) + prekrytie priehľadných klikateľných boxov z `_drawing_links`. Box vedie
- * na detail prvku (`/node|/type/[id]`). Zoom + stránkovanie + hover highlight.
+ * In-app prehliadačka výkresu (D-042 C+D): render zdrojového PDF (react-pdf / pdf.js) +
+ * prekrytie priehľadných klikateľných boxov z `_drawing_links`. Klik na box **nevyskočí
+ * na novú stránku** — vyberie prvok (`onSelect`), detail sa zobrazí v bočnom paneli;
+ * Ctrl/⌘-klik otvorí celý detail v novej karte. Zoom + stránkovanie + hover highlight.
  *
- * Obojsmernosť (D): `focus` = `objects.id` prvku → prehliadačka skočí na jeho stranu,
- * priblíži, odscrolluje na box a krátko ho rozpulzuje (z karty prvku „Prehliadačka").
+ * Obojsmernosť (D): `focus` = `objects.id` → skok na stranu, priblíženie, scroll na box
+ * a krátky pulz. `selectedId` (riadený zvonku) určuje trvalo zvýraznený prvok.
  *
- * Súradnice regiónov sú v PDF bottom-left (y hore); preklápajú sa na renderovaný
- * raster strany (`pageSize` = referenčná báza, aktuálne px dimenzie z `onRenderSuccess`).
+ * Ostrosť: strana sa renderuje pri `devicePixelRatio` až 2× (strop `MAX_RENDER_PX`),
+ * takže tenké čiary a drobný text ostávajú čitateľné aj pri priblížení.
  */
 export function DrawingViewer({
   url,
   links,
   focus,
   initialPage,
+  selectedId,
+  onSelect,
 }: {
   url: string;
   links: DrawingRegion[];
   focus?: string;
   initialPage?: number;
+  selectedId?: string | null;
+  onSelect?: (sel: SelectedElement) => void;
 }) {
   const focusRegion = useMemo(
     () => (focus ? links.find((l) => l.targetId === focus) : undefined),
@@ -57,6 +64,7 @@ export function DrawingViewer({
   const focusedOnce = useRef(false);
 
   const width = Math.round(BASE_WIDTH * zoom);
+  const devicePixelRatio = Math.min(2, MAX_RENDER_PX / width);
   const pageLinks = useMemo(
     () => links.filter((l) => l.page === page),
     [links, page]
@@ -156,7 +164,7 @@ export function DrawingViewer({
       </div>
 
       {/* Plátno výkresu + overlay */}
-      <div className="overflow-auto rounded-md ring-1 ring-border bg-muted/30 p-4">
+      <div className="max-h-[78vh] overflow-auto rounded-md ring-1 ring-border bg-muted/30 p-4">
         <Document
           file={url}
           onLoadSuccess={({ numPages }) => setNumPages(numPages)}
@@ -174,6 +182,7 @@ export function DrawingViewer({
             <Page
               pageNumber={page}
               width={width}
+              devicePixelRatio={devicePixelRatio}
               renderTextLayer={false}
               renderAnnotationLayer={false}
               onRenderSuccess={(p) => setDims({ width: p.width, height: p.height })}
@@ -187,6 +196,7 @@ export function DrawingViewer({
             {dims && (
               <div className="absolute inset-0">
                 {pageLinks.map((r, i) => {
+                  const isSelected = !!selectedId && r.targetId === selectedId;
                   const isFocus =
                     !!focusRegion && r.targetId === focusRegion.targetId;
                   return (
@@ -194,9 +204,10 @@ export function DrawingViewer({
                       key={`${r.targetId}-${i}`}
                       region={r}
                       dims={dims}
-                      isFocus={isFocus}
+                      selected={isSelected}
                       pulsing={isFocus && pulsing}
                       boxRef={isFocus ? focusBoxRef : undefined}
+                      onSelect={onSelect}
                     />
                   );
                 })}
@@ -213,15 +224,17 @@ export function DrawingViewer({
 function RegionBox({
   region,
   dims,
-  isFocus,
+  selected,
   pulsing,
   boxRef,
+  onSelect,
 }: {
   region: DrawingRegion;
   dims: Dims;
-  isFocus: boolean;
+  selected: boolean;
   pulsing: boolean;
   boxRef?: React.Ref<HTMLAnchorElement>;
+  onSelect?: (sel: SelectedElement) => void;
 }) {
   const [wpt, hpt] = region.pageSize;
   const [x0, y0, x1, y1] = region.bbox;
@@ -236,17 +249,27 @@ function RegionBox({
     height: (y1 - y0) * sy,
   };
 
-  const className = isFocus
+  const href = `/${region.targetRoute}/${region.targetId}`;
+
+  function handleClick(e: React.MouseEvent<HTMLAnchorElement>) {
+    // Ctrl/⌘/shift-klik = nechaj prehliadač otvoriť celý detail (nová karta).
+    if (!onSelect || e.metaKey || e.ctrlKey || e.shiftKey) return;
+    e.preventDefault();
+    onSelect({ id: region.targetId, route: region.targetRoute, label: region.label });
+  }
+
+  const className = selected
     ? `absolute rounded-sm bg-primary/30 ring-2 ring-primary ring-offset-1 ring-offset-background ${
         pulsing ? "animate-pulse" : ""
       }`
     : "absolute rounded-sm bg-primary/10 ring-1 ring-primary/40 transition-colors hover:bg-primary/25 hover:ring-primary";
 
   return (
-    <Link
+    <a
       ref={boxRef}
-      href={`/${region.targetRoute}/${region.targetId}`}
-      title={`${region.label}${isFocus ? " (zvýraznený)" : ""} → detail prvku`}
+      href={href}
+      onClick={handleClick}
+      title={`${region.label}${selected ? " (vybraný)" : ""} — zobraziť detail`}
       style={style}
       className={className}
     />

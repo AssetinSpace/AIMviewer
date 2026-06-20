@@ -34,6 +34,13 @@ export interface DrawingRegion {
   label: string;
 }
 
+/** Prvok vybraný kliknutím vo výkrese — vstup pre bočný info-panel (D-042 D). */
+export interface SelectedElement {
+  id: string;
+  route: "node" | "type";
+  label: string;
+}
+
 /** Výkres pre prehliadačku: verejné PDF URL + klikateľné regióny. */
 export interface DrawingDoc {
   id: string;

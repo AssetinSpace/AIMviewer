@@ -704,6 +704,19 @@ región mieri na stránku **typu** (1 cieľ). Otvorené (nie blokujúce): hĺbka
   presná zhoda na `target_id` regiónu (dedupe per prvok), bez encodovania bodiek/medzier
   v object_ref. Overené end-to-end v preview: klik „Prehliadačka" → výkres so zoomom,
   zvýraznený a vycentrovaný box; opačný smer (klik kódu → detail) z fázy C.
+- *Doladenie (po spätnej väzbe):*
+  - **Ostrosť zoomu:** strana sa renderuje pri `devicePixelRatio` až 2× (strop
+    `MAX_RENDER_PX` chráni pred obrími canvasmi), `ZOOM_MAX` zdvihnutý na 5×. Tenké
+    čiary/drobný text ostávajú čitateľné (predtým raster pri ~1.25× = zubaté). Plne
+    vektorový render by chcel iný engine (pdf.js SVG backend je odstránený) — zámerne nie.
+  - **Bočný info-panel namiesto novej stránky:** klik na kód prvok **vyberie** (nevyskočí
+    na celú stránku) a vpravo sa zobrazí kompaktný panel (`element-info-panel.tsx`):
+    identita, IFC typ, PredefinedType, typ (pri asset), počty väzieb + „Otvoriť celý
+    detail". Dáta z `GET /api/element/[id]` (`fetchNodeSummary`, cachované). Plochu drží
+    `drawing-workspace.tsx` (riadený `selectedId`, `onSelect`); `?focus=` predvyberie
+    prvok. Ctrl/⌘-klik na box stále otvorí celý detail v novej karte. `drawing-viewer-
+    loader.tsx` nahradený `drawing-workspace.tsx`. Overené v preview (1440px): klik →
+    panel vpravo, žiadna navigácia, render pri ratio 2×.
 
 ---
 

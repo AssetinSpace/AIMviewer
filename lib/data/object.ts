@@ -99,6 +99,100 @@ export interface DocumentDetail {
   attachedTo: DocumentAttachment[];
 }
 
+/** Kompaktný súhrn prvku pre bočný info-panel prehliadačky výkresov (D-042 D). */
+export interface NodeSummary {
+  id: string;
+  objectType: ObjectType;
+  /** Segment route detailu (`asset_type` → type, inak node). */
+  route: "node" | "type";
+  name: string | null;
+  objectRef: string | null;
+  ifcType: string | null;
+  predefinedType: string | null;
+  userDefinedType: string | null;
+  /** Typ assetu (occurrence → type, len pri `asset`). */
+  type: ObjectLink | null;
+  counts: {
+    classifications: number;
+    documents: number;
+    /** Počet occurrences (len pri `asset_type`). */
+    occurrences: number;
+  };
+}
+
+async function fetchNodeSummaryImpl(id: string): Promise<NodeSummary | null> {
+  const supabase = getSupabaseAdmin();
+
+  const { data, error } = await supabase
+    .from("objects")
+    .select(
+      "id, object_type, object_ref, name, ifc_type, predefined_type, user_defined_type"
+    )
+    .eq("id", id)
+    .limit(1);
+  if (error) throw new Error(error.message);
+  const row = data?.[0];
+  if (!row) return null;
+
+  const objectType = row.object_type as ObjectType;
+  const isAsset = objectType === "asset";
+  const isType = objectType === "asset_type";
+
+  // Typ (occurrence → type), počty väzieb — nezávislé dotazy naraz.
+  const [typeRes, clsRes, docRes, occRes] = await Promise.all([
+    isAsset
+      ? supabase
+          .from("rel_defined_by_type")
+          .select("to_id")
+          .eq("from_id", id)
+          .is("valid_until", null)
+          .limit(1)
+      : Promise.resolve({ data: null, error: null }),
+    supabase
+      .from("rel_has_classification")
+      .select("id", { count: "exact", head: true })
+      .eq("from_id", id)
+      .is("valid_until", null),
+    supabase
+      .from("rel_has_document")
+      .select("id", { count: "exact", head: true })
+      .eq("from_id", id)
+      .is("valid_until", null),
+    isType
+      ? supabase
+          .from("rel_defined_by_type")
+          .select("id", { count: "exact", head: true })
+          .eq("to_id", id)
+          .is("valid_until", null)
+      : Promise.resolve({ count: 0, error: null }),
+  ]);
+
+  let type: ObjectLink | null = null;
+  const typeId =
+    typeRes && "data" in typeRes ? (typeRes.data?.[0]?.to_id as string | undefined) : undefined;
+  if (typeId) {
+    const links = await loadObjectLinks(supabase, [typeId]);
+    type = links.get(typeId) ?? null;
+  }
+
+  return {
+    id: row.id as string,
+    objectType,
+    route: isType ? "type" : "node",
+    name: (row.name as string | null) ?? null,
+    objectRef: (row.object_ref as string | null) ?? null,
+    ifcType: (row.ifc_type as string | null) ?? null,
+    predefinedType: (row.predefined_type as string | null) ?? null,
+    userDefinedType: (row.user_defined_type as string | null) ?? null,
+    type,
+    counts: {
+      classifications: (clsRes as { count: number | null }).count ?? 0,
+      documents: (docRes as { count: number | null }).count ?? 0,
+      occurrences: (occRes as { count: number | null }).count ?? 0,
+    },
+  };
+}
+
 /** Ľahká identita objektu pre dispatch v route. `null`, ak neexistuje. */
 async function fetchObjectMetaImpl(id: string): Promise<ObjectMeta | null> {
   const supabase = getSupabaseAdmin();
@@ -386,5 +480,10 @@ export const fetchOrganization = unstable_cache(
 export const fetchDocument = unstable_cache(
   fetchDocumentImpl,
   ["fetch-document"],
+  AIM_CACHE
+);
+export const fetchNodeSummary = unstable_cache(
+  fetchNodeSummaryImpl,
+  ["fetch-node-summary"],
   AIM_CACHE
 );
