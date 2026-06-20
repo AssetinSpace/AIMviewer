@@ -627,6 +627,46 @@ typov `_types_by_assembly`); `lib/data/relations.ts` (+`DrawingLink`/`ElementInD
 `drawing-elements.tsx`. Schéma DB sa **nemení** (čisto ETL/aplikačná vrstva). Reportovacie
 vrstvy (medzera vs. ignorovaný proximity) sú v `--show-unmatched` oddelené.
 
+### D-042 — Interaktívna prehliadačka výkresov (klikateľné SNIM kódy) — *plánované*
+**Status:** návrh na **odprezentovanie previazanosti dát** (D-003) — kostra rozhodnutá,
+implementačné detaily sa **doladia počas sprintu** (pracovne sprint „DV", ROADMAP).
+Nadväzuje priamo na E4 (D-041).
+
+**Kontext:** E4 (`etl/pdf_link.py`) deteguje SNIM kódy vo výkresoch (PyMuPDF) **aj
+s bounding boxmi** a rozparuje ich na `object_ref` → objekt, no dnes z toho zapíše len
+hranu `rel_has_document` a **bbox zahodí**. Tým je drahá časť (detekcia + rozparovanie)
+hotová; chýba len uchovať súradnice a vykresliť klikateľnú vrstvu.
+
+**Rozhodnutie (cieľ):** výkres v appke, kde sú detegované kódy **klikateľné** → vedú na
+detail prvku (`/node/[id]` / `/type/[id]`), a **opačne** z karty prvku („Zobrazený vo
+výkrese") sa otvorí výkres **so zvýrazneným prvkom**. Vizuálne ukazuje práve previazanosť,
+ktorá je jadro dema.
+
+**Rozhodnutie (dáta — bez zmeny schémy):** link regióny sa uchovajú v
+`documents.properties._drawing_links` (JSONB, `_`-kľúč = meta/zachytené dáta, NIE pset —
+konvencia D-022). Per región: `{page, bbox, page_size, target_id, target_route, layer,
+label}`. Súradnice sa ukladajú v **PDF bottom-left** + rozmer strany — y-flip a rotácia
+sa riešia raz, na zdroji. **Detekcia ostáva jeden pipeline**: `pdf_link.py` plní hrany
+(E4) **aj** regióny (D-042), žiadna druhá detekčná logika v JS.
+
+**Rozhodnutie (fázovanie — MVP najprv):**
+- **A — dátový základ (ETL):** `pdf_link.py` zapíše `_drawing_links` (prerekvizita B aj C).
+- **B — MVP (ETL):** `etl/pdf_annotate.py` zapečie URI-link anotácie do PDF
+  (`page.insert_link` → `${SITE_URL}/node/{id}`) → kódy klikateľné v **akomkoľvek**
+  prehliadači, nula frontendu. URL z configu (env-špecifické).
+- **C — plná in-app prehliadačka (Viewer):** route `app/(viewer)/drawing/[id]`, render
+  **react-pdf** (pdf.js), overlay priehľadných `<Link>` boxov z `_drawing_links`
+  (`viewport.convertToViewportRectangle`), hover highlight + zoom + stránkovanie.
+- **D — obojsmernosť (Viewer):** `/drawing/[id]?focus={ref}&page={n}` z karty prvku →
+  odscrolluje/zoomne na box a zvýrazní ho.
+
+**Dôsledok / vzťah k D-038:** toto je **užšia podmnožina** parkovaného D-038 (PDF
+split-screen) — **bez 3D geometrie a georeferencingu**; D-038/D-039 ostávajú kandidáti.
+Schéma DB sa **nemení** (čisto ETL/aplikačná vrstva). Holý typový kód = N inštancií →
+región mieri na stránku **typu** (1 cieľ). Otvorené (nie blokujúce): úložisko anotovaných
+PDF z fázy B (samostatná cesta vs prepis), hĺbka zoom/pan (mobil/touch odložiť), či
+zobrazovať aj `proximity`/nezhodné kódy slabšie (zatiaľ nie).
+
 ---
 
 ## 8. Budúce rozhodnutia (D-037+)
@@ -668,4 +708,4 @@ v PDF výkrese — eliminuje manuálnu prácu pri párovaní.
 
 ---
 
-*Posledná aktualizácia: 2026-06-20 — E3 hotový (**D-036**): dokumentová naming convention = CDE štandard Jihočeského kraja (ISO 19650: `Projekt_StupeňPD_ČástDíla_Profese_TypSouboru_Číslo_Popis`, väzba cez `target_ref` v manifeste). Postavené: `etl/doc_scheme.py` (parser + CDE slovníky), `podklady/docs.csv`, migrácia `documents.storage_type` (aditívna), public bucket `documents/`, `etl/doc_upload.py` (13 PDF nahraných + zapísaných do grafu, idempotentné). Brainstorm §8 prečíslovaný na **D-037/D-038/D-039**. Pridané **D-040** (priestory: `IfcSpace.LongName` → prípona `spaces`, Viewer zobrazí „číslo — popis"; migrácia `spaces` + `v_spaces`, re-load ETL bez `--reset`, placeholder „Space" sa berie ako prázdny — 75/89 reálnych názvov). Pridané **D-041** (E4 PDF výkres auto-linking hotový): tri dôverové vrstvy matchu (`full`/`proximity`/`bare`) — odfiltrované false-pos `OV01.00.00`/`ZV01.02` bez straty dverí, prefix-match holých typových kódov; **193 element-väzieb** (`source='pdf_link (E4)'`, idempotentné, E3 nedotknuté); Viewer sekcie „Zobrazený vo výkrese" (asset/type) a „Prvky vo výkrese" (podlažie/budova). Ďalej: E5 (ICDD export).*
+*Posledná aktualizácia: 2026-06-20 — E3 hotový (**D-036**): dokumentová naming convention = CDE štandard Jihočeského kraja (ISO 19650: `Projekt_StupeňPD_ČástDíla_Profese_TypSouboru_Číslo_Popis`, väzba cez `target_ref` v manifeste). Postavené: `etl/doc_scheme.py` (parser + CDE slovníky), `podklady/docs.csv`, migrácia `documents.storage_type` (aditívna), public bucket `documents/`, `etl/doc_upload.py` (13 PDF nahraných + zapísaných do grafu, idempotentné). Brainstorm §8 prečíslovaný na **D-037/D-038/D-039**. Pridané **D-040** (priestory: `IfcSpace.LongName` → prípona `spaces`, Viewer zobrazí „číslo — popis"; migrácia `spaces` + `v_spaces`, re-load ETL bez `--reset`, placeholder „Space" sa berie ako prázdny — 75/89 reálnych názvov). Pridané **D-041** (E4 PDF výkres auto-linking hotový): tri dôverové vrstvy matchu (`full`/`proximity`/`bare`) — odfiltrované false-pos `OV01.00.00`/`ZV01.02` bez straty dverí, prefix-match holých typových kódov; **193 element-väzieb** (`source='pdf_link (E4)'`, idempotentné, E3 nedotknuté); Viewer sekcie „Zobrazený vo výkrese" (asset/type) a „Prvky vo výkrese" (podlažie/budova). Pridané **D-042** (plánované) — interaktívna prehliadačka výkresov s klikateľnými SNIM kódmi (obojsmerné prvok↔výkres) na **odprezentovanie previazanosti**: link regióny v `documents.properties._drawing_links` (bez zmeny schémy, D-022), detekcia ostáva jeden pipeline (`pdf_link.py` plní hrany aj regióny), fázy A (dáta) → B (MVP URI-anotácie) → C (in-app react-pdf) → D (obojsmernosť); užšia podmnožina D-038 bez 3D/georeferencingu. Detaily sa doladia počas sprintu „DV".*

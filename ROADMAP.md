@@ -25,6 +25,9 @@
 - 🟢 ETL pipeline (Python + ifcopenshell, D-031) — **E2 hotový**: reálny load z `ASR.ifc` do Supabase (926 uzlov, 5 podlaží), Viewer beží na reálnej budove namiesto seedu
 - 🟡 Dokumenty + coding scheme (D-032/D-033) — **rozhodnuté**, rozpísané do E-sprintov (E1–E6); **E1–E4 hotové** (E4 = PDF výkres auto-linking, D-041, 193 element-väzieb + Viewer sekcie)
 - ⏸️ **E5 (ICDD export) — odložené** do uzavretia review pass (viď poznámka v Stave)
+- 📋 **DV — Interaktívna prehliadačka výkresov** (klikateľné SNIM kódy, obojsmerne) —
+  **naplánované** ako demo feature na odprezentovanie previazanosti (D-042); kostra hotová,
+  detaily sa doladia počas sprintu. Spustí sa ako prvá feature po review passe.
 - ⏸️ LLM interface — **parkované** (S-LLM), doladíme neskôr
 
 **Máme:** Supabase Cloud (projekt `acwoupricatirhlfkhvk`) + GitHub repo (`AssetinSpace/AIMviewer`) + Vercel deploy (auto-deploy z `main`). **Chýba zatiaľ:** vlastná doména (príde v S4).
@@ -115,6 +118,7 @@
 | **E4 — PDF výkres auto-linking** ✅ | **PyMuPDF** text + bbox; regex **odvodený zo schémy**; **tri dôverové vrstvy matchu** (`full`/`proximity`/`bare`, D-041) — proximity bez zhody = šum (padli `OV01.00.00`/`ZV01.02` bez straty dverí), `bare` → prefix-match na typy. `etl/pdf_link.py` (výkresy `VD` z `docs.csv`, `--dry-run`/`--show-unmatched`). **193 element-väzieb zapísaných** (`source='pdf_link (E4)'`, idempotentné, E3 nedotknuté). Viewer: „Zobrazený vo výkrese" (asset/type) + „Prvky vo výkrese" (podlažie/budova). | D-032/D-033/D-041 |
 | **E5 — ICDD export** | `etl/icdd_export.py` (rdflib): `linkset.ttl` z `rel_has_document`, `payload_documents/`, prepínač `--embed-payloads`. **Stiahnuteľný ISO 21597 kontajner.** | D-015/D-032 |
 | **E6 — Validácia** ⏸️ parkované | Coding scheme + IDS súbory → conformance report (čo nesedí proti požiadavkám). Až keď bude treba. | D-033 |
+| **DV — Interaktívna prehliadačka výkresov** 📋 plánované | Klikateľné SNIM kódy vo výkrese → detail prvku, **obojsmerne** (z karty prvku → výkres so zvýraznením). Na **odprezentovanie previazanosti** (D-003). Fázy: **A** dáta (`pdf_link.py` → `_drawing_links`) → **B** MVP URI-anotácie (`pdf_annotate.py`) → **C** in-app react-pdf prehliadačka (`/drawing/[id]`) → **D** obojsmernosť. Bez zmeny schémy. Detaily sa doladia počas sprintu. | D-042 |
 
 ### Detail
 
@@ -204,6 +208,26 @@
 **E5 — ICDD export**
 - Akceptačné: vygenerovaný `.icdd` ZIP otvoriteľný, linkset drží väzby dokument↔prvok.
 
+**DV — Interaktívna prehliadačka výkresov** 📋 plánované (D-042)
+> Cieľ na **odprezentovanie previazanosti** (D-003): klikateľný výkres + obojsmerné
+> prvok↔výkres. Detekcia je už hotová z E4 (`pdf_link.py` má bbox) — kostra rozhodnutá,
+> detaily sa **doladia počas sprintu**. Odhad ~4,5–6 dní.
+- **Fáza A — dáta (ETL, ~0,5–1 d):** `pdf_link.py` zapíše link regióny do
+  `documents.properties._drawing_links` (`{page, bbox, page_size, target_id, target_route,
+  layer, label}`, PDF bottom-left súradnice). Bez migrácie. Prerekvizita B aj C.
+  Akceptačné: 5 výkresov má `_drawing_links`, súčet sedí na 193.
+- **Fáza B — MVP klikateľné PDF (ETL, ~1 d):** `etl/pdf_annotate.py` zapečie URI-link
+  anotácie (`page.insert_link` → `${SITE_URL}/node/{id}`) → klikateľné v každom prehliadači.
+  Akceptačné: klik na kód dverí v PDF → detail assetu.
+- **Fáza C — in-app prehliadačka (Viewer, ~2–3 d):** route `app/(viewer)/drawing/[id]`,
+  react-pdf render + overlay `<Link>` boxov, hover highlight + zoom + stránkovanie; názvy
+  výkresov v kartách vedú na `/drawing/[id]`. Akceptačné: 1NP → 57 klikateľných boxov.
+- **Fáza D — obojsmernosť (Viewer, ~1 d):** `/drawing/[id]?focus={ref}&page={n}` z karty
+  prvku → odscrolluje/zoomne + zvýrazní. Akceptačné: z karty dverí `DD01.06.03` → otvorí
+  Pudorys-1NP nascrollovaný a zvýraznený.
+- **Riziká:** súradnice (y-flip + rotácia výkresov), pdf.js worker v Next 16/Turbopack,
+  bundle ~1 MB (lazy). **Vzťah k D-038:** užšia podmnožina bez 3D/georeferencingu.
+
 Otvorené body (INST padding, multi-projekt scoping, `rel_supersedes`, AI matching,
 naming convention finálny tvar) sú v DECISIONS §7.
 
@@ -212,4 +236,4 @@ naming convention finálny tvar) sú v DECISIONS §7.
 - 3D / IFC.js geometria (D-007: sme dátový viewer, nie geometrický).
 
 ---
-*Posledná aktualizácia: 2026-06-20 — E4 (PDF výkres auto-linking) hotový (**D-041**): `etl/pdf_link.py` deteguje SNIM kódy z výkresov (PyMuPDF), matchuje v troch dôverových vrstvách (`full`/`proximity`/`bare`) — odfiltrované false-pos `OV01.00.00`/`ZV01.02` bez straty dverí, prefix-match holých typových kódov; **193 element-väzieb** zapísaných (`source='pdf_link (E4)'`, idempotentné, E3 nedotknuté). Viewer: sekcie „Zobrazený vo výkrese" (asset/asset_type) a „Prvky vo výkrese" (podlažie/budova) — `relations.ts` + `drawing-list.tsx`/`drawing-elements.tsx`. Predtým E3: 13 PDF (CDE naming, D-036). **Ďalej: konsolidačná / review fáza** — postupné kontrolované dopilovanie hotového (S0–S3 + E1–E4) podľa feedbacku; **E5 (ICDD export) odložené** do uzavretia review pass.*
+*Posledná aktualizácia: 2026-06-20 — E4 (PDF výkres auto-linking) hotový (**D-041**): `etl/pdf_link.py` deteguje SNIM kódy z výkresov (PyMuPDF), matchuje v troch dôverových vrstvách (`full`/`proximity`/`bare`) — odfiltrované false-pos `OV01.00.00`/`ZV01.02` bez straty dverí, prefix-match holých typových kódov; **193 element-väzieb** zapísaných (`source='pdf_link (E4)'`, idempotentné, E3 nedotknuté). Viewer: sekcie „Zobrazený vo výkrese" (asset/asset_type) a „Prvky vo výkrese" (podlažie/budova) — `relations.ts` + `drawing-list.tsx`/`drawing-elements.tsx`. Predtým E3: 13 PDF (CDE naming, D-036). **Ďalej: konsolidačná / review fáza** — postupné kontrolované dopilovanie hotového (S0–S3 + E1–E4) podľa feedbacku; **E5 (ICDD export) odložené** do uzavretia review pass. Naplánovaný sprint **DV — Interaktívna prehliadačka výkresov** (**D-042**, klikateľné SNIM kódy obojsmerne) ako demo feature na odprezentovanie previazanosti — kostra rozhodnutá, detaily sa doladia počas sprintu (fázy A dáta → B MVP → C in-app → D obojsmernosť).*
