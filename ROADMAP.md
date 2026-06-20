@@ -7,7 +7,13 @@
 
 ---
 
-## Stav (2026-06-17)
+## Stav (2026-06-20)
+
+> 🔍 **Teraz: konsolidačná / review fáza (nie nový sprint).** E1–E4 a S0–S3 sú hotové;
+> namiesto rozbiehania E5 **postupne prechádzame a dopilujeme to, čo už máme** —
+> kontrolovane, sekciu po sekcii, podľa feedbacku používateľa (UX, dáta, konzistencia,
+> drobné bugy). **E5 (ICDD export) a ostatné E-sprinty sú odložené**, kým review pass
+> neuzavrieme. Cieľ: stabilný, vyladený demovateľný stav, nie ďalšia šírka funkcií.
 
 - ✅ Schéma + iniciálna migrácia (`20260616120000_init_aim_schema.sql`, D-025)
 - ✅ Seed dáta (`supabase/seed.sql`) — plná previazanosť: hierarchia, type–occurrence, aktori, dokumenty, klasifikácie, GUID história
@@ -17,7 +23,8 @@
 - ✅ S3 — Dokumenty + zodpovednosti + GUID história, generický object route (D-029)
 - 🟢 **Teraz:** S4 — polish & launch (reálne dáta **naloadené** z ETL; ostáva doména + polish)
 - 🟢 ETL pipeline (Python + ifcopenshell, D-031) — **E2 hotový**: reálny load z `ASR.ifc` do Supabase (926 uzlov, 5 podlaží), Viewer beží na reálnej budove namiesto seedu
-- 🟡 Dokumenty + coding scheme (D-032/D-033) — **rozhodnuté**, rozpísané do E-sprintov (E1–E6); **E1–E4 hotové** (E4 = PDF výkres auto-linking, D-041, 193 element-väzieb + Viewer sekcie); **ďalší krok = E5** (ICDD export)
+- 🟡 Dokumenty + coding scheme (D-032/D-033) — **rozhodnuté**, rozpísané do E-sprintov (E1–E6); **E1–E4 hotové** (E4 = PDF výkres auto-linking, D-041, 193 element-väzieb + Viewer sekcie)
+- ⏸️ **E5 (ICDD export) — odložené** do uzavretia review pass (viď poznámka v Stave)
 - ⏸️ LLM interface — **parkované** (S-LLM), doladíme neskôr
 
 **Máme:** Supabase Cloud (projekt `acwoupricatirhlfkhvk`) + GitHub repo (`AssetinSpace/AIMviewer`) + Vercel deploy (auto-deploy z `main`). **Chýba zatiaľ:** vlastná doména (príde v S4).
@@ -205,4 +212,4 @@ naming convention finálny tvar) sú v DECISIONS §7.
 - 3D / IFC.js geometria (D-007: sme dátový viewer, nie geometrický).
 
 ---
-*Posledná aktualizácia: 2026-06-20 — E4 (PDF výkres auto-linking) hotový (**D-041**): `etl/pdf_link.py` deteguje SNIM kódy z výkresov (PyMuPDF), matchuje v troch dôverových vrstvách (`full`/`proximity`/`bare`) — odfiltrované false-pos `OV01.00.00`/`ZV01.02` bez straty dverí, prefix-match holých typových kódov; **193 element-väzieb** zapísaných (`source='pdf_link (E4)'`, idempotentné, E3 nedotknuté). Viewer: sekcie „Zobrazený vo výkrese" (asset/asset_type) a „Prvky vo výkrese" (podlažie/budova) — `relations.ts` + `drawing-list.tsx`/`drawing-elements.tsx`. Predtým E3: 13 PDF (CDE naming, D-036). Ďalší krok: E5 (ICDD export — `rdflib`, ISO 21597 kontajner).*
+*Posledná aktualizácia: 2026-06-20 — E4 (PDF výkres auto-linking) hotový (**D-041**): `etl/pdf_link.py` deteguje SNIM kódy z výkresov (PyMuPDF), matchuje v troch dôverových vrstvách (`full`/`proximity`/`bare`) — odfiltrované false-pos `OV01.00.00`/`ZV01.02` bez straty dverí, prefix-match holých typových kódov; **193 element-väzieb** zapísaných (`source='pdf_link (E4)'`, idempotentné, E3 nedotknuté). Viewer: sekcie „Zobrazený vo výkrese" (asset/asset_type) a „Prvky vo výkrese" (podlažie/budova) — `relations.ts` + `drawing-list.tsx`/`drawing-elements.tsx`. Predtým E3: 13 PDF (CDE naming, D-036). **Ďalej: konsolidačná / review fáza** — postupné kontrolované dopilovanie hotového (S0–S3 + E1–E4) podľa feedbacku; **E5 (ICDD export) odložené** do uzavretia review pass.*
