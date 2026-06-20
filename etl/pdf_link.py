@@ -12,6 +12,10 @@ Pipeline (D-033):
      match**: holý Assembly Code sa spojí s blízkym číselným fragmentom.
   3. Match na `object_ref` v DB (typové `DD01.06` aj inštančné `DD01.06.03`).
   4. `rel_has_document(from=prvok, to=výkres, role='drawing', source='pdf_link (E4)')`.
+  5. Link regióny (D-042): per zhoda sa uloží bbox + cieľ do `objects.properties.
+     _drawing_links` (JSONB, `_`-kľúč = konvencia D-022, BEZ migrácie). Súradnice
+     v PDF bottom-left (y-flip raz, na zdroji). **Jeden pipeline** — tá istá detekcia
+     plní hrany (E4) aj regióny (D-042), žiadna druhá detekčná logika.
 
 Vstup = mapovanie výkres-PDF → dokument (`object_ref` z E3). Berie sa z `docs.csv`
 (riadky s TypSouboru `VD`); cesta k PDF = `source_path`, cieľový dokument = `container_name`.
@@ -24,6 +28,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import json
 import re
 import sys
 from dataclasses import dataclass, field
@@ -95,47 +100,72 @@ class Hit:
     code: str
     page: int
     origin: str          # "full" | "proximity" | "bare"
+    bbox: tuple[float, float, float, float]   # PyMuPDF top-left coords (x0, y0, x1, y1)
+    page_size: tuple[float, float]            # (width, height) v bodoch
+
+
+# Slovo strany: text + bbox (x0, y0, x1, y1) v PyMuPDF top-left súradniciach.
+Word = tuple[str, float, float, float, float]
 
 
 @dataclass
 class PageWords:
-    """Slová strany s bbox stredmi (x, y) — vstup proximity matchu."""
+    """Slová strany s bbox (x0, y0, x1, y1) + rozmer strany — vstup proximity matchu."""
 
-    words: list[tuple[str, float, float]] = field(default_factory=list)
+    words: list[Word] = field(default_factory=list)
+    width: float = 0.0
+    height: float = 0.0
+
+
+def _center(w: Word) -> tuple[float, float]:
+    return ((w[1] + w[3]) / 2, (w[2] + w[4]) / 2)
 
 
 def _page_words(page: "fitz.Page") -> PageWords:
-    out: list[tuple[str, float, float]] = []
+    rect = page.rect      # reflektuje rotáciu strany; words sú v rovnakom priestore
+    out: list[Word] = []
     for x0, y0, x1, y1, text, *_ in page.get_text("words"):
-        out.append((text, (x0 + x1) / 2, (y0 + y1) / 2))
-    return PageWords(out)
+        out.append((text, x0, y0, x1, y1))
+    return PageWords(out, rect.width, rect.height)
 
 
 def detect_codes(page: "fitz.Page", page_no: int, m: CodeMatcher) -> list[Hit]:
-    """Deteguje kódy na strane: priame (s bodkou) + proximity (holý + fragment)."""
+    """Deteguje kódy na strane: priame (s bodkou) + proximity (holý + fragment).
+
+    Každý `Hit` nesie bbox (top-left) + rozmer strany — z toho sa neskôr (na zdroji)
+    spraví y-flip do PDF bottom-left pre `_drawing_links` (D-042).
+    """
     pw = _page_words(page)
+    ps = (pw.width, pw.height)
     hits: list[Hit] = []
 
     # 1) priame celé kódy (`PD02.31`, `PH01.10`)
-    for text, _x, _y in pw.words:
+    for w in pw.words:
+        text = w[0]
         if m._full_re.match(text) and m.valid_tsp(text):
-            hits.append(Hit(text, page_no, "full"))
+            hits.append(Hit(text, page_no, "full", (w[1], w[2], w[3], w[4]), ps))
 
     # 2) proximity — holý Assembly Code + najbližší číselný fragment
-    bares = [(t, x, y) for (t, x, y) in pw.words if m._bare_re.match(t) and m.valid_tsp(t)]
-    frags = [(t, x, y) for (t, x, y) in pw.words if m._frag_re.match(t)]
-    for bt, bx, by in bares:
+    bares = [w for w in pw.words if m._bare_re.match(w[0]) and m.valid_tsp(w[0])]
+    frags = [w for w in pw.words if m._frag_re.match(w[0])]
+    for bw in bares:
+        bx, by = _center(bw)
         # najbližší fragment v okruhu PROXIMITY_PT
-        best: Optional[tuple[str, float]] = None
-        for ft, fx, fy in frags:
+        best: Optional[tuple[Word, float]] = None
+        for fw in frags:
+            fx, fy = _center(fw)
             dist = ((fx - bx) ** 2 + (fy - by) ** 2) ** 0.5
             if dist <= PROXIMITY_PT and (best is None or dist < best[1]):
-                best = (ft, dist)
+                best = (fw, dist)
         if best is not None:
-            hits.append(Hit(f"{bt}.{best[0]}", page_no, "proximity"))
+            fw = best[0]
+            # bbox = zjednotenie bublinového kódu a jeho fragmentu (Mark)
+            ubbox = (min(bw[1], fw[1]), min(bw[2], fw[2]),
+                     max(bw[3], fw[3]), max(bw[4], fw[4]))
+            hits.append(Hit(f"{bw[0]}.{fw[0]}", page_no, "proximity", ubbox, ps))
         else:
             # holý kód bez fragmentu — prefix-match na typy `bt.*` (D-041)
-            hits.append(Hit(bt, page_no, "bare"))
+            hits.append(Hit(bw[0], page_no, "bare", (bw[1], bw[2], bw[3], bw[4]), ps))
     return hits
 
 
@@ -198,6 +228,33 @@ def _doc_id(cur, container_name: str) -> Optional[str]:
     return row[0] if row else None
 
 
+def _to_bottom_left(bbox: tuple[float, float, float, float],
+                    page_size: tuple[float, float]) -> list[float]:
+    """PyMuPDF top-left bbox → PDF bottom-left (y rastie hore). Rieši y-flip raz, na zdroji."""
+    x0, y0, x1, y1 = bbox
+    _w, h = page_size
+    return [round(x0, 2), round(h - y1, 2), round(x1, 2), round(h - y0, 2)]
+
+
+def _route_for(object_type: str) -> str:
+    """object_type → segment route (zladené s appkou: `asset_type` → /type, inak /node)."""
+    return "type" if object_type == "asset_type" else "node"
+
+
+def _write_links(cur, doc_id: str, regions: list[dict]) -> None:
+    """Prepíše `_drawing_links` blob dokumentu (idempotentné, ostatné properties netknuté)."""
+    cur.execute(
+        """
+        update objects
+        set properties = jsonb_set(coalesce(properties, '{}'::jsonb),
+                                   '{_drawing_links}', %s::jsonb, true),
+            updated_at = now()
+        where id = %s
+        """,
+        (json.dumps(regions, ensure_ascii=False), doc_id),
+    )
+
+
 def _link(cur, from_id: str, doc_id: str, dry: bool) -> None:
     if dry:
         return
@@ -219,7 +276,8 @@ def _link(cur, from_id: str, doc_id: str, dry: bool) -> None:
 class DrawingResult:
     container_name: str
     detected: int
-    matched: int
+    matched: int                     # počet previazaných prvkov (= počet regiónov)
+    regions: int                     # počet link-regiónov v `_drawing_links`
     unmatched_codes: set[str]        # reálne medzery: `full`/`bare` bez zhody (reportuj)
     dropped_proximity: set[str]      # proximity odhad bez cieľa v DB (šum/mimo scope) → zahodené
 
@@ -236,47 +294,62 @@ def process_drawing(
             f"dokument '{row.container_name}' nie je v DB — najprv spusti doc_upload (E3)."
         )
 
-    # zber kódov podľa dôverovej vrstvy (D-041)
+    # zber zhôd s bbox; poradie podľa dôvery (full > proximity > bare), nech pri tom
+    # istom cieli vyhrá najdôveryhodnejší bbox (dedupe per previazaný prvok)
     doc = fitz.open(pdf_path)
-    full_codes: set[str] = set()      # vytlačené celé kódy — exact match, dôveryhodné
-    prox_codes: set[str] = set()      # poskladané proximity — exact match, inak šum
-    bare_codes: set[str] = set()      # holé Assembly Code — prefix-match na typy
+    hits: list[Hit] = []
     for i in range(doc.page_count):
-        for hit in detect_codes(doc[i], i + 1, m):
-            if hit.origin == "bare":
-                bare_codes.add(hit.code)
-            elif hit.origin == "proximity":
-                prox_codes.add(hit.code)
-            else:
-                full_codes.add(hit.code)
+        hits.extend(detect_codes(doc[i], i + 1, m))
+    _order = {"full": 0, "proximity": 1, "bare": 2}
+    hits.sort(key=lambda h: _order[h.origin])
 
-    matched_ids: set[str] = set()
+    regions: dict[str, dict] = {}     # target_id → región (prvý = najdôveryhodnejší výskyt)
     unmatched: set[str] = set()
     dropped: set[str] = set()
 
-    # exact match (full + proximity); pri nezhode rozhoduje pôvod
-    for code in full_codes | prox_codes:
-        ref = refs.get(code)
-        if ref is not None:
-            matched_ids.add(ref[0])
-        elif code in full_codes:
-            unmatched.add(code)       # vytlačený kód bez prvku = reálna medzera
+    def add_region(target_id: str, object_type: str, hit: Hit) -> None:
+        tid = str(target_id)
+        if tid in regions:
+            return                    # ten istý prvok už má región (skorší / dôveryhodnejší)
+        regions[tid] = {
+            "page": hit.page,
+            "bbox": _to_bottom_left(hit.bbox, hit.page_size),
+            "page_size": [round(hit.page_size[0], 2), round(hit.page_size[1], 2)],
+            "target_id": tid,
+            "target_route": _route_for(object_type),
+            "layer": hit.origin,
+            "label": hit.code,
+        }
+
+    for hit in hits:
+        if hit.origin == "bare":
+            # prefix-match holého Assembly Code na typy `code.*` (D-041)
+            type_ids = types_by_assembly.get(hit.code)
+            if type_ids:
+                for tid in type_ids:
+                    add_region(tid, "asset_type", hit)
+            else:
+                unmatched.add(hit.code)       # neznámy Assembly Code bez typu v DB
         else:
-            dropped.add(code)         # proximity odhad bez zhody = šum (kóty/osi) → zahoď
+            # exact match (full + proximity); pri nezhode rozhoduje pôvod
+            ref = refs.get(hit.code)
+            if ref is not None:
+                add_region(ref[0], ref[1], hit)
+            elif hit.origin == "full":
+                unmatched.add(hit.code)       # vytlačený kód bez prvku = reálna medzera
+            else:
+                dropped.add(hit.code)         # proximity odhad bez zhody = šum → zahoď
 
-    # prefix-match holých Assembly Code na typy `code.*`
-    for code in bare_codes:
-        type_ids = types_by_assembly.get(code)
-        if type_ids:
-            matched_ids.update(type_ids)
-        else:
-            unmatched.add(code)       # neznámy Assembly Code bez typu v DB
+    matched_ids = set(regions.keys())
+    if not dry:
+        for from_id in matched_ids:
+            _link(cur, from_id, doc_id, dry)
+        _write_links(cur, doc_id, list(regions.values()))
 
-    for from_id in matched_ids:
-        _link(cur, from_id, doc_id, dry)
-
-    detected = len(full_codes | prox_codes | bare_codes)
-    return DrawingResult(row.container_name, detected, len(matched_ids), unmatched, dropped)
+    detected = len({h.code for h in hits})
+    return DrawingResult(
+        row.container_name, detected, len(matched_ids), len(regions), unmatched, dropped
+    )
 
 
 # ── CLI ───────────────────────────────────────────────────────────────────────
@@ -299,6 +372,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     print(f"Výkresy v manifeste (VD): {len(drawings)}")
 
     total_links = 0
+    total_regions = 0
     with psycopg.connect(database_url()) as conn:
         with conn.cursor() as cur:
             refs = _load_refs(cur)
@@ -307,8 +381,9 @@ def main(argv: Optional[list[str]] = None) -> int:
             for row in drawings:
                 res = process_drawing(cur, row, matcher, refs, types_by_assembly, args.dry_run)
                 total_links += res.matched
+                total_regions += res.regions
                 print(f"  {res.container_name:46s} detegovaných {res.detected:3d} "
-                      f"→ zhoda {res.matched:3d} prvkov")
+                      f"→ zhoda {res.matched:3d} prvkov | regiónov {res.regions:3d}")
                 if args.show_unmatched and res.unmatched_codes:
                     print(f"      bez zhody (medzera): {sorted(res.unmatched_codes)}")
                 if args.show_unmatched and res.dropped_proximity:
@@ -316,10 +391,12 @@ def main(argv: Optional[list[str]] = None) -> int:
                           f"{sorted(res.dropped_proximity)}")
         if args.dry_run:
             conn.rollback()
-            print("\n--dry-run → do DB sa nezapisuje.")
+            print(f"\nSúčet: {total_links} prvkov / {total_regions} regiónov "
+                  f"(--dry-run → do DB sa nezapisuje).")
         else:
             conn.commit()
-            print(f"\nHotovo: {total_links} element-väzieb zapísaných (role='{LINK_ROLE}').")
+            print(f"\nHotovo: {total_links} element-väzieb (role='{LINK_ROLE}') + "
+                  f"{total_regions} link-regiónov v _drawing_links zapísaných.")
     return 0
 
 

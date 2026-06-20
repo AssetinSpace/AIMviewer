@@ -29,3 +29,13 @@ def database_url() -> str:
             "Settings → Database → Connection string / URI)."
         )
     return url
+
+
+# Verejná URL nasadeného Viewera — báza pre URI-link anotácie vo výkresoch (D-042 B).
+# Env-špecifická: prepíš `SITE_URL` v `.env.local` pre lokál/preview; default = produkcia.
+_DEFAULT_SITE_URL = "https://ai-mviewer.vercel.app"
+
+
+def site_url() -> str:
+    """Vráti `SITE_URL` (bez koncového `/`); default = produkčná Vercel URL."""
+    return os.environ.get("SITE_URL", _DEFAULT_SITE_URL).rstrip("/")

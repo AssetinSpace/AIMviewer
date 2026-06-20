@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { FileText } from "lucide-react";
+import { Eye, FileText } from "lucide-react";
 
 import type { FloorDrawing } from "@/lib/data/relations";
 
@@ -30,12 +30,18 @@ export function DrawingElements({ drawings }: { drawings: FloorDrawing[] }) {
             <span className="text-xs text-muted-foreground">
               ({elements.length} prvkov)
             </span>
+            <Link
+              href={`/drawing/${drawing.id}`}
+              className="ml-auto inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+            >
+              <Eye className="size-3.5" /> Prehliadačka
+            </Link>
             {drawing.location && (
               <a
                 href={drawing.location}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="ml-auto inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+                className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
               >
                 <FileText className="size-3.5" /> PDF
               </a>

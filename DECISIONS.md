@@ -663,9 +663,37 @@ sa riešia raz, na zdroji. **Detekcia ostáva jeden pipeline**: `pdf_link.py` pl
 **Dôsledok / vzťah k D-038:** toto je **užšia podmnožina** parkovaného D-038 (PDF
 split-screen) — **bez 3D geometrie a georeferencingu**; D-038/D-039 ostávajú kandidáti.
 Schéma DB sa **nemení** (čisto ETL/aplikačná vrstva). Holý typový kód = N inštancií →
-región mieri na stránku **typu** (1 cieľ). Otvorené (nie blokujúce): úložisko anotovaných
-PDF z fázy B (samostatná cesta vs prepis), hĺbka zoom/pan (mobil/touch odložiť), či
-zobrazovať aj `proximity`/nezhodné kódy slabšie (zatiaľ nie).
+región mieri na stránku **typu** (1 cieľ). Otvorené (nie blokujúce): hĺbka zoom/pan
+(mobil/touch odložiť), či zobrazovať aj `proximity`/nezhodné kódy slabšie (zatiaľ nie).
+
+**Implementačné rozhodnutia počas sprintu DV:**
+- *Fáza A (hotová):* `pdf_link.py` plní `_drawing_links` v **tom istom** pipeline ako E4
+  hrany — bbox sa nesie cez `Hit`, y-flip raz cez `_to_bottom_left` (PyMuPDF top-left →
+  PDF bottom-left). **Jeden región na previazaný prvok** (dedupe per `target_id`, poradie
+  dôvery `full > proximity > bare`) → súčet regiónov = počet E4 zhôd (193). `jsonb_set`
+  s `create_missing` = idempotentný prepis blobu, ostatné `properties`/hrany netknuté.
+  0-regiónový výkres (PBR pôdorys) dostane `_drawing_links: []` (kľúč prítomný).
+- *Fáza B (hotová):* `etl/pdf_annotate.py` číta `_drawing_links` (žiadna druhá detekcia)
+  a cez `page.insert_link` zapečie URI-linky `${SITE_URL}/{target_route}/{target_id}`.
+  **Úložisko (vyriešená otvorená otázka):** *samostatná cesta*, nie prepis — anotované
+  PDF idú do `podklady/ANNOTATED/` (zrkadlí `source_path`, zdroj v `FINAL/` netknutý;
+  `podklady/` je gitignored). `SITE_URL` z `etl/config.py` (env-špecifické, default =
+  produkčná Vercel URL). 0-regiónový výkres sa preskočí (nevytvára prázdnu kópiu).
+  Overené: 193 URI-linkov, round-trip box ↔ text kódu 23/23 (rotácia 0, offset mediaboxu
+  rieši PyMuPDF interne).
+- *Fáza C (hotová):* in-app prehliadačka. Route `app/(viewer)/drawing/[id]` (server) →
+  `lib/data/drawing.ts` (`fetchDrawing`: `documents.location` = zdrojové PDF zo Supabase
+  Storage + `_drawing_links`). Render `react-pdf` (pdf.js) v client komponente
+  `drawing-viewer.tsx`, načítanej cez `drawing-viewer-loader.tsx` (`next/dynamic`,
+  `ssr:false` — pdf.js potrebuje DOM/Worker). pdf.js **worker z CDN** (unpkg, viazaný na
+  `pdfjs.version`) — robustné pod Turbopackom, bez bundler-špecifického riešenia.
+  Klikateľné boxy = absolútny overlay nad `<Page>`; bbox (PDF bottom-left) sa škáluje na
+  renderované px (`onRenderSuccess` dims, `pageSize` báza), y-flip v UI. Box = `<Link>` na
+  `/{target_route}/{target_id}` + hover highlight. Toolbar: stránkovanie + zoom (0,5–3×;
+  pan = scroll, touch/pinch **odložené** ako v D-042). Vstup do prehliadačky: odkaz
+  „Prehliadačka" na karte prvku (`drawing-list.tsx`) aj podlažia (`drawing-elements.tsx`).
+  Nová závislosť: `react-pdf@10` (+`pdfjs-dist@5`). Overené v dev/preview: 1NP render,
+  57 boxov presne na kódoch, klik → detail typu, build zelený.
 
 ---
 

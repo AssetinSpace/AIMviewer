@@ -1,11 +1,12 @@
 import Link from "next/link";
-import { FileText } from "lucide-react";
+import { Eye, FileText } from "lucide-react";
 
 import type { DrawingLink } from "@/lib/data/relations";
 
 /**
  * Výkresy, v ktorých je prvok zobrazený (E4 auto-linking, D-041). Názov vedie na
- * detail dokumentu (`/node/[id]`), ikona je priamy odkaz na PDF (`location`).
+ * detail dokumentu (`/node/[id]`), „Prehliadačka" otvorí interaktívny výkres
+ * (`/drawing/[id]`, D-042), ikona je priamy odkaz na PDF (`location`).
  */
 export function DrawingList({ drawings }: { drawings: DrawingLink[] }) {
   if (drawings.length === 0) {
@@ -29,12 +30,18 @@ export function DrawingList({ drawings }: { drawings: DrawingLink[] }) {
           >
             {d.name ?? d.objectRef ?? d.id}
           </Link>
+          <Link
+            href={`/drawing/${d.id}`}
+            className="ml-auto inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+          >
+            <Eye className="size-3.5" /> Prehliadačka
+          </Link>
           {d.location && (
             <a
               href={d.location}
               target="_blank"
               rel="noopener noreferrer"
-              className="ml-auto inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+              className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
             >
               <FileText className="size-3.5" /> PDF
             </a>
