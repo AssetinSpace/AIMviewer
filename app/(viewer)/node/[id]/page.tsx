@@ -1,6 +1,8 @@
 import Link from "next/link";
+import { Eye } from "lucide-react";
 import { notFound, redirect } from "next/navigation";
 
+import { fetchDrawing } from "@/lib/data/drawing";
 import { fetchNode, type NodeDetail, type NodeRef } from "@/lib/data/spatial";
 import { fetchAsset } from "@/lib/data/asset";
 import {
@@ -505,12 +507,26 @@ async function OrganizationView({ id }: { id: string }) {
 
 /** Detail dokumentu (S3, D-014): metadáta + na ktoré objekty je pripojený. */
 async function DocumentView({ id }: { id: string }) {
-  const doc = await fetchDocument(id);
+  // Dokument + (ak je výkres) jeho klikateľné regióny — pre vstup do prehliadačky.
+  const [doc, drawing] = await Promise.all([fetchDocument(id), fetchDrawing(id)]);
   if (!doc) notFound();
+
+  const hasViewer = drawing !== null && drawing.links.length > 0;
 
   return (
     <div className="mx-auto max-w-3xl">
       <NodeHeader type="document" name={doc.name} objectRef={doc.object_ref} />
+
+      {hasViewer && (
+        <Link
+          href={`/drawing/${id}`}
+          className="mb-6 inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+        >
+          <Eye className="size-4" />
+          Otvoriť interaktívnu prehliadačku
+          <span className="opacity-80">({drawing!.links.length} prvkov)</span>
+        </Link>
+      )}
 
       <Card className="mb-6">
         <CardHeader>
