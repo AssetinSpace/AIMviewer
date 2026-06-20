@@ -415,6 +415,80 @@ Primárne dve cesty:
 schémy + padding + validačný report = náš mini-IDS); až potom dáva zmysel D-032 pipeline.
 **Poradie implementácie: identity spine (object_ref) → document pipeline → ICDD export.**
 
+### D-034 — Rozsah importu = informačné požiadavky (čo je „asset")
+**Kontext:** ETL dnes berie ako `asset` **každý `IfcElement`** (mínus otvory) a ako
+`asset_type` **každý `IfcTypeObject`**. Na reálnom modeli diplomky (`ASR.ifc`) to dáva
+2643 „assetov" a 437 „typov" — z toho väčšina je šum: **1378× `IfcMember` (stĺpiky
+fasády), 126× `IfcPlate` (výplne), 398× vnorený `IfcCurtainWall` (panely)**, a medzi
+typmi **89× `IfcSpaceType` / 159× `IfcMemberType`**. Každý model je pritom iný — pevný
+zoznam tried v kóde by sa pri ďalšom projekte rozsypal.
+
+**Zistené (sken ASR IFC):** prirodzená hranica je **dekompozícia `IfcRelAggregates`**:
+- **Top-level** (645) = prvok visí priamo v priestore (`ue.get_aggregate` = priestor/None)
+  → reálne spravovateľné prvky (steny, dvere, strechy, dosky, VZT terminály, stĺpy,
+  podhľady, fasáda ako 19 celkov, schody).
+- **Nested** (1998) = prvok je *časť* iného elementu → build-up rodiča (stĺpiky, výplne,
+  panely fasády, vrstvy strechy). **NIE samostatný asset.**
+- **Výnimka:** `IfcWindow` (26) a `IfcDoor` (10) majú v tomto modeli rodiča
+  `IfcCurtainWall` (osadené vo fasáde), ale **funkčne sú samostatné** (tých 10 dverí má
+  SNIM kód) → patria medzi assety napriek vnoreniu.
+
+**Rozhodnutie (princíp):** *„asset = to, na čo máme vypísanú informačnú požiadavku."*
+Rozsah importu **nie je hardcoded v kóde**, ale vychádza z **požiadaviek projektu**
+(EIR → kódovacia schéma `applies_to` / IDS applicability). Tá istá definícia tak poháňa
+**tri** veci z jedného zdroja pravdy (rozširuje D-033): **(1) čo importovať** (scope),
+**(2) čo dostane kódovaný `object_ref`** (extrakcia), **(3) čo sa validuje** (IDS, E6).
+Priestorová kostra (site/building/floor/space) sa importuje **vždy** (aj keď nie je
+„požadovaný asset" — je to skelet hierarchie). Princíp **„mimo scope ≠ zahodiť"**: prvok
+sa buď neimportne, alebo importne s príznakom out-of-scope + `_`-capture (analógia
+capture-don't-structure, D-024), aby sa dal neskôr promovať.
+
+**Dôvod:** každý model je špecifický; jediný udržateľný filter je *čo projekt požaduje*,
+nie zoznam tried v kóde. Zjednotenie scope+extrakcia+validácia pod jednu definíciu drží
+konzistenciu a robí pridanie štandardu/triedy otázkou **inej definície, nie zmeny kódu**
+(línia D-033). Štruktúrne kritérium (top-level vs sub-komponent) je IFC-natívne a nezávisí
+od kvality kódovania (okná v tomto modeli **nemajú** `Assembly Code`, no stále ich chceme).
+
+**Dôsledok (fázovanie, prevažne aditívne):**
+- **Teraz (E2):** `_is_asset`/`asset_type` rozsah **číta z policy v `scheme.py`** (nie
+  hardcoded): default = applicability schémy **∪** štruktúrne pravidlo (top-level +
+  blacklist `IfcMember`/`IfcPlate`/vnorené panely + výnimka `IfcDoor`/`IfcWindow`).
+  `IfcSpaceType` sa **nikdy** nestáva `asset_type` (priestor nie je asset).
+- **Neskôr (platforma):** zdroj scope = **parsovaný IDS** projektu; viaže sa na
+  *multi-projekt scoping* (§7) — každý projekt = vlastná schéma + IDS config. Výmena
+  zdroja scope je aditívna, kód `_is_asset` sa nemení.
+- Schéma DB sa **nemení** (čisto ETL/aplikačná vrstva).
+
+### D-035 — Konsolidácia podlaží: pomocné Revit úrovne → reálne podlažie
+**Kontext:** `ASR.ifc` má **18 `IfcBuildingStorey`**, ale len 5 sú reálne podlažia
+(`1NP`–`5NP`). Zvyšok sú pomocné Revit referenčné/konštrukčné úrovne
+(`1NP_SH_ZD`, `1NP_HH_ZD`, `2NP_SH_STROP`, `2NP_HH_STROP`, …, `Dojazd_výťahov`,
+`0_Prahy_základová_špára`, `Spadova vrstva`). Tieto úrovne **nesú reálne assety**
+(napr. `1NP_HH_ZD` 45 prvkov, `Spadova vrstva` 73), takže ich nemožno len zahodiť —
+ale ako samostatné „floor" uzly by Viewer (strom triedený podľa elevácie, D-027)
+zobrazil 18 kryptických podlaží = **šum** (cieľ E2 je „bez šumových uzlov").
+
+**Rozhodnutie:** ETL **konsoliduje** podlažia (`etl/transform.py:_resolve_floors`):
+- **Reálne podlažie** = názov `^\d+NP$` **alebo** aggreguje aspoň jeden `IfcSpace`.
+- Pomocné úrovne sa **nepublikujú** ako `floor` uzly; ich assety/priestory sa
+  premapujú na reálne podlažie podľa **NP-prefixu názvu** (`2NP_HH_STROP` → `2NP`),
+  inak (názov bez NP: `Dojazd_výťahov`, `Spadova vrstva`) podľa **najbližšej elevácie**.
+- `located_in` pre asset/priestor ide vždy na premapované reálne podlažie.
+- Fallback: ak model nemá rozpoznateľné reálne podlažia (iný projekt), ETL ponechá
+  všetky storeys (neriskuje stratu skeletu).
+
+**Dôvod:** princíp **„mimo scope ≠ zahodiť"** (D-034) — assety z pomocných úrovní sa
+zachovajú, len sa zavesia na zmysluplné podlažie. Štruktúrne kritérium (reálne =
+má priestory / `NP` názov) je IFC/projektovo robustné a deterministické; demo dostane
+čistú 5-podlažnú hierarchiu namiesto 18 Revit-artefaktov. Pravidlo je ETL-lokálne
+(žiadna zmena DB schémy ani Viewera).
+
+**Dôsledok:** ASR → **5 podlaží** (`1NP`–`5NP`), 89 priestorov, 681 assetov; jediný
+koreň `site`. Väčšina assetov je `located_in` priamo podlažie (model ich kontajneruje
+v storey, nie v space) — priestory tak môžu byť poloprázdne, čo zodpovedá modelu.
+Mapovanie pomocných úrovní podľa **názvu** je závislé na Revit konvencii projektu;
+iný projekt s inou konvenciou pomenovania levelov dostane vlastnú heuristiku (aditívne).
+
 ---
 
 ## 7. Otvorené otázky (ešte neriešené)
@@ -426,7 +500,9 @@ schémy + padding + validačný report = náš mini-IDS); až potom dáva zmysel
 - **property_set_templates** — voliteľná referenčná tabuľka pre bSDD validáciu psetov (až pri validácii handoveru)
 - **Actor model C** — org-hierarchia, štruktúrované adresy, intrinsic roly (plánované aditívne, viď D-024)
 - **Multi-projekt scoping** — dnes 1 Supabase = 1 budova; pre platformu pridať `project`
-  entitu + coding-scheme config per projekt (D-033). Aditívne, rieši sa pri 2. projekte.
+  entitu + coding-scheme config per projekt (D-033/D-034). Aditívne, rieši sa pri 2. projekte.
+- **IDS-driven import scope** — strojové odvodenie rozsahu importu z IDS applicability
+  (D-034); teraz config-driven default v `scheme.py`, plné parsovanie IDS až s platformou.
 - **`rel_supersedes`** — explicitná väzba revízií dokumentov (D-032); zatiaľ implicitne
   cez name + `valid_from`.
 - **Instance-level INST padding** — šírka číselných polí (`Mark` `03` vs generický `001`)
@@ -439,4 +515,4 @@ schémy + padding + validačný report = náš mini-IDS); až potom dáva zmysel
 
 ---
 
-*Posledná aktualizácia: 2026-06-18 — dokumentový brainstorm: D-032 (PDF úložisko/model/export) + D-033 (coding scheme, object_ref, linking). Ďalej: ETL identity spine → document pipeline → ICDD export.*
+*Posledná aktualizácia: 2026-06-20 — E2 hotový: D-034 (rozsah importu) zavedený ako `ScopePolicy` v `scheme.py`; nové **D-035** (konsolidácia podlaží — 18 Revit storeys → 5 reálnych). 18 SNIM kategórií, doladené mapovanie, oprava `valid_from` v `etl/db.py` (coalesce + idempotentný `ON CONFLICT`), `--reset` load 926 uzlov z `ASR.ifc` do Supabase. Schéma DB sa nemenila (čisto ETL/aplikačná vrstva). Ďalej: E3 (document storage) → E4 (PDF linking) → E5 (ICDD export).*

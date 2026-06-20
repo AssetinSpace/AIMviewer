@@ -103,6 +103,31 @@ class GuidHistory:
 
 
 @dataclass
+class CoverageReport:
+    """Pokrytie `object_ref` kódovacou schémou (D-033) — výstup `--dry-run`.
+
+    Nie je to IDS/conformance (to je parkované, E6) — len koľko prvkov dostalo
+    platný SNIM kód vs. fallback na `ifc_guid`, a kde kód chýba.
+    """
+
+    # occurrence (asset) úroveň
+    assets_total: int = 0                                   # prvky v SNIM-aplikovateľných triedach
+    assets_other_classes: int = 0                           # prvky mimo applies_to (mimo menovateľa)
+    assets_snim: int = 0                                    # plný inštančný SNIM kód
+    assets_fallback: dict[str, int] = field(default_factory=dict)   # dôvod → počet
+    # asset_type úroveň
+    types_total: int = 0
+    types_snim: int = 0
+    types_fallback: int = 0
+    types_merged: int = 0                                   # IfcTypeObject zlúčené do zdieľaného kódu
+    # diagnostika
+    by_category: dict[str, int] = field(default_factory=dict)        # TSP/label → počet asset kódov
+    fallback_classes: dict[str, int] = field(default_factory=dict)   # IFC trieda → počet fallbackov
+    undefined_tsp: dict[str, int] = field(default_factory=dict)      # kód je, kategória v schéme nie
+    collisions: list[str] = field(default_factory=list)             # duplicitné SNIM kódy
+
+
+@dataclass
 class StagedModel:
     objects: list[ObjectRow] = field(default_factory=list)
     edges: list[Edge] = field(default_factory=list)
@@ -110,6 +135,7 @@ class StagedModel:
     systems: list[ClassificationSystem] = field(default_factory=list)
     refs: list[ClassificationRef] = field(default_factory=list)
     guid_history: list[GuidHistory] = field(default_factory=list)
+    coverage: Optional["CoverageReport"] = None
 
     def summary(self) -> str:
         return (

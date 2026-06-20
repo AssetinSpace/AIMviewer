@@ -15,9 +15,9 @@
 - ✅ S1 — Priestorová hierarchia: strom + route per uzol (D-027)
 - ✅ S2 — Asset karta: dedičnosť + provenance, klasifikácie, type route (D-028)
 - ✅ S3 — Dokumenty + zodpovednosti + GUID história, generický object route (D-029)
-- 🟢 **Teraz:** S4 — polish & launch (čaká na ETL reálne dáta + doménu)
-- 🟡 ETL pipeline (Python + ifcopenshell, D-031) — **scaffold hotový** (`etl/`); IFC z diplomky **dodaný** (`podklady/`); paralelná vetva, nie blocker
-- 🟡 Dokumenty + coding scheme (D-032/D-033) — **rozhodnuté**, rozpísané do E-sprintov (E1–E5, viď paralelný track nižšie); **ďalší krok = E1**
+- 🟢 **Teraz:** S4 — polish & launch (reálne dáta **naloadené** z ETL; ostáva doména + polish)
+- 🟢 ETL pipeline (Python + ifcopenshell, D-031) — **E2 hotový**: reálny load z `ASR.ifc` do Supabase (926 uzlov, 5 podlaží), Viewer beží na reálnej budove namiesto seedu
+- 🟡 Dokumenty + coding scheme (D-032/D-033) — **rozhodnuté**, rozpísané do E-sprintov (E1–E6); **E1+E2 hotové**; **ďalší krok = E3** (document storage)
 - ⏸️ LLM interface — **parkované** (S-LLM), doladíme neskôr
 
 **Máme:** Supabase Cloud (projekt `acwoupricatirhlfkhvk`) + GitHub repo (`AssetinSpace/AIMviewer`) + Vercel deploy (auto-deploy z `main`). **Chýba zatiaľ:** vlastná doména (príde v S4).
@@ -102,8 +102,8 @@
 
 | Sprint | Cieľ (demovateľný výstup) | Kľúčové |
 |---|---|---|
-| **E1 — Coding scheme + object_ref** | `etl/scheme.py` (field-source resolver + SNIM definícia) a prepis `_RefAllocator` → `object_ref` zo schémy. `--dry-run` na ASR IFC vypíše objekty so SNIM kódom + **coverage report** (% prvkov s platným kódom vs fallback GUID). | D-033 |
-| **E2 — ETL load reálnych dát** | Doladiť mapovanie (`TODO(model)`: hierarchia, asset/asset_type, psety, klasifikácie), spustiť load do Supabase. Viewer ukazuje **reálnu budovu z IFC** namiesto seedu. | D-031 |
+| **E1 — Coding scheme + object_ref** ✅ | `etl/scheme.py` (field-source resolver + SNIM definícia) a prepis `_RefAllocator` → `object_ref` zo schémy. `--dry-run` na ASR IFC vypíše objekty so SNIM kódom + **coverage report** (% prvkov s platným kódom vs fallback GUID). | D-033 |
+| **E2 — ETL load reálnych dát** ✅ | Rozsah importu policy (D-034) + konsolidácia podlaží (D-035) + 18 SNIM kategórií + doladené mapovanie (hierarchia, psety, klasifikácie, GUID). Idempotentný `--reset` load do Supabase. Viewer beží na **reálnej budove z IFC** namiesto seedu. | D-031/D-034/D-035 |
 | **E3 — Document storage + upload** | Supabase bucket `documents/` + `storage_type` migrácia; `etl/doc_upload.py` (naming convention + `links.csv` fallback → upload + IfcDocument uzly + `rel_has_document`). Nahrané PDF **viditeľné na karte prvku** vo Vieweri. | D-032 |
 | **E4 — PDF výkres auto-linking** | `pdfplumber` text + bbox; regex **odvodený zo schémy**; proximity match fragmentov (`DD01` + `06.03`). Pôdorys 1NP sa **automaticky prepojí** na typy prvkov v ňom. | D-032/D-033 |
 | **E5 — ICDD export** | `etl/icdd_export.py` (rdflib): `linkset.ttl` z `rel_has_document`, `payload_documents/`, prepínač `--embed-payloads`. **Stiahnuteľný ISO 21597 kontajner.** | D-015/D-032 |
@@ -111,19 +111,53 @@
 
 ### Detail
 
-**E1 — Coding scheme + object_ref** ← ĎALŠÍ KROK
+**E1 — Coding scheme + object_ref** ✅ HOTOVÝ
 - `etl/scheme.py`: field-source resolver (`from: property|attribute|classification|type_property`,
   voliteľné `extract` regex + `format` s `pad`), `applies_to` per IFC trieda.
 - SNIM definícia z `SNIM - Hierarchia.pdf` (dvere, steny, podlahy, podhľady, strechy,
-  fasáda, zámočnícke/klampiarske výrobky).
+  fasáda, zámočnícke/klampiarske výrobky) — 8 kategórií kľúčovaných podľa TSP prefixu.
 - Prepis `_RefAllocator` v `transform.py`: `object_ref` zo schémy (type `DD01.06` +
   instance `DD01.06.03`, zero-pad číselných polí); fallback `ifc_guid` len keď kód chýba.
 - Coverage report pri `--dry-run` (NIE IDS — len pokrytie).
-- Akceptačné: `--dry-run` na ASR IFC ukáže `asset_type`/`asset` so SNIM `object_ref`.
+- **Akceptačné ✅:** `--dry-run` na ASR IFC ukáže `asset_type`/`asset` so SNIM `object_ref`
+  (overené `DD01.06` / `DD01.06.03`); 3189 uzlov, všetky `object_ref` unikátne; coverage:
+  135 inštančných SNIM kódov (83 dvere + 52 podlahy), 59 zdieľaných typových kódov z 109
+  IFC typov, fallback dôvody (bez Assembly Code / bez Mark / TSP mimo schémy / kolízia)
+  rozpísané po IFC triedach. `py_compile` čistý.
+- **Zistené (vstup pre E2):**
+  - SNIM kategóriu určuje **prefix `Assembly Code` (TSP), nie IFC trieda ani pset** —
+    fasáda `FS*` aj strecha `ST*` žijú v psete `IFC_Steny` na `IfcWall`; polia preto
+    čítame naprieč psetmi.
+  - **Typové entity nemajú vlastné psety** → typový kód sa odvodzuje z occurrence;
+    viac Revit typov s rovnakým SNIM kódom sa zlučuje do jedného `asset_type`.
+  - Steny/strechy/podhľady/zámočníctvo majú v modeli **len typové kódovanie** (bez
+    `Mark`) → inštancie idú na GUID fallback (správne — nemajú tlačený inštančný tag).
+  - V modeli sú aj TSP **mimo 8 definovaných kategórií** (OV, PL, ZD, DZ, SD, VT, SH,
+    LP, IH, TV — z `SNIM - Výpis skladieb`); coverage ich hlási na doplnenie do `scheme.py`.
+  - `model.by_type("IfcTypeObject")` stále tvorí `asset_type` aj z `IfcSpaceType`/
+    `IfcMemberType` (generický ref) — zúženie rozsahu `asset`/`asset_type` je E2.
 
-**E2 — ETL load reálnych dát**
-- Doladiť `TODO(model)` v `transform.py`; load do Supabase (idempotentný upsert, D-031).
-- Akceptačné: Viewer (S1–S3) beží na reálnej budove namiesto seedu.
+**E2 — ETL load reálnych dát** ✅ HOTOVÝ
+- **Rozsah importu (D-034)** — `ScopePolicy` v `scheme.py` (nie hardcoded): asset =
+  top-level prvok (`get_aggregate` = priestor/None) mínus voidy (`IfcFeatureElement`)
+  a sub-komponenty (vnorené `IfcMember`/`IfcPlate`/panely fasády/vrstvy strechy/ramená
+  schodov); **výnimka** vnorené `IfcDoor`/`IfcWindow`. `asset_type` len pre typy
+  referencované assetom (žiadny `IfcSpaceType`). ASR: **681 assetov** z 2706 `IfcElement`.
+- **Konsolidácia podlaží (D-035)** — 18 Revit storeys → **5 reálnych podlaží** (`1NP`–`5NP`);
+  pomocné úrovne sa premapujú (NP-prefix / najbližšia elevácia), assety sa nestrácajú.
+- **18 SNIM kategórií** v `scheme.py` (8 z Hierarchie + 10 z Výpisu skladieb: OV, PL, LP,
+  ZD, DZ, SD, IH, VT, SH, TV) — coverage už nehlási „TSP mimo schémy".
+- **Mapovanie** doladené: hierarchia (Site→Building→Floor→Space→Asset), psety
+  (Pset_/Qto_=štandard, inak custom, žiadne `_`-kľúče), klasifikácie (Uniformat, na type →
+  union do occurrence cez `v_asset_classifications`), GUID história. Aktori/dokumenty v ASR
+  nie sú (0 — žiadny šum). VZT.ifc zatiaľ NEloadovaný (E3+).
+- **Load** — `etl/db.py` opravený (`valid_from` `coalesce(…, now())`, idempotentný
+  `ON CONFLICT`); nový `--reset` (nahradenie seedu). 
+- **Akceptačné ✅:** `--reset` load → 926 uzlov (681 asset + 149 asset_type + 89 space +
+  5 floor + building + site), 776 `located_in`, 644 `defined_by_type`, 602
+  `has_classification` (Uniformat, 36 referencií), 926 GUID histórie; jediný koreň `site`
+  (asset_type bez polohy). Re-run bez `--reset` = **identické počty** (idempotencia).
+  Live `/health` na Verceli ukazuje `count(*) = 926` (reálna budova namiesto 15-uzl. seedu).
 
 **E3 — Document storage + upload**
 - Naming convention (pozičné polia + delimiter, Dalux štýl) + `links.csv` fallback.
@@ -143,4 +177,4 @@ naming convention finálny tvar) sú v DECISIONS §7.
 - 3D / IFC.js geometria (D-007: sme dátový viewer, nie geometrický).
 
 ---
-*Posledná aktualizácia: 2026-06-18 — IFC + podklady dodané; D-032/D-033 rozhodnuté a rozpísané do E-sprintov (E1 coding scheme → E2 load → E3 storage → E4 PDF scan → E5 ICDD; E6 validácia parkovaná). Ďalší krok: E1.*
+*Posledná aktualizácia: 2026-06-20 — E2 (ETL load reálnych dát) hotový: rozsah importu policy (D-034), konsolidácia podlaží (D-035), 18 SNIM kategórií, doladené mapovanie + idempotentný `--reset` load do Supabase (926 uzlov z `ASR.ifc`). Viewer beží na reálnej budove namiesto seedu. Ďalší krok: E3 (document storage + upload).*

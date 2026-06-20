@@ -23,10 +23,30 @@ _EDGE_TABLES = {
 }
 
 
-def load_model(url: str, model: StagedModel) -> None:
-    """Zapíše celý staged model v jednej transakcii (commit na konci)."""
+def reset_data(cur) -> None:
+    """Vyprázdni AIM dátové tabuľky (napr. pred nahradením seedu reálnymi dátami, E2).
+
+    `TRUNCATE ... CASCADE` na koreňových tabuľkách zmaže aj všetko závislé cez FK
+    (prípony, hrany `rel_*`, GUID história, klasifikačné referencie). Seed je
+    reprodukovateľný z `supabase/seed.sql`, takže je to bezpečné a vratné.
+    Schéma (tabuľky/views/migrácie) ostáva nedotknutá — len riadky.
+    """
+    cur.execute(
+        "truncate table objects, classification_systems, classification_references "
+        "restart identity cascade"
+    )
+
+
+def load_model(url: str, model: StagedModel, reset: bool = False) -> None:
+    """Zapíše celý staged model v jednej transakcii (commit na konci).
+
+    `reset=True` najprv vyprázdni AIM dáta (nahradenie seedu, E2) — stále v tej
+    istej transakcii, takže pri chybe sa nič nezahodí.
+    """
     with psycopg.connect(url) as conn:
         with conn.cursor() as cur:
+            if reset:
+                reset_data(cur)
             sys_ids = _load_systems(cur, model)
             ref_ids = _load_refs(cur, model, sys_ids)
             obj_ids = _load_objects(cur, model)
@@ -155,10 +175,9 @@ def _load_guid_history(cur, model: StagedModel, obj_ids: dict[str, str]) -> None
             """
             insert into ifc_guid_history
               (id, object_id, ifc_guid, valid_from, valid_until, source)
-            values (%s, %s, %s, %s, %s, %s)
+            values (%s, %s, %s, coalesce(%s, now()), %s, %s)
             on conflict (id) do update set
-              valid_from = excluded.valid_from, valid_until = excluded.valid_until,
-              source = excluded.source
+              valid_until = excluded.valid_until, source = excluded.source
             """,
             (hid, obj_ids[g.object_ref], g.ifc_guid, g.valid_from, g.valid_until, g.source),
         )
@@ -174,10 +193,10 @@ def _load_edges(cur, model: StagedModel, obj_ids: dict[str, str]) -> None:
                 f"""
                 insert into {table}
                   (id, from_id, to_id, role, valid_from, valid_until, source)
-                values (%s, %s, %s, %s, %s, %s, %s)
+                values (%s, %s, %s, %s, coalesce(%s, now()), %s, %s)
                 on conflict (id) do update set
-                  role = excluded.role, valid_from = excluded.valid_from,
-                  valid_until = excluded.valid_until, source = excluded.source
+                  role = excluded.role, valid_until = excluded.valid_until,
+                  source = excluded.source
                 """,
                 (eid, from_id, to_id, e.role, e.valid_from, e.valid_until, e.source),
             )
@@ -186,10 +205,9 @@ def _load_edges(cur, model: StagedModel, obj_ids: dict[str, str]) -> None:
                 f"""
                 insert into {table}
                   (id, from_id, to_id, valid_from, valid_until, source)
-                values (%s, %s, %s, %s, %s, %s)
+                values (%s, %s, %s, coalesce(%s, now()), %s, %s)
                 on conflict (id) do update set
-                  valid_from = excluded.valid_from, valid_until = excluded.valid_until,
-                  source = excluded.source
+                  valid_until = excluded.valid_until, source = excluded.source
                 """,
                 (eid, from_id, to_id, e.valid_from, e.valid_until, e.source),
             )
@@ -205,10 +223,9 @@ def _load_class_links(
             """
             insert into rel_has_classification
               (id, from_id, to_id, valid_from, valid_until, source)
-            values (%s, %s, %s, %s, %s, %s)
+            values (%s, %s, %s, coalesce(%s, now()), %s, %s)
             on conflict (id) do update set
-              valid_from = excluded.valid_from, valid_until = excluded.valid_until,
-              source = excluded.source
+              valid_until = excluded.valid_until, source = excluded.source
             """,
             (cid, obj_ids[c.from_ref], ref_id, c.valid_from, c.valid_until, c.source),
         )
