@@ -81,11 +81,20 @@ class CodeMatcher:
 
 @dataclass
 class Hit:
-    """Jeden detegovaný kód na strane + jeho pôvod (pre report/debug)."""
+    """Jeden detegovaný kód na strane + jeho pôvod (pre report/debug).
+
+    `origin` určuje **dôverovú vrstvu matchu** (D-041):
+      • ``full``      — celý kód s vytlačenou bodkou (`PD02.31`, `DD01.06.03`); dôveryhodný
+                        dôkaz zámeru → exact match, bez zhody = reálna medzera (reportuj).
+      • ``proximity`` — poskladaný z dvoch blízkych tokenov (holý kód + číselný fragment);
+                        **heuristický odhad** → exact match, bez zhody = šum (kóty/osi) → zahoď.
+      • ``bare``      — holý Assembly Code bez Marku (`SN11`, `FS01`); **prefix-match** na
+                        typy `SN11.*` (výkres ukazuje typ prvku, nie konkrétnu inštanciu).
+    """
 
     code: str
     page: int
-    origin: str          # "full" | "proximity"
+    origin: str          # "full" | "proximity" | "bare"
 
 
 @dataclass
@@ -125,8 +134,8 @@ def detect_codes(page: "fitz.Page", page_no: int, m: CodeMatcher) -> list[Hit]:
         if best is not None:
             hits.append(Hit(f"{bt}.{best[0]}", page_no, "proximity"))
         else:
-            # holý kód bez fragmentu — aspoň typový prefix (môže matchnúť typ)
-            hits.append(Hit(bt, page_no, "full"))
+            # holý kód bez fragmentu — prefix-match na typy `bt.*` (D-041)
+            hits.append(Hit(bt, page_no, "bare"))
     return hits
 
 
@@ -165,6 +174,22 @@ def _load_refs(cur) -> dict[str, tuple[str, str]]:
     return {r[0]: (r[1], r[2]) for r in rows}
 
 
+def _types_by_assembly(refs: dict[str, tuple[str, str]]) -> dict[str, list[str]]:
+    """Assembly Code (`OV01`) → id-čka typov `OV01.*` — pre prefix-match holých kódov.
+
+    Assembly Code je vždy prvý dot-segment `object_ref`; prefix-match cieli **len typy**
+    (`asset_type`), lebo holý kód na výkrese identifikuje typ prvku, nie konkrétnu
+    inštanciu (tá by vyžadovala Mark, ktorý na bubline chýba).
+    """
+    out: dict[str, list[str]] = {}
+    for ref, (oid, otype) in refs.items():
+        if otype != "asset_type":
+            continue
+        assembly = ref.split(".", 1)[0]
+        out.setdefault(assembly, []).append(oid)
+    return out
+
+
 def _doc_id(cur, container_name: str) -> Optional[str]:
     row = cur.execute(
         "select id from objects where object_ref = %s and object_type = 'document'",
@@ -177,7 +202,8 @@ def _link(cur, from_id: str, doc_id: str, dry: bool) -> None:
     if dry:
         return
     # rel_has_document(from=prvok, to=výkres) — zachováva smer D-014 (objekt → dokument)
-    eid = ids.edge_id(from_id, doc_id, "has_document")
+    # psycopg vracia UUID stĺpce ako uuid.UUID → edge_id pracuje so stringami
+    eid = ids.edge_id(str(from_id), str(doc_id), "has_document")
     cur.execute(
         """
         insert into rel_has_document
@@ -194,10 +220,13 @@ class DrawingResult:
     container_name: str
     detected: int
     matched: int
-    unmatched_codes: set[str]
+    unmatched_codes: set[str]        # reálne medzery: `full`/`bare` bez zhody (reportuj)
+    dropped_proximity: set[str]      # proximity odhad bez cieľa v DB (šum/mimo scope) → zahodené
 
 
-def process_drawing(cur, row: DrawingRow, m: CodeMatcher, refs: dict, dry: bool) -> DrawingResult:
+def process_drawing(
+    cur, row: DrawingRow, m: CodeMatcher, refs: dict, types_by_assembly: dict, dry: bool
+) -> DrawingResult:
     pdf_path = _SOURCE_ROOT / row.source_path
     if not pdf_path.exists():
         raise SystemExit(f"PDF chýba: {row.source_path}")
@@ -207,25 +236,47 @@ def process_drawing(cur, row: DrawingRow, m: CodeMatcher, refs: dict, dry: bool)
             f"dokument '{row.container_name}' nie je v DB — najprv spusti doc_upload (E3)."
         )
 
+    # zber kódov podľa dôverovej vrstvy (D-041)
     doc = fitz.open(pdf_path)
-    codes: set[str] = set()
+    full_codes: set[str] = set()      # vytlačené celé kódy — exact match, dôveryhodné
+    prox_codes: set[str] = set()      # poskladané proximity — exact match, inak šum
+    bare_codes: set[str] = set()      # holé Assembly Code — prefix-match na typy
     for i in range(doc.page_count):
         for hit in detect_codes(doc[i], i + 1, m):
-            codes.add(hit.code)
+            if hit.origin == "bare":
+                bare_codes.add(hit.code)
+            elif hit.origin == "proximity":
+                prox_codes.add(hit.code)
+            else:
+                full_codes.add(hit.code)
 
     matched_ids: set[str] = set()
     unmatched: set[str] = set()
-    for code in codes:
+    dropped: set[str] = set()
+
+    # exact match (full + proximity); pri nezhode rozhoduje pôvod
+    for code in full_codes | prox_codes:
         ref = refs.get(code)
-        if ref is None:
-            unmatched.add(code)
-            continue
-        matched_ids.add(ref[0])
+        if ref is not None:
+            matched_ids.add(ref[0])
+        elif code in full_codes:
+            unmatched.add(code)       # vytlačený kód bez prvku = reálna medzera
+        else:
+            dropped.add(code)         # proximity odhad bez zhody = šum (kóty/osi) → zahoď
+
+    # prefix-match holých Assembly Code na typy `code.*`
+    for code in bare_codes:
+        type_ids = types_by_assembly.get(code)
+        if type_ids:
+            matched_ids.update(type_ids)
+        else:
+            unmatched.add(code)       # neznámy Assembly Code bez typu v DB
 
     for from_id in matched_ids:
         _link(cur, from_id, doc_id, dry)
 
-    return DrawingResult(row.container_name, len(codes), len(matched_ids), unmatched)
+    detected = len(full_codes | prox_codes | bare_codes)
+    return DrawingResult(row.container_name, detected, len(matched_ids), unmatched, dropped)
 
 
 # ── CLI ───────────────────────────────────────────────────────────────────────
@@ -251,14 +302,18 @@ def main(argv: Optional[list[str]] = None) -> int:
     with psycopg.connect(database_url()) as conn:
         with conn.cursor() as cur:
             refs = _load_refs(cur)
+            types_by_assembly = _types_by_assembly(refs)
             print(f"object_ref v DB (asset/type): {len(refs)}\n")
             for row in drawings:
-                res = process_drawing(cur, row, matcher, refs, args.dry_run)
+                res = process_drawing(cur, row, matcher, refs, types_by_assembly, args.dry_run)
                 total_links += res.matched
                 print(f"  {res.container_name:46s} detegovaných {res.detected:3d} "
                       f"→ zhoda {res.matched:3d} prvkov")
                 if args.show_unmatched and res.unmatched_codes:
-                    print(f"      bez zhody: {sorted(res.unmatched_codes)}")
+                    print(f"      bez zhody (medzera): {sorted(res.unmatched_codes)}")
+                if args.show_unmatched and res.dropped_proximity:
+                    print(f"      ignorované proximity (bez prvku v DB): "
+                          f"{sorted(res.dropped_proximity)}")
         if args.dry_run:
             conn.rollback()
             print("\n--dry-run → do DB sa nezapisuje.")

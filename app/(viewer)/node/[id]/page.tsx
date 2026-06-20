@@ -3,7 +3,11 @@ import { notFound, redirect } from "next/navigation";
 
 import { fetchNode, type NodeDetail, type NodeRef } from "@/lib/data/spatial";
 import { fetchAsset } from "@/lib/data/asset";
-import { fetchNodeSections, type NodeSectionsData } from "@/lib/data/relations";
+import {
+  fetchNodeSections,
+  fetchFloorDrawingsCached,
+  type NodeSectionsData,
+} from "@/lib/data/relations";
 import {
   fetchObjectMeta,
   fetchPerson,
@@ -15,6 +19,8 @@ import { formatDate } from "@/lib/utils";
 import { PropertySets } from "@/components/property-sets";
 import { ClassificationList } from "@/components/classification-list";
 import { DocumentList } from "@/components/document-list";
+import { DrawingList } from "@/components/drawing-list";
+import { DrawingElements } from "@/components/drawing-elements";
 import { ResponsibilityList } from "@/components/responsibility-list";
 import { ResponsibilityOfList } from "@/components/responsibility-of-list";
 import { GuidHistory } from "@/components/guid-history";
@@ -90,7 +96,7 @@ function NodeSectionsCards({
   data: NodeSectionsData;
   ifcGuid: string | null;
 }) {
-  const { documents, responsibilities, guidHistory } = data;
+  const { documents, drawings, responsibilities, guidHistory } = data;
 
   return (
     <>
@@ -105,6 +111,20 @@ function NodeSectionsCards({
           <DocumentList documents={documents} />
         </CardContent>
       </Card>
+
+      {drawings.length > 0 && (
+        <Card className="mb-6">
+          <CardHeader>
+            <CardTitle>
+              Zobrazený vo výkrese{" "}
+              <span className="text-muted-foreground">({drawings.length})</span>
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <DrawingList drawings={drawings} />
+          </CardContent>
+        </Card>
+      )}
 
       <Card className="mb-6">
         <CardHeader>
@@ -134,6 +154,29 @@ function NodeSectionsCards({
 async function NodeSections({ id, ifcGuid }: { id: string; ifcGuid: string | null }) {
   const data = await fetchNodeSections(id);
   return <NodeSectionsCards data={data} ifcGuid={ifcGuid} />;
+}
+
+/**
+ * „Prvky vo výkrese" (E4, D-041) — pre priestorový uzol (podlažie/budova): výkresy
+ * pripojené na uzol a prvky auto-detegované v každom z nich. Skryje sa, ak žiadny
+ * výkres uzla nemá detegované prvky.
+ */
+async function FloorDrawingsSection({ id }: { id: string }) {
+  const drawings = await fetchFloorDrawingsCached(id);
+  if (drawings.length === 0) return null;
+  return (
+    <Card className="mb-6">
+      <CardHeader>
+        <CardTitle>
+          Prvky vo výkrese{" "}
+          <span className="text-muted-foreground">({drawings.length})</span>
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        <DrawingElements drawings={drawings} />
+      </CardContent>
+    </Card>
+  );
 }
 
 /** Detail assetu (S2 jadro + S3 sekcie): atribúty, properties, klasifikácie,
@@ -262,6 +305,8 @@ function SpatialView({ detail }: { detail: NodeDetail }) {
               )}
             </CardContent>
           </Card>
+
+          <FloorDrawingsSection id={node.id} />
 
           <NodeSections id={node.id} ifcGuid={node.ifc_guid} />
         </>

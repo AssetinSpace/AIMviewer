@@ -8,6 +8,13 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 const AIM_CACHE = { revalidate: 60, tags: ["aim"] };
 
 /**
+ * `source` hrán z auto-linkingu výkresov (E4, D-041). Odlišuje element↔výkres
+ * väzby (prvok je *zobrazený* vo výkrese) od bežných dokumentových väzieb (E3).
+ * Zobrazujú sa vo vlastnej sekcii „Zobrazený vo výkrese", nie v „Dokumenty".
+ */
+const PDF_LINK_SOURCE = "pdf_link (E4)";
+
+/**
  * Data-access vrstva pre generické sekcie uzla (S3, D-029): dokumenty,
  * zodpovednosti a história IFC GUID. Všetko nad ľubovoľným `objects` uzlom —
  * sekcie sa zobrazia na asset karte aj na priestorových uzloch.
@@ -30,6 +37,30 @@ export interface DocumentRef {
   status: string | null;
   validFrom: string | null;
   validUntil: string | null;
+}
+
+/** Výkres, v ktorom je prvok zobrazený (E4, D-041) — s verejným PDF URL. */
+export interface DrawingLink {
+  /** Document `objects.id` — cieľ odkazu `/node/[id]`. */
+  id: string;
+  objectRef: string | null;
+  name: string | null;
+  /** Verejné URL PDF (`documents.location`) — priamy odkaz na výkres. */
+  location: string | null;
+}
+
+/** Prvok zobrazený vo výkrese (E4, D-041) — pre kartu podlažia. */
+export interface ElementInDrawing {
+  id: string;
+  objectType: "asset" | "asset_type";
+  objectRef: string | null;
+  name: string | null;
+}
+
+/** Výkres podlažia + zoznam prvkov, ktoré sú v ňom zobrazené (E4, D-041). */
+export interface FloorDrawing {
+  drawing: DrawingLink;
+  elements: ElementInDrawing[];
 }
 
 export interface ActorOrg {
@@ -62,20 +93,23 @@ export interface GuidHistoryEntry {
 
 export interface NodeSectionsData {
   documents: DocumentRef[];
+  /** Výkresy, v ktorých je tento prvok zobrazený (E4) — vlastná sekcia. */
+  drawings: DrawingLink[];
   responsibilities: Responsibility[];
   guidHistory: GuidHistoryEntry[];
 }
 
-/** Tri generické sekcie uzla naraz (paralelne) — jeden vstupný bod pre Viewer. */
+/** Generické sekcie uzla naraz (paralelne) — jeden vstupný bod pre Viewer. */
 async function fetchNodeSectionsImpl(
   objectId: string
 ): Promise<NodeSectionsData> {
-  const [documents, responsibilities, guidHistory] = await Promise.all([
+  const [documents, drawings, responsibilities, guidHistory] = await Promise.all([
     fetchDocuments(objectId),
+    fetchElementDrawings(objectId),
     fetchResponsibilities(objectId),
     fetchGuidHistory(objectId),
   ]);
-  return { documents, responsibilities, guidHistory };
+  return { documents, drawings, responsibilities, guidHistory };
 }
 
 /** Cachované per id (ISR, D-029 perf). */
@@ -91,12 +125,17 @@ export async function fetchDocuments(objectId: string): Promise<DocumentRef[]> {
 
   const { data: rels, error } = await supabase
     .from("rel_has_document")
-    .select("to_id, role")
+    .select("to_id, role, source")
     .eq("from_id", objectId)
     .is("valid_until", null);
   if (error) throw new Error(error.message);
 
-  const relRows = (rels ?? []) as { to_id: string; role: string | null }[];
+  // E4 výkres-väzby (prvok zobrazený vo výkrese) idú do vlastnej sekcie, nie sem.
+  const relRows = ((rels ?? []) as {
+    to_id: string;
+    role: string | null;
+    source: string | null;
+  }[]).filter((r) => r.source !== PDF_LINK_SOURCE);
   if (relRows.length === 0) return [];
 
   const docIds = [...new Set(relRows.map((r) => r.to_id))];
@@ -138,6 +177,161 @@ export async function fetchDocuments(objectId: string): Promise<DocumentRef[]> {
       (a.name ?? a.objectRef ?? "").localeCompare(b.name ?? b.objectRef ?? "", "sk")
     );
 }
+
+/**
+ * Výkresy, v ktorých je prvok (asset/asset_type) **zobrazený** — E4 auto-linking
+ * (`rel_has_document` so `source='pdf_link (E4)'`, smer prvok → výkres, D-041).
+ * Vracia priame verejné PDF URL (`documents.location`).
+ */
+export async function fetchElementDrawings(
+  objectId: string
+): Promise<DrawingLink[]> {
+  const supabase = getSupabaseAdmin();
+
+  const { data: rels, error } = await supabase
+    .from("rel_has_document")
+    .select("to_id")
+    .eq("from_id", objectId)
+    .eq("source", PDF_LINK_SOURCE)
+    .is("valid_until", null);
+  if (error) throw new Error(error.message);
+
+  const docIds = [...new Set((rels ?? []).map((r) => r.to_id as string))];
+  if (docIds.length === 0) return [];
+
+  const [objsRes, docsRes] = await Promise.all([
+    supabase.from("objects").select("id, object_ref, name").in("id", docIds),
+    supabase.from("documents").select("id, location").in("id", docIds),
+  ]);
+  if (objsRes.error) throw new Error(objsRes.error.message);
+  if (docsRes.error) throw new Error(docsRes.error.message);
+
+  const locById = new Map(
+    (docsRes.data ?? []).map((d) => [d.id as string, (d.location as string | null) ?? null])
+  );
+
+  return (objsRes.data ?? [])
+    .map((o) => ({
+      id: o.id as string,
+      objectRef: (o.object_ref as string | null) ?? null,
+      name: (o.name as string | null) ?? null,
+      location: locById.get(o.id as string) ?? null,
+    }))
+    .sort((a, b) =>
+      (a.name ?? a.objectRef ?? "").localeCompare(b.name ?? b.objectRef ?? "", "sk")
+    );
+}
+
+/**
+ * Výkresy uzla (E3, `role='drawing'`) + prvky v každom z nich (E4). Pre kartu
+ * podlažia/budovy: „ktoré prvky sú zobrazené v tomto výkrese" (D-041). Výkres bez
+ * detegovaných prvkov sa **nezobrazí** (prázdny zoznam nemá výpovednú hodnotu).
+ */
+export async function fetchFloorDrawings(
+  objectId: string
+): Promise<FloorDrawing[]> {
+  const supabase = getSupabaseAdmin();
+
+  // 1) výkresy pripojené na uzol (E3 floor→drawing); E4 element-väzby vynechané
+  const { data: drawRels, error } = await supabase
+    .from("rel_has_document")
+    .select("to_id, source")
+    .eq("from_id", objectId)
+    .eq("role", "drawing")
+    .is("valid_until", null);
+  if (error) throw new Error(error.message);
+
+  const drawingIds = [
+    ...new Set(
+      ((drawRels ?? []) as { to_id: string; source: string | null }[])
+        .filter((r) => r.source !== PDF_LINK_SOURCE)
+        .map((r) => r.to_id)
+    ),
+  ];
+  if (drawingIds.length === 0) return [];
+
+  // 2) výkres-meta + prvky zobrazené v každom výkrese (E4, smer element→výkres)
+  const [objsRes, docsRes, elemRelsRes] = await Promise.all([
+    supabase.from("objects").select("id, object_ref, name").in("id", drawingIds),
+    supabase.from("documents").select("id, location").in("id", drawingIds),
+    supabase
+      .from("rel_has_document")
+      .select("from_id, to_id")
+      .in("to_id", drawingIds)
+      .eq("source", PDF_LINK_SOURCE)
+      .is("valid_until", null),
+  ]);
+  if (objsRes.error) throw new Error(objsRes.error.message);
+  if (docsRes.error) throw new Error(docsRes.error.message);
+  if (elemRelsRes.error) throw new Error(elemRelsRes.error.message);
+
+  const drawObjById = new Map((objsRes.data ?? []).map((o) => [o.id as string, o]));
+  const locById = new Map(
+    (docsRes.data ?? []).map((d) => [d.id as string, (d.location as string | null) ?? null])
+  );
+  const elemRels = (elemRelsRes.data ?? []) as { from_id: string; to_id: string }[];
+
+  // prvky (asset/asset_type) jedným dotazom
+  const elemIds = [...new Set(elemRels.map((r) => r.from_id))];
+  const elemById = new Map<string, ElementInDrawing>();
+  if (elemIds.length > 0) {
+    const { data: elems, error: elErr } = await supabase
+      .from("objects")
+      .select("id, object_type, object_ref, name")
+      .in("id", elemIds)
+      .in("object_type", ["asset", "asset_type"]);
+    if (elErr) throw new Error(elErr.message);
+    for (const e of elems ?? []) {
+      elemById.set(e.id as string, {
+        id: e.id as string,
+        objectType: e.object_type as "asset" | "asset_type",
+        objectRef: (e.object_ref as string | null) ?? null,
+        name: (e.name as string | null) ?? null,
+      });
+    }
+  }
+
+  // zoskup prvky podľa výkresu
+  const elementsByDrawing = new Map<string, ElementInDrawing[]>();
+  for (const r of elemRels) {
+    const el = elemById.get(r.from_id);
+    if (!el) continue;
+    const list = elementsByDrawing.get(r.to_id) ?? [];
+    list.push(el);
+    elementsByDrawing.set(r.to_id, list);
+  }
+
+  return drawingIds
+    .map((did) => {
+      const o = drawObjById.get(did);
+      const elements = (elementsByDrawing.get(did) ?? []).sort((a, b) =>
+        (a.objectRef ?? a.name ?? "").localeCompare(b.objectRef ?? b.name ?? "", "sk")
+      );
+      return {
+        drawing: {
+          id: did,
+          objectRef: (o?.object_ref as string | null) ?? null,
+          name: (o?.name as string | null) ?? null,
+          location: locById.get(did) ?? null,
+        },
+        elements,
+      };
+    })
+    .filter((fd) => fd.elements.length > 0)
+    .sort((a, b) =>
+      (a.drawing.name ?? a.drawing.objectRef ?? "").localeCompare(
+        b.drawing.name ?? b.drawing.objectRef ?? "",
+        "sk"
+      )
+    );
+}
+
+/** Cachovaný variant pre kartu podlažia/budovy (ISR, D-029 perf). */
+export const fetchFloorDrawingsCached = unstable_cache(
+  fetchFloorDrawings,
+  ["fetch-floor-drawings"],
+  AIM_CACHE
+);
 
 /**
  * Zodpovednosti za uzol (`rel_responsible_for`, D-020). Actor je person alebo

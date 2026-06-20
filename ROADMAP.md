@@ -17,7 +17,7 @@
 - ✅ S3 — Dokumenty + zodpovednosti + GUID história, generický object route (D-029)
 - 🟢 **Teraz:** S4 — polish & launch (reálne dáta **naloadené** z ETL; ostáva doména + polish)
 - 🟢 ETL pipeline (Python + ifcopenshell, D-031) — **E2 hotový**: reálny load z `ASR.ifc` do Supabase (926 uzlov, 5 podlaží), Viewer beží na reálnej budove namiesto seedu
-- 🟡 Dokumenty + coding scheme (D-032/D-033) — **rozhodnuté**, rozpísané do E-sprintov (E1–E6); **E1+E2+E3 hotové**; **ďalší krok = E4** (PDF výkres auto-linking)
+- 🟡 Dokumenty + coding scheme (D-032/D-033) — **rozhodnuté**, rozpísané do E-sprintov (E1–E6); **E1–E4 hotové** (E4 = PDF výkres auto-linking, D-041, 193 element-väzieb + Viewer sekcie); **ďalší krok = E5** (ICDD export)
 - ⏸️ LLM interface — **parkované** (S-LLM), doladíme neskôr
 
 **Máme:** Supabase Cloud (projekt `acwoupricatirhlfkhvk`) + GitHub repo (`AssetinSpace/AIMviewer`) + Vercel deploy (auto-deploy z `main`). **Chýba zatiaľ:** vlastná doména (príde v S4).
@@ -105,7 +105,7 @@
 | **E1 — Coding scheme + object_ref** ✅ | `etl/scheme.py` (field-source resolver + SNIM definícia) a prepis `_RefAllocator` → `object_ref` zo schémy. `--dry-run` na ASR IFC vypíše objekty so SNIM kódom + **coverage report** (% prvkov s platným kódom vs fallback GUID). | D-033 |
 | **E2 — ETL load reálnych dát** ✅ | Rozsah importu policy (D-034) + konsolidácia podlaží (D-035) + 18 SNIM kategórií + doladené mapovanie (hierarchia, psety, klasifikácie, GUID). Idempotentný `--reset` load do Supabase. Viewer beží na **reálnej budove z IFC** namiesto seedu. | D-031/D-034/D-035 |
 | **E3 — Document storage + upload** ✅ | Naming convention = **CDE štandard** (D-036, `doc_scheme.py`); migrácia `documents.storage_type`; public bucket `documents/`; `etl/doc_upload.py` (manifest `docs.csv` → upload + document uzly + `rel_has_document`). **13 PDF nahraných**, viditeľné na karte budovy/podlažia vo Vieweri. | D-032/D-036 |
-| **E4 — PDF výkres auto-linking** 🟢 scaffold | **PyMuPDF** (nie pdfplumber — `cryptography` DLL padá na Win/Py3.9) text + bbox; regex **odvodený zo schémy**; proximity match fragmentov (`SN11` + `01`). `etl/pdf_link.py` (číta výkresy `VD` z `docs.csv`, `--dry-run`/`--show-unmatched`). Dry-run: 1NP 59→51, 2NP 41→39, 3NP 39→37 prvkov. **Ostáva doladiť** proximity (false-pos `OV01.00.00`) + zápis do DB. | D-032/D-033 |
+| **E4 — PDF výkres auto-linking** ✅ | **PyMuPDF** text + bbox; regex **odvodený zo schémy**; **tri dôverové vrstvy matchu** (`full`/`proximity`/`bare`, D-041) — proximity bez zhody = šum (padli `OV01.00.00`/`ZV01.02` bez straty dverí), `bare` → prefix-match na typy. `etl/pdf_link.py` (výkresy `VD` z `docs.csv`, `--dry-run`/`--show-unmatched`). **193 element-väzieb zapísaných** (`source='pdf_link (E4)'`, idempotentné, E3 nedotknuté). Viewer: „Zobrazený vo výkrese" (asset/type) + „Prvky vo výkrese" (podlažie/budova). | D-032/D-033/D-041 |
 | **E5 — ICDD export** | `etl/icdd_export.py` (rdflib): `linkset.ttl` z `rel_has_document`, `payload_documents/`, prepínač `--embed-payloads`. **Stiahnuteľný ISO 21597 kontajner.** | D-015/D-032 |
 | **E6 — Validácia** ⏸️ parkované | Coding scheme + IDS súbory → conformance report (čo nesedí proti požiadavkám). Až keď bude treba. | D-033 |
 
@@ -174,17 +174,25 @@
   identické počty (idempotencia). Viewer (`SpatialView` → `NodeSections`) zobrazí PDF
   na karte budovy/podlažia, klik otvorí súbor. `py_compile` čistý.
 
-**E4 — PDF výkres auto-linking** 🟢 scaffold hotový, ostáva tuning + zápis
+**E4 — PDF výkres auto-linking** ✅ HOTOVÝ (D-041)
 - `etl/pdf_link.py`: PyMuPDF slová+bbox → detekcia SNIM kódov (regex zo `scheme.py`,
-  platné TSP prefixy) → proximity match holého kódu s číselným fragmentom → match na
-  `object_ref` (asset/asset_type) → `rel_has_document(prvok → výkres, role='drawing',
-  source='pdf_link (E4)')`. Vstup = výkresy `VD` z `docs.csv`. `--dry-run`, `--show-unmatched`.
-- **Overené (dry-run):** 1NP 59→51, 2NP 41→39, 3NP 39→37, strecha 31→24, Rez-A 31→24.
-- **TODO ďalší chat:** (1) doladiť `PROXIMITY_PT` / odfiltrovať false-pos (`OV01.00.00`,
-  `ZV01.02` — proximity berie aj čísla osí/miestností); (2) prefix-match pre holé typové
-  kódy bez Mark; (3) spustiť ostrý zápis (bez `--dry-run`); (4) Viewer: na karte
-  pôdorysu zoznam prvkov / na karte prvku „zobrazený vo výkrese".
-- Akceptačné: výber pôdorysu → zoznam typov prvkov na ňom (z SNIM kódov vo výkrese).
+  platné TSP prefixy) → match na `object_ref` (asset/asset_type) → `rel_has_document(prvok
+  → výkres, role='drawing', source='pdf_link (E4)')`. Vstup = výkresy `VD` z `docs.csv`.
+- **Tri dôverové vrstvy matchu (D-041)** namiesto ladenia `PROXIMITY_PT`: `full` (kód
+  s vytlačenou bodkou) = exact, bez zhody = reálna medzera; `proximity` (poskladaný z 2
+  tokenov) = exact, bez zhody = šum → zahoď (padli false-pos `OV01.00.00`/`ZV01.02` bez
+  straty jediného z 83 dverí, ktoré vznikajú práve proximity); `bare` (holý `SN11`) =
+  prefix-match na typy `SN11.*`. `--show-unmatched` oddeľuje „medzeru" od „ignorovaného
+  proximity". Dôsledok: dvere (majú `Mark`) linkujú inštanciu, steny/fasáda typ — vecne OK.
+- **Zápis:** deterministické `edge_id` → idempotentné; E3 väzby (`source='doc_upload (D-036)'`)
+  nedotknuté. **193 element-väzieb** (1NP 57, 2NP 39, 3NP 37, strecha 24, Rez-A 36).
+- **Viewer:** `lib/data/relations.ts` (`fetchElementDrawings`/`fetchFloorDrawings`,
+  diskriminátor `source`) + `components/drawing-list.tsx`/`drawing-elements.tsx`:
+  „Zobrazený vo výkrese" na karte asset/asset_type (PDF link), „Prvky vo výkrese" na karte
+  podlažia/budovy (výkres → zoznam prvkov v ňom; prázdny výkres skrytý). `tsc`+`lint` čisté.
+- **Akceptačné ✅:** výber pôdorysu 1NP → 57 prvkov z ARS výkresu (PBR výkres 0 → skrytý);
+  karta dverí `DD01.02.01` → „Zobrazený vo výkrese: Pudorys-1NP"; typ steny `SN11.01` →
+  výkresy 1NP/2NP/3NP; budova → strecha (24) + Rez-A (36). Re-run = identických 193.
 
 **E5 — ICDD export**
 - Akceptačné: vygenerovaný `.icdd` ZIP otvoriteľný, linkset drží väzby dokument↔prvok.
@@ -197,4 +205,4 @@ naming convention finálny tvar) sú v DECISIONS §7.
 - 3D / IFC.js geometria (D-007: sme dátový viewer, nie geometrický).
 
 ---
-*Posledná aktualizácia: 2026-06-20 — E3 (document storage + upload) hotový: dokumentová naming convention = CDE štandard (D-036, `etl/doc_scheme.py`), migrácia `documents.storage_type`, public bucket `documents/`, `etl/doc_upload.py` (manifest `docs.csv` → 13 PDF nahraných + zapísaných do grafu, viditeľné na karte budovy/podlažia). Predtým E2: `--reset` load 926 uzlov z `ASR.ifc`. Ďalší krok: E4 (PDF výkres auto-linking — element-level väzby z obsahu výkresu).*
+*Posledná aktualizácia: 2026-06-20 — E4 (PDF výkres auto-linking) hotový (**D-041**): `etl/pdf_link.py` deteguje SNIM kódy z výkresov (PyMuPDF), matchuje v troch dôverových vrstvách (`full`/`proximity`/`bare`) — odfiltrované false-pos `OV01.00.00`/`ZV01.02` bez straty dverí, prefix-match holých typových kódov; **193 element-väzieb** zapísaných (`source='pdf_link (E4)'`, idempotentné, E3 nedotknuté). Viewer: sekcie „Zobrazený vo výkrese" (asset/asset_type) a „Prvky vo výkrese" (podlažie/budova) — `relations.ts` + `drawing-list.tsx`/`drawing-elements.tsx`. Predtým E3: 13 PDF (CDE naming, D-036). Ďalší krok: E5 (ICDD export — `rdflib`, ISO 21597 kontajner).*

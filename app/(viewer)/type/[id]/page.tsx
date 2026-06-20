@@ -2,8 +2,10 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { fetchAssetType } from "@/lib/data/asset";
+import { fetchElementDrawings } from "@/lib/data/relations";
 import { PropertySets } from "@/components/property-sets";
 import { ClassificationList } from "@/components/classification-list";
+import { DrawingList } from "@/components/drawing-list";
 import {
   Card,
   CardContent,
@@ -30,7 +32,10 @@ export default async function TypePage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const type = await fetchAssetType(id);
+  const [type, drawings] = await Promise.all([
+    fetchAssetType(id),
+    fetchElementDrawings(id),
+  ]);
   if (!type) notFound();
 
   return (
@@ -86,6 +91,20 @@ export default async function TypePage({
           <ClassificationList facets={type.classifications} showLevel={false} />
         </CardContent>
       </Card>
+
+      {drawings.length > 0 && (
+        <Card className="mb-6">
+          <CardHeader>
+            <CardTitle>
+              Zobrazený vo výkrese{" "}
+              <span className="text-muted-foreground">({drawings.length})</span>
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <DrawingList drawings={drawings} />
+          </CardContent>
+        </Card>
+      )}
 
       <Card>
         <CardHeader>
