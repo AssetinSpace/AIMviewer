@@ -17,7 +17,7 @@
 - ✅ S3 — Dokumenty + zodpovednosti + GUID história, generický object route (D-029)
 - 🟢 **Teraz:** S4 — polish & launch (reálne dáta **naloadené** z ETL; ostáva doména + polish)
 - 🟢 ETL pipeline (Python + ifcopenshell, D-031) — **E2 hotový**: reálny load z `ASR.ifc` do Supabase (926 uzlov, 5 podlaží), Viewer beží na reálnej budove namiesto seedu
-- 🟡 Dokumenty + coding scheme (D-032/D-033) — **rozhodnuté**, rozpísané do E-sprintov (E1–E6); **E1+E2 hotové**; **ďalší krok = E3** (document storage)
+- 🟡 Dokumenty + coding scheme (D-032/D-033) — **rozhodnuté**, rozpísané do E-sprintov (E1–E6); **E1+E2+E3 hotové**; **ďalší krok = E4** (PDF výkres auto-linking)
 - ⏸️ LLM interface — **parkované** (S-LLM), doladíme neskôr
 
 **Máme:** Supabase Cloud (projekt `acwoupricatirhlfkhvk`) + GitHub repo (`AssetinSpace/AIMviewer`) + Vercel deploy (auto-deploy z `main`). **Chýba zatiaľ:** vlastná doména (príde v S4).
@@ -104,7 +104,7 @@
 |---|---|---|
 | **E1 — Coding scheme + object_ref** ✅ | `etl/scheme.py` (field-source resolver + SNIM definícia) a prepis `_RefAllocator` → `object_ref` zo schémy. `--dry-run` na ASR IFC vypíše objekty so SNIM kódom + **coverage report** (% prvkov s platným kódom vs fallback GUID). | D-033 |
 | **E2 — ETL load reálnych dát** ✅ | Rozsah importu policy (D-034) + konsolidácia podlaží (D-035) + 18 SNIM kategórií + doladené mapovanie (hierarchia, psety, klasifikácie, GUID). Idempotentný `--reset` load do Supabase. Viewer beží na **reálnej budove z IFC** namiesto seedu. | D-031/D-034/D-035 |
-| **E3 — Document storage + upload** | Supabase bucket `documents/` + `storage_type` migrácia; `etl/doc_upload.py` (naming convention + `links.csv` fallback → upload + IfcDocument uzly + `rel_has_document`). Nahrané PDF **viditeľné na karte prvku** vo Vieweri. | D-032 |
+| **E3 — Document storage + upload** ✅ | Naming convention = **CDE štandard** (D-036, `doc_scheme.py`); migrácia `documents.storage_type`; public bucket `documents/`; `etl/doc_upload.py` (manifest `docs.csv` → upload + document uzly + `rel_has_document`). **13 PDF nahraných**, viditeľné na karte budovy/podlažia vo Vieweri. | D-032/D-036 |
 | **E4 — PDF výkres auto-linking** | `pdfplumber` text + bbox; regex **odvodený zo schémy**; proximity match fragmentov (`DD01` + `06.03`). Pôdorys 1NP sa **automaticky prepojí** na typy prvkov v ňom. | D-032/D-033 |
 | **E5 — ICDD export** | `etl/icdd_export.py` (rdflib): `linkset.ttl` z `rel_has_document`, `payload_documents/`, prepínač `--embed-payloads`. **Stiahnuteľný ISO 21597 kontajner.** | D-015/D-032 |
 | **E6 — Validácia** ⏸️ parkované | Coding scheme + IDS súbory → conformance report (čo nesedí proti požiadavkám). Až keď bude treba. | D-033 |
@@ -159,9 +159,20 @@
   (asset_type bez polohy). Re-run bez `--reset` = **identické počty** (idempotencia).
   Live `/health` na Verceli ukazuje `count(*) = 926` (reálna budova namiesto 15-uzl. seedu).
 
-**E3 — Document storage + upload**
-- Naming convention (pozičné polia + delimiter, Dalux štýl) + `links.csv` fallback.
-- Akceptačné: nahrané PDF priradené k prvku/podlažiu, klik z karty otvorí súbor.
+**E3 — Document storage + upload** ✅ HOTOVÝ (D-036)
+- **Naming convention** — prebratý reálny **CDE štandard** (Jihočeský kraj, ISO 19650):
+  `Projekt_StupeňPD_ČástDíla_Profese_TypSouboru_Číslo_Popis`. `etl/doc_scheme.py`
+  (pozičné polia + CDE slovníky + parser názvu, mirror `scheme.py`) + manifest
+  `podklady/docs.csv` (väzba cez `target_ref` → building/floor; element-level = E4).
+- **Storage** — migrácia `20260620120000_documents_storage_type.sql` (`storage_type`
+  `supabase|external|unresolved`, aditívna); public bucket `documents/`.
+- **`etl/doc_upload.py`** — manifest → upload (stdlib urllib, `x-upsert`) + `objects(document)`
+  (object_ref = CDE názov) + `documents` prípona + `rel_has_document(role z TypSouboru)`.
+  Idempotentné (object_ref / deterministické UUID), `--dry-run`, validačný report.
+- **Akceptačné ✅:** 13 PDF nahraných → 13 `documents` (storage_type=supabase) + 13
+  `rel_has_document` (9 na building, 1NP×2, 2NP, 3NP); public URL HTTP 200; re-run =
+  identické počty (idempotencia). Viewer (`SpatialView` → `NodeSections`) zobrazí PDF
+  na karte budovy/podlažia, klik otvorí súbor. `py_compile` čistý.
 
 **E4 — PDF výkres auto-linking**
 - Akceptačné: výber pôdorysu → zoznam typov prvkov na ňom (z SNIM kódov vo výkrese).
@@ -177,4 +188,4 @@ naming convention finálny tvar) sú v DECISIONS §7.
 - 3D / IFC.js geometria (D-007: sme dátový viewer, nie geometrický).
 
 ---
-*Posledná aktualizácia: 2026-06-20 — E2 (ETL load reálnych dát) hotový: rozsah importu policy (D-034), konsolidácia podlaží (D-035), 18 SNIM kategórií, doladené mapovanie + idempotentný `--reset` load do Supabase (926 uzlov z `ASR.ifc`). Viewer beží na reálnej budove namiesto seedu. Ďalší krok: E3 (document storage + upload).*
+*Posledná aktualizácia: 2026-06-20 — E3 (document storage + upload) hotový: dokumentová naming convention = CDE štandard (D-036, `etl/doc_scheme.py`), migrácia `documents.storage_type`, public bucket `documents/`, `etl/doc_upload.py` (manifest `docs.csv` → 13 PDF nahraných + zapísaných do grafu, viditeľné na karte budovy/podlažia). Predtým E2: `--reset` load 926 uzlov z `ASR.ifc`. Ďalší krok: E4 (PDF výkres auto-linking — element-level väzby z obsahu výkresu).*

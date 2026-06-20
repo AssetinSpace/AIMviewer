@@ -515,4 +515,98 @@ iný projekt s inou konvenciou pomenovania levelov dostane vlastnú heuristiku (
 
 ---
 
-*Posledná aktualizácia: 2026-06-20 — E2 hotový: D-034 (rozsah importu) zavedený ako `ScopePolicy` v `scheme.py`; nové **D-035** (konsolidácia podlaží — 18 Revit storeys → 5 reálnych). 18 SNIM kategórií, doladené mapovanie, oprava `valid_from` v `etl/db.py` (coalesce + idempotentný `ON CONFLICT`), `--reset` load 926 uzlov z `ASR.ifc` do Supabase. Schéma DB sa nemenila (čisto ETL/aplikačná vrstva). Ďalej: E3 (document storage) → E4 (PDF linking) → E5 (ICDD export).*
+## 7b. Dokumentová identita (E3)
+
+### D-036 — Dokumentová naming convention = CDE štandard (ISO 19650)
+**Kontext:** D-032/D-033 odložili „naming convention finálny tvar" ako otvorený bod.
+Pri prvkoch je identity spine `object_ref` (coding scheme, E1); pri dokumentoch je ním
+**naming convention** — názov súboru sám nesie metadáta a `doc_upload.py` ho rozseká
+(rovnaký princíp ako `scheme.py` pri `object_ref`). Namiesto generického ISO 19650
+preberáme **konkrétny reálny CDE štandard** (Jihočeský kraj, „Standard CDE — Společné
+datové prostředí", v ISO 19650 línii) — je autoritatívny, používaný v praxi a slovník
+kódov je hotový.
+
+**Rozhodnutie (konvencia — 7 pozícií, oddeľovač `_`):**
+```
+Projekt _ StupeňPD _ ČástDíla _ Profese _ TypSouboru _ Číslo _ Popis
+ OCB    _  DPS     _  SO01    _  ARS    _  VD        _ 101   _ Pudorys-1NP
+```
+- **Projekt** — jeden spoločný identifikátor (`OCB` = Office centrum Brno).
+- **Stupeň PD** — fáza dokumentácie: `ADS` štúdia · `DPZ` pre povolenie · `DPS` pre
+  prevedenie · `DSPS` skutočné prevedenie · `PAS` pasport · `XX` obecný. *(Priamo náš
+  use-case „návrh → výstavba → prevádzka".)*
+- **Část Díla** — členenie diela: `SO01` stavebný objekt / `PS01` prevádzkový súbor.
+  *(Najhrubšia štruktúrovaná väzba na uzol — u nás 1 budova → `SO01` → building.)*
+- **Profese** — odbor (zo zvoleného dátového štandardu, potvrdí BEP): `ARS` archi ·
+  `STA` statika · `TZB`/`VZT` technika prostredia · `ZTI` zdravotech · `ELT` elektro ·
+  `POZ` požiar · `STF` stavebná fyzika.
+- **Typ souboru** — forma: `VD` výkres · `RP` report/správa · `SP` špecifikácia ·
+  `TL` technický list · `VV` výkaz výmer · `KAL` výpočty · `SC` schéma · `DiMS` model ·
+  `TP` technologický predpis · `ST` štúdia · `XX` neurčené.
+- **Číslo** — poradové (`101`); môže odrážať kapitolu vyhlášky (`D-1-2-3-b-01`).
+- **Popis** — ľudský, max 20 znakov, medzery/bodky → `-`.
+
+**Pravidlá zápisu (z CDE):** oddeľovač `_` (U+005F); premenlivá dĺžka pozícií; **bez
+diakritiky**; všetko VEĽKÝMI okrem Popisu; chýbajúci údaj → zástupný `X`; celá cesta
+≤ 256 znakov; Popis ≤ 20 znakov.
+
+**Status / revízia (mimo názvu):** ISO 19650 stavy `WIP → S1–S4 (zdieľané) → A1/B1
+(publikované) → AB (as-built)` sa **nekódujú do názvu** — držia sa v `documents.status`
++ `documents.revision` + `valid_from` (D-032), aby názov ostal stabilný (jeden zdroj
+pravdy). Mapuje sa do `documents.status`.
+
+**Rozhodnutie (väzba dokument↔uzol):** CDE konvencia **nemá pole pre podlažie** — údaj
+„1NP" žije vo voľnom Popise, nie v štruktúrovanej pozícii. Preto sa väzba **nederivuje
+z názvu**, ale ide **explicitným stĺpcom `target_ref` v manifeste** (`docs.csv`):
+object_ref cieľového uzla (`SO.01 - Office centrum Brno` = building, `1NP`–`5NP` = floor,
+neskôr SNIM `DD01.06.03` = asset). Názov nesie metadáta, manifest nesie väzbu — čisté
+oddelenie. Element-level väzba z obsahu výkresu ostáva E4 (PDF scan).
+
+**Dôsledok:** nový `etl/doc_scheme.py` (mirror `scheme.py`: typované pozičné polia +
+CDE slovníky + parser názvu → `DocumentMeta` + odvodenie `role` z Typ souboru) a
+manifest `podklady/docs.csv`. Iný projekt = iný slovník v `doc_scheme.py`, kód sa nemení
+(línia D-033). Konvencia rieši otvorený bod „naming convention finálny tvar" z §7.
+**Referencia:** `Standard_CDE_Společné_datové_prostředí.docx` (Jihočeský kraj, v1.12.2025).
+
+---
+
+## 8. Budúce rozhodnutia (D-037+)
+
+> Brainstorm smerov, ešte **nerozhodnuté** — sú to kandidáti, nie záväzky.
+> Číslovanie rezervované; finálne rozhodnutie sa zapíše až keď príde na rad
+> (najskôr post-S4, po funkčnom ETL s reálnym IFC z diplomky).
+
+### D-037 — 3D IFC Viewer integrácia *(kandidát)*
+**Kontext:** AIM Viewer je momentálne čisto dátový (S0–S3). Keď príde čas na geometrickú
+vrstvu, kandidát je IFClite (`@ifc-lite/geometry` + Three.js integrácia do existujúceho
+Next.js). WebGPU renderer alebo Three.js podľa browser support požiadaviek.
+**Otvorené otázky:** Kedy (post-S4), ako hlboko (read-only viewer vs. mutácie), server
+mód pre veľké súbory.
+**Závislosť:** Vyžaduje funkčný ETL s reálnym IFC z diplomky (S4).
+
+### D-038 — PDF / DWG výkres vedľa IFC viewera (split-screen) *(kandidát)*
+**Kontext:** Stavebný sektor je závislý na 2D autorizovaných výkresoch (pečiatka).
+Minimálne riešenie: split-screen — PDF viewer (`react-pdf`) na jednej strane, IFC viewer
+na druhej, používateľ si porovnáva manuálne.
+**Výhoda DWG oproti PDF:** DXF obsahuje vektorové entity so súradnicami, georeferencing
+je potenciálne automatický. DWG → DXF konverzia zadarmo (DWG TrueView), render cez
+`three-dxf`.
+**Závislosť:** Vyžaduje D-037 (3D viewer).
+
+### D-039 — Georeferencing PDF/DWG výkresov do IFC priestoru *(kandidát)*
+**Kontext:** Prepojenie 2D výkresu s 3D IFC modelom cez spoločný referenčný systém.
+Základný prístup: manuálne označenie bodu v PDF + zodpovedajúci bod v IFC scéne →
+transform matica. Z súradnica z `floors.elevation`. Transform sa uloží do
+`documents.properties` ako `_georef` — jednorazová práca per výkres.
+**Algoritmizovateľná alternatíva:** IFC nesie `IfcGridAxis` (osová sieť s presnými XY
+súradnicami). PDF nesie tie isté osi nakreslené v mierke (1:50, 1:100...). Flow:
+extrakcia `IfcGridAxis` z IFC → detekcia osí v PDF (OCR + čiary alebo AI vision) →
+párovanie minimálne 2 priesečníkov → homografia → transform matica. Mierka sa dopočíta
+automaticky.
+**AI potenciál:** `GPT-4 Vision` alebo špecializovaný model na detekciu osovej siete
+v PDF výkrese — eliminuje manuálnu prácu pri párovaní.
+**Závislosť:** Vyžaduje D-038 (split-screen), ideálne `IfcGridAxis` v ETL pipeline.
+
+---
+
+*Posledná aktualizácia: 2026-06-20 — E3 hotový (**D-036**): dokumentová naming convention = CDE štandard Jihočeského kraja (ISO 19650: `Projekt_StupeňPD_ČástDíla_Profese_TypSouboru_Číslo_Popis`, väzba cez `target_ref` v manifeste). Postavené: `etl/doc_scheme.py` (parser + CDE slovníky), `podklady/docs.csv`, migrácia `documents.storage_type` (aditívna), public bucket `documents/`, `etl/doc_upload.py` (13 PDF nahraných + zapísaných do grafu, idempotentné). Brainstorm §8 prečíslovaný na **D-037/D-038/D-039**. Ďalej: E4 (PDF výkres auto-linking — element-level väzby z obsahu výkresu).*
