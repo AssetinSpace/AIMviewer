@@ -179,8 +179,12 @@ class ScopePolicy:
         VZT terminály, stĺpy, podhľady, fasáda ako celok, schody, nábytok);
       • vyhodené sú **voidy** (`IfcFeatureElement` = otvory) a **sub-komponenty**
         (vnorené prvky — stĺpiky/výplne/panely fasády, vrstvy strechy, ramená schodov);
-      • **výnimka:** vnorené `IfcDoor`/`IfcWindow` (osadené vo fasáde) ostávajú asset
-        — funkčne sú samostatné prvky napriek vnoreniu.
+      • **výnimka:** vnorené `IfcDoor`/`IfcWindow`/`IfcRailing` ostávajú asset — funkčne
+        sú samostatné prvky napriek vnoreniu. `IfcRailing` doplnené (D-034 dodatok):
+        zábradlia/madlá (ZV) a tieniaca technika (TV) sú modelované vnorené v `IfcStair`,
+        ale nesú vlastný SNIM kód a informačnú požiadavku — rovnaký dôvod ako dvere/okná.
+        Naopak `IfcSlab` (vrstvy strechy, ST) a `IfcStairFlight` (ramená, SH) zostávajú
+        vylúčené — tie sú reálne sub-komponenty zostavy (typy ST01.* sú už z `IfcRoof`).
 
     Definované ako **policy (config), nie hardcode v `transform.py`** — iný projekt
     = iná policy (línia D-033/D-034). Resolver nezávisí od ifcopenshell: dostáva
@@ -188,7 +192,8 @@ class ScopePolicy:
     """
 
     exclude_classes: tuple[str, ...] = ("IfcFeatureElement",)   # otvory/voidy — nikdy asset
-    nested_keep: tuple[str, ...] = ("IfcDoor", "IfcWindow")     # funkčné prvky aj vnorené
+    # funkčne samostatné prvky aj vnorené (osadené vo fasáde / v schodisku)
+    nested_keep: tuple[str, ...] = ("IfcDoor", "IfcWindow", "IfcRailing")
 
     def is_asset(self, is_a: Callable[[str], bool], top_level: bool) -> bool:
         if any(is_a(cls) for cls in self.exclude_classes):

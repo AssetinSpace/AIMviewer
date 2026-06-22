@@ -459,6 +459,19 @@ od kvality kódovania (okná v tomto modeli **nemajú** `Assembly Code`, no stá
   zdroja scope je aditívna, kód `_is_asset` sa nemení.
 - Schéma DB sa **nemení** (čisto ETL/aplikačná vrstva).
 
+**Dodatok (D-042/D-043 ladenie linkovania): `IfcRailing` → `nested_keep`.** Pri overovaní
+nezhôd vo výkresoch sa ukázalo, že `ZV01.02` (madlo) **je v IFC**, no chýbal v DB: všetky
+madlá/zábradlia (`IfcRailing`, ZV + TV) sú modelované **vnorené v `IfcStair`**, takže
+ich `_is_asset` zahadzoval ako sub-komponenty (prežil len 1 top-level kus → `ZV01.01`).
+Riešenie: `IfcRailing` doplnené do `nested_keep` (vedľa `IfcDoor`/`IfcWindow`) — funkčne
+samostatný prvok s vlastným SNIM kódom a informačnou požiadavkou, rovnaký dôvod ako dvere.
+Zámerne **nepridané** `IfcSlab` (vrstvy strechy ST — reálne sub-komponenty; typy `ST01.*`
+sú už z top-level `IfcRoof`) ani `IfcStairFlight` (ramená SH). Efekt: +11 railing assetov
+(IfcRailing 1→12), nový typ `ZV01.02`; re-load ETL bez `--reset` (idempotentný upsert cez
+`object_ref`) + re-run `pdf_link` → element-väzby 193→197, regióny 404→414. Pozn.: kódy
+`KV*`, `ZV03/04/05`, `OV05` z výkresov **nie sú v IFC vôbec** (reálna medzera modelu, nie
+import) a `OV01.00.00` je placeholder generickej legendy „POPISKA" — tieto ostávajú nelinknuté.
+
 ### D-035 — Konsolidácia podlaží: pomocné Revit úrovne → reálne podlažie
 **Kontext:** `ASR.ifc` má **18 `IfcBuildingStorey`**, ale len 5 sú reálne podlažia
 (`1NP`–`5NP`). Zvyšok sú pomocné Revit referenčné/konštrukčné úrovne
