@@ -16,5 +16,12 @@ export async function GET(
   if (!summary) {
     return NextResponse.json({ error: "not found" }, { status: 404 });
   }
-  return NextResponse.json(summary);
+  // Read-only súhrn (revaliduje sa s ostatnými AIM dátami po 60 s). Cache v
+  // prehliadači + na CDN → opakovaný klik na ten istý kód vo výkrese je okamžitý,
+  // bez HTTP round-tripu na server (D-030 perf, dodatok).
+  return NextResponse.json(summary, {
+    headers: {
+      "Cache-Control": "public, max-age=60, s-maxage=60, stale-while-revalidate=300",
+    },
+  });
 }

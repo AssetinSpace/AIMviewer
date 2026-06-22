@@ -6,9 +6,15 @@ import { ChevronLeft, ChevronRight, ZoomIn, ZoomOut } from "lucide-react";
 
 import type { DrawingRegion, SelectedElement } from "@/lib/data/drawing";
 
-// Worker z CDN (verzia viazaná na nainštalovaný pdfjs) — robustné pod Turbopackom,
-// žiadne bundler-špecifické riešenie worker súboru.
-pdfjs.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
+// Worker self-hostovaný z vlastného originu (D-030 perf, dodatok): bundler ho vyrieši z
+// nainštalovaného `pdfjs-dist` (verzia automaticky zhodná s API → žiadny version
+// mismatch) a vyemituje ako hashovaný statický asset. Eliminuje externý fetch na
+// unpkg, ktorý pri každom otvorení výkresu pridával DNS+TLS+stiahnutie ~1 MB pred
+// samotným parsovaním PDF (a vedel visieť/byť rate-limitovaný).
+pdfjs.GlobalWorkerOptions.workerSrc = new URL(
+  "pdfjs-dist/build/pdf.worker.min.mjs",
+  import.meta.url
+).toString();
 
 const BASE_WIDTH = 1000; // px šírka strany pri zoom = 1
 const ZOOM_STEP = 0.25;

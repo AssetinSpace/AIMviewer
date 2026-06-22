@@ -297,6 +297,28 @@ sa cache neuplatní, build je čerstvý). Sub-50 ms (edge `X-Vercel-Cache HIT`) 
 konkrétnych ID by sa zahodil. Pri zmene dát mimo revalidačného okna existuje `revalidateTag("aim")`.
 Schéma sa nemení (čisto aplikačná vrstva).
 
+**Dodatok (klientsky výkon prehliadačky výkresov):** D-030 riešilo *server* TTFB; po D-042
+sa ťažisko presunulo na *klienta* (PDF prehliadačka). Tri opravy:
+(1) **pdf.js worker self-hostovaný** — `drawing-viewer.tsx` ho už neťahá z `unpkg.com`,
+ale cez `new URL("pdfjs-dist/build/pdf.worker.min.mjs", import.meta.url)`; bundler ho
+vyemituje ako hashovaný same-origin asset (verzia automaticky zhodná s API → žiadny
+version mismatch). Pôvodný unpkg pridával pri *každom* otvorení výkresu externé
+DNS+TLS+stiahnutie ~1 MB pred parsovaním PDF (a vedel visieť / byť rate-limitovaný) —
+to bola hlavná príčina „pomalého načítavania dokumentov". (2) **Preconnect** na origin
+Supabase Storage (`/drawing/[id]`) — TCP/TLS handshake na PDF beží paralelne s načítaním
+react-pdf bundlu, nie až po ňom (React 19 hoistne `<link rel=preconnect>`). (3) **Cache-Control**
+na `/api/element/[id]` (`public, max-age=60, s-maxage=60, stale-while-revalidate=300`) —
+opakovaný klik na ten istý kód vo výkrese je okamžitý, bez HTTP round-tripu (server-side
+už cachované cez `unstable_cache`, toto pridáva browser/CDN vrstvu).
+**Dôvod:** dáta sú malé a server-render rýchly (logy: 60–470 ms); reálna latencia bola
+v klientskom PDF pipeline, dominantne externý worker z unpkg.
+**Dôsledok:** žiadna zmena schémy ani dát; worker sa verzovo viaže na nainštalovaný
+`pdfjs-dist` automaticky (pri upgrade netreba ručne kopírovať súbor).
+**Verifikácia:** `tsc --noEmit` čisté; dev preview — worker sa načíta z
+`/_next/static/media/pdf.worker.min.*.mjs` (žiadny unpkg request), výkres „Rez A" sa
+vyrenderuje s 102 klikateľnými regiónmi, `/api/element/[id]` vracia očakávanú
+`Cache-Control` hlavičku.
+
 ### D-031 — ETL pipeline: architektúra a idempotencia
 **Rozhodnutie:** ETL žije v podadresári **`etl/`** tohto repa (zdieľa SCHEMA/DECISIONS
 kontext). Stack **Python + ifcopenshell**; zápis **priamo do Supabase Postgresu cez

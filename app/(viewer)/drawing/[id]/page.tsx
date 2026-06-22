@@ -37,6 +37,17 @@ export default async function DrawingPage({
   const initialPage = page ? Number.parseInt(page, 10) : undefined;
   const hasLinks = links.length > 0;
 
+  // Origin PDF (Supabase Storage) — preconnect rozbehne TCP/TLS handshake hneď,
+  // takže react-pdf po mount-e sťahuje rovno cez teplé spojenie (D-030 perf, dodatok).
+  let pdfOrigin: string | null = null;
+  if (pdfUrl) {
+    try {
+      pdfOrigin = new URL(pdfUrl).origin;
+    } catch {
+      pdfOrigin = null;
+    }
+  }
+
   const documentPanel: DocumentPanelData = {
     identification: document.identification,
     description: document.description,
@@ -52,6 +63,9 @@ export default async function DrawingPage({
 
   return (
     <div className="mx-auto max-w-[1500px]">
+      {/* React 19 hoistne preconnect do <head> — spojenie na PDF origin sa otvára
+          paralelne s načítaním react-pdf bundlu, nie až po ňom. */}
+      {pdfOrigin && <link rel="preconnect" href={pdfOrigin} crossOrigin="anonymous" />}
       <header className="mb-4">
         <span className="inline-block rounded-full bg-secondary px-2 py-0.5 text-xs font-medium text-secondary-foreground">
           {hasLinks ? "Výkres" : "Dokument"}
