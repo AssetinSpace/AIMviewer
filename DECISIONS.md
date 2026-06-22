@@ -735,6 +735,53 @@ región mieri na stránku **typu** (1 cieľ). Otvorené (nie blokujúce): hĺbka
     objekty podľa `object_type` (D-018) a ponúka filter-chipy (Podlažie / Asset / Typ
     assetu / Dokument…) s počtami + „Všetko"; zoznam má max-výšku so scrollom. Pri 1NP:
     58 = 1 podlažie + 33 asset + 24 typ assetu. Overené v preview.
+  - **Región = fyzický výskyt, nie prvok (oprava dedupe):** pôvodný `pdf_link.py` robil
+    dedupe regiónov per `target_id` → ten istý kód opakovaný vo výkrese (napr. `ST01.21`
+    4×, `FS01.10` 3×) mal **len jeden** klikateľný hotspot, ostatné výskyty boli „mŕtve".
+    Dedupe sa presunul na úroveň **(strana, bbox, target_id)** → každý fyzický výskyt =
+    vlastný región; hrana `rel_has_document` ostáva 1 na prvok (sémantická väzba cez
+    `matched_ids`). Frontend to už zvládal (`pageLinks` renderuje všetky, `key` s indexom).
+    Efekt (`--dry-run`): regiónov **193 → 378** (Rez-A 36 → 82), väzieb stále 193.
+
+---
+
+### D-043 — Skladby (kompozičné značky `S1`–`S9`) ako vlastný systém značenia — *návrh*
+**Status:** návrh, vyvolaný diagnostikou pokrytia odkazov vo výkresoch (Rez-A). **Nie je
+blokujúci** — aditívne rozšírenie, dá sa odložiť. Treba rozhodnúť rozsah pred ďalším
+ladením detekcie.
+
+**Kontext:** Vo výkresoch (najmä rezoch/detailoch) existujú **dva paralelné systémy
+značenia**, ktoré sme doteraz nerozlišovali:
+1. **SNIM element-kódy** (`FS01.10`, `ST01.21`, `PD02.50`…) — Assembly Code + Type Mark
+   + Mark, párujú sa na `object_ref` (D-010). E4/D-041 ich deteguje a linkuje.
+2. **Skladbové značky** `S1`–`S9` (hexagónové bubliny s odkazovými čiarami) — odkazujú na
+   **skladby konštrukcií** (build-up vrstiev), definované vo „Výpise skladieb"
+   (`D.1.1.09`, dokument `OCB_DPS_SO01_ARS_VV_109`). Sú to **kompozície vrstiev**, nie
+   konkrétne prvky.
+
+**Problém:** Skladbové značky sa **nikdy nedetegujú ani nelinkujú**, lebo (a) nesedia na
+regex SNIM kódu (`^[A-Z]{2}\d{2}…` vs. `S` + 1 číslica), (b) `S` nie je TSP prefix v
+schéme, a hlavne (c) **v DB neexistuje uzol skladby** — nie je sa na čo naviazať. Vizuálne
+to pôsobí ako „veľa odkazov chýba", hoci ide o iný dátový druh, ktorý sme nikdy nemodelovali.
+
+**Možnosti:**
+- **A — skladba ako uzol (`object_type='assembly'`, aditívne k D-018).** Seed z „Výpisu
+  skladieb": každá skladba `S1`–`S9` = riadok v `objects` (object_ref napr. `S1`, `name`
+  = popis skladby, vrstvy do `properties`). Detekcia rozšírená o skladbový vzor (vlastná
+  „kategória"/matcher mimo SNIM TSP), `S#` bubliny → `rel_has_document`/región na uzol
+  skladby. Bonus: prvok s kódom (`ST01`) sa dá previazať na svoju skladbu (`rel_*`) →
+  „z čoho je strecha zložená". **Najviac v duchu „správne previazaných dát" (D-003).**
+- **B — skladba mimo rozsah (status quo).** `S#` značky sa explicitne neriešia; ostávajú
+  needetegované. Žiadna práca, ale demo nevie ukázať väzbu prvok → skladba.
+
+**Odporúčanie:** **A**, ale ako samostatný malý sprint po dokončení D-042 ladenia —
+aditívne (nový `object_type`, žiadna zmena existujúcej schémy ani SNIM definície),
+hodnotovo silné pre demo. Detekciu skladieb riešiť ako **druhú kategóriu matchera**
+(nie hack do SNIM regexu), nech ostáva schéma čistá (D-033). Do rozhodnutia platí B.
+
+**Otvorené:** presný tvar `object_ref` skladby (`S1` vs. prefixovaný), či vrstvy parsovať
+z „Výpisu skladieb" automaticky (tabuľka v PDF) alebo seedovať ručne, a vzťah prvok↔skladba
+(nová hrana `rel_has_assembly` vs. reuse). Dorieši sa pri ratifikácii.
 
 ---
 

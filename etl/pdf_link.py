@@ -295,7 +295,7 @@ def process_drawing(
         )
 
     # zber zhôd s bbox; poradie podľa dôvery (full > proximity > bare), nech pri tom
-    # istom cieli vyhrá najdôveryhodnejší bbox (dedupe per previazaný prvok)
+    # istom **fyzickom výskyte** vyhrá najdôveryhodnejšia vrstva
     doc = fitz.open(pdf_path)
     hits: list[Hit] = []
     for i in range(doc.page_count):
@@ -303,23 +303,33 @@ def process_drawing(
     _order = {"full": 0, "proximity": 1, "bare": 2}
     hits.sort(key=lambda h: _order[h.origin])
 
-    regions: dict[str, dict] = {}     # target_id → región (prvý = najdôveryhodnejší výskyt)
+    # Región = jeden **fyzický výskyt** kódu (klikací hotspot), NIE jeden prvok:
+    # ten istý `object_ref` sa na výkrese opakuje (napr. `ST01.21` 4×) a každý výskyt
+    # má byť klikateľný. Dedupe preto na úrovni (strana, bbox, cieľ) — nie cieľa.
+    # `rel_has_document` ostáva 1 hrana na prvok (sémantická väzba) → `matched_ids`.
+    regions: list[dict] = []
+    seen: set[tuple] = set()          # (page, bbox, target_id) — proti exaktným duplicitám
+    matched_ids: set[str] = set()     # cieľe pre hrany (dedupe na úrovni prvku)
     unmatched: set[str] = set()
     dropped: set[str] = set()
 
     def add_region(target_id: str, object_type: str, hit: Hit) -> None:
         tid = str(target_id)
-        if tid in regions:
-            return                    # ten istý prvok už má región (skorší / dôveryhodnejší)
-        regions[tid] = {
+        matched_ids.add(tid)          # hrana vznikne raz na prvok (nech regiónov koľko chce)
+        bbox = _to_bottom_left(hit.bbox, hit.page_size)
+        key = (hit.page, tuple(bbox), tid)
+        if key in seen:
+            return                    # ten istý výskyt už má región (full pred proximity)
+        seen.add(key)
+        regions.append({
             "page": hit.page,
-            "bbox": _to_bottom_left(hit.bbox, hit.page_size),
+            "bbox": bbox,
             "page_size": [round(hit.page_size[0], 2), round(hit.page_size[1], 2)],
             "target_id": tid,
             "target_route": _route_for(object_type),
             "layer": hit.origin,
             "label": hit.code,
-        }
+        })
 
     for hit in hits:
         if hit.origin == "bare":
@@ -340,11 +350,10 @@ def process_drawing(
             else:
                 dropped.add(hit.code)         # proximity odhad bez zhody = šum → zahoď
 
-    matched_ids = set(regions.keys())
     if not dry:
         for from_id in matched_ids:
             _link(cur, from_id, doc_id, dry)
-        _write_links(cur, doc_id, list(regions.values()))
+        _write_links(cur, doc_id, regions)
 
     detected = len({h.code for h in hits})
     return DrawingResult(
