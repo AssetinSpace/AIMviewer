@@ -44,10 +44,17 @@ export default function DrawingWorkspace({
   document: DocumentPanelData;
 }) {
   // Predvybrať prvok z `?focus=` — panel sa otvorí rovno s ním (obojsmernosť).
-  const initial = focus ? links.find((l) => l.targetId === focus) : undefined;
+  // Skladbové regióny (`drawing` route) nie sú prvky → do panela nejdú.
+  const initial = focus
+    ? links.find((l) => l.targetId === focus && l.targetRoute !== "drawing")
+    : undefined;
   const [selected, setSelected] = useState<SelectedElement | null>(
     initial
-      ? { id: initial.targetId, route: initial.targetRoute, label: initial.label }
+      ? {
+          id: initial.targetId,
+          route: initial.targetRoute as "node" | "type",
+          label: initial.label,
+        }
       : null
   );
 

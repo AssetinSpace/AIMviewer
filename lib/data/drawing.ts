@@ -24,13 +24,15 @@ export interface DrawingRegion {
   bbox: [number, number, number, number];
   /** Rozmer strany [šírka, výška] v bodoch — referenčná báza pre škálovanie. */
   pageSize: [number, number];
-  /** Cieľový `objects.id` (asset / asset_type). */
+  /** Cieľový `objects.id` (asset / asset_type), príp. dokument pri `drawing` route. */
   targetId: string;
-  /** Segment route detailu prvku. */
-  targetRoute: "node" | "type";
-  /** Dôverová vrstva detekcie (D-041). */
-  layer: "full" | "proximity" | "bare";
-  /** Zobrazený SNIM kód. */
+  /** Segment route cieľa: detail prvku (`node`/`type`) alebo iný výkres (`drawing`, D-043). */
+  targetRoute: "node" | "type" | "drawing";
+  /** Strana cieľového výkresu pre `drawing` route (skladby → strana vo Výpise, D-043). */
+  targetPage?: number;
+  /** Dôverová vrstva detekcie (D-041) / `skladba` = navigačný región skladby (D-043). */
+  layer: "full" | "proximity" | "bare" | "skladba";
+  /** Zobrazený SNIM kód, príp. skladbová značka (`S#`). */
   label: string;
 }
 
@@ -57,6 +59,7 @@ type RawRegion = {
   page_size?: unknown;
   target_id?: unknown;
   target_route?: unknown;
+  target_page?: unknown;
   layer?: unknown;
   label?: unknown;
 };
@@ -72,12 +75,19 @@ function normalizeRegion(r: RawRegion): DrawingRegion | null {
   ) {
     return null;
   }
+  const targetRoute: DrawingRegion["targetRoute"] =
+    r.target_route === "type"
+      ? "type"
+      : r.target_route === "drawing"
+        ? "drawing"
+        : "node";
   return {
     page: r.page,
     bbox: r.bbox as [number, number, number, number],
     pageSize: r.page_size as [number, number],
     targetId: r.target_id,
-    targetRoute: r.target_route === "type" ? "type" : "node",
+    targetRoute,
+    targetPage: typeof r.target_page === "number" ? r.target_page : undefined,
     layer: (r.layer as DrawingRegion["layer"]) ?? "full",
     label: typeof r.label === "string" ? r.label : "",
   };

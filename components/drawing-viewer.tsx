@@ -251,27 +251,43 @@ function RegionBox({
     height: (y1 - y0) * sy,
   };
 
-  const href = `/${region.targetRoute}/${region.targetId}`;
+  // Skladba (D-043): región vedie na iný dokument (Výpis skladieb) na danú stranu —
+  // nie na detail prvku. Klik = bežná navigácia (žiadny `onSelect`/bočný panel).
+  const isSkladba = region.targetRoute === "drawing";
+  const href = isSkladba
+    ? `/drawing/${region.targetId}?page=${region.targetPage ?? 1}`
+    : `/${region.targetRoute}/${region.targetId}`;
 
   function handleClick(e: React.MouseEvent<HTMLAnchorElement>) {
-    // Ctrl/⌘/shift-klik = nechaj prehliadač otvoriť celý detail (nová karta).
-    if (!onSelect || e.metaKey || e.ctrlKey || e.shiftKey) return;
+    // Skladba → nechaj odkaz navigovať. Ctrl/⌘/shift-klik = otvoriť detail v novej karte.
+    if (isSkladba || !onSelect || e.metaKey || e.ctrlKey || e.shiftKey) return;
     e.preventDefault();
-    onSelect({ id: region.targetId, route: region.targetRoute, label: region.label });
+    onSelect({
+      id: region.targetId,
+      route: region.targetRoute as "node" | "type",
+      label: region.label,
+    });
   }
 
-  const className = selected
-    ? `absolute rounded-sm bg-primary/30 ring-2 ring-primary ring-offset-1 ring-offset-background ${
-        pulsing ? "animate-pulse" : ""
-      }`
-    : "absolute rounded-sm bg-primary/10 ring-1 ring-primary/40 transition-colors hover:bg-primary/25 hover:ring-primary";
+  // Skladby vizuálne odlíšené (jantárová) od prvkových kódov (primárna farba).
+  const className = isSkladba
+    ? "absolute rounded-sm bg-amber-400/15 ring-1 ring-amber-500/50 transition-colors hover:bg-amber-400/30 hover:ring-amber-500"
+    : selected
+      ? `absolute rounded-sm bg-primary/30 ring-2 ring-primary ring-offset-1 ring-offset-background ${
+          pulsing ? "animate-pulse" : ""
+        }`
+      : "absolute rounded-sm bg-primary/10 ring-1 ring-primary/40 transition-colors hover:bg-primary/25 hover:ring-primary";
+
+  const title = isSkladba
+    ? `Skladba ${region.label} — otvoriť vo Výpise skladieb`
+    : `${region.label}${selected ? " (vybraný)" : ""} — zobraziť detail`;
 
   return (
     <a
       ref={boxRef}
       href={href}
       onClick={handleClick}
-      title={`${region.label}${selected ? " (vybraný)" : ""} — zobraziť detail`}
+      title={title}
       style={style}
       className={className}
     />

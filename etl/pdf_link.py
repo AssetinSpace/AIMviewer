@@ -54,6 +54,21 @@ LINK_SOURCE = "pdf_link (E4)"
 # 1 pt ≈ 0.35 mm). Bublina prvku má kód a Mark blízko seba; ladí sa na výkrese.
 PROXIMITY_PT = 28.0
 
+# ── Skladby (kompozičné značky S#, D-043) ─────────────────────────────────────
+# Výkresy nesú aj **skladbové značky** (`S1`–`S9`, hexagónové bubliny) — odkazy na
+# skladby konštrukcií definované vo „Výpise skladieb" (jeden dokument, každá skladba
+# = jedna strana). Nemajú vlastný prvok v DB (D-043 možnosť C): bublina sa nelinkuje
+# na objekt, ale **na dokument Výpis skladieb otvorený na strane danej skladby**
+# (`target_route='drawing'`, `target_page`). Žiadna hrana — čistý navigačný región.
+_VYPIS_CONTAINER = "OCB_DPS_SO01_ARS_VV_109_Vypis-skladieb"
+_SKLADBA_RE = re.compile(r"^S[1-9]$")
+# Názov skladby vo Výpise vždy začína „Skladba …" hneď vedľa značky — kotva, ktorá
+# odlíši pravú značku od textových výskytov „S4" v špecifikácii materiálu (napr. pás
+# „PV 200 S4 N"). Mark = ten `S#`, ktorý má v tom istom riadku napravo token „Skladba".
+_SKLADBA_NAME_PREFIX = "Skladba"
+SKLADBA_LAYER = "skladba"
+SKLADBA_ROUTE = "drawing"
+
 
 @dataclass(frozen=True)
 class CodeMatcher:
@@ -169,6 +184,34 @@ def detect_codes(page: "fitz.Page", page_no: int, m: CodeMatcher) -> list[Hit]:
     return hits
 
 
+# ── Skladbové značky (S#) ─────────────────────────────────────────────────────
+
+
+@dataclass
+class SkladbaHit:
+    """Jedna detegovaná skladbová značka (`S#`) na strane výkresu (D-043 C)."""
+
+    mark: str
+    page: int
+    bbox: tuple[float, float, float, float]    # PyMuPDF top-left (x0, y0, x1, y1)
+    page_size: tuple[float, float]
+
+
+def detect_skladby(page: "fitz.Page", page_no: int, marks: set[str]) -> list[SkladbaHit]:
+    """Nájde výskyty známych skladbových značiek (`marks`) ako samostatné tokeny.
+
+    `marks` = množina platných značiek z Výpisu (napr. `{S1, S2, …}`) → bez whitelistu
+    by sa chytali aj `S#` z textu. Každý výskyt = vlastný klikací región (ako pri kódoch).
+    """
+    pw = _page_words(page)
+    ps = (pw.width, pw.height)
+    out: list[SkladbaHit] = []
+    for w in pw.words:
+        if w[0] in marks:
+            out.append(SkladbaHit(w[0], page_no, (w[1], w[2], w[3], w[4]), ps))
+    return out
+
+
 # ── Manifest (výkres PDF → dokument object_ref) ───────────────────────────────
 
 
@@ -189,6 +232,46 @@ def read_drawings() -> list[DrawingRow]:
             cn = r["container_name"].strip()
             if parse_container_name(cn).doc_type == "VD":
                 out.append(DrawingRow(r["source_path"].strip(), cn))
+    return out
+
+
+def read_skladby() -> dict[str, int]:
+    """Mapa skladbová značka → strana vo „Výpise skladieb" (`S#` → 1-based page, D-043).
+
+    Vyhľadá Výpis v manifeste, otvorí PDF a na každej strane nájde značku `S#`, ktorá
+    má napravo v tom istom riadku token „Skladba" (kotva — odlíši pravú značku od `S4`
+    v špecifikácii materiálu). Prázdna mapa = Výpis chýba (skladby sa proste nelinkujú).
+    """
+    src: Optional[str] = None
+    if _MANIFEST.exists():
+        with _MANIFEST.open(encoding="utf-8") as fh:
+            reader = csv.DictReader(line for line in fh if not line.startswith("#"))
+            for r in reader:
+                if r["container_name"].strip() == _VYPIS_CONTAINER:
+                    src = r["source_path"].strip()
+                    break
+    if not src:
+        return {}
+    pdf_path = _SOURCE_ROOT / src
+    if not pdf_path.exists():
+        return {}
+    out: dict[str, int] = {}
+    doc = fitz.open(pdf_path)
+    for i in range(doc.page_count):
+        # PyMuPDF word = (x0, y0, x1, y1, text, block, line, word_no)
+        words = [(w[4], w[0], w[1], w[2], w[3]) for w in doc[i].get_text("words")]
+        for text, x0, y0, x1, y1 in words:
+            if not _SKLADBA_RE.match(text):
+                continue
+            cy = (y0 + y1) / 2
+            # Pravá značka má názov „Skladba …" vo svojej hlavičke (ten istý alebo
+            # tesne nasledujúci riadok). Textové výskyty „S4" v tabuľke materiálov sú
+            # od „Skladba" ďaleko → vertikálny pás ich spoľahlivo odfiltruje.
+            if any(
+                name.startswith(_SKLADBA_NAME_PREFIX) and abs((b0 + b1) / 2 - cy) < 18
+                for name, a0, b0, a1, b1 in words
+            ):
+                out[text] = i + 1
     return out
 
 
@@ -277,13 +360,15 @@ class DrawingResult:
     container_name: str
     detected: int
     matched: int                     # počet previazaných prvkov (= počet regiónov)
-    regions: int                     # počet link-regiónov v `_drawing_links`
+    regions: int                     # počet link-regiónov v `_drawing_links` (vrátane skladieb)
     unmatched_codes: set[str]        # reálne medzery: `full`/`bare` bez zhody (reportuj)
     dropped_proximity: set[str]      # proximity odhad bez cieľa v DB (šum/mimo scope) → zahodené
+    skladba_regions: int = 0         # z toho navigačné regióny skladieb (S#, D-043 C)
 
 
 def process_drawing(
-    cur, row: DrawingRow, m: CodeMatcher, refs: dict, types_by_assembly: dict, dry: bool
+    cur, row: DrawingRow, m: CodeMatcher, refs: dict, types_by_assembly: dict, dry: bool,
+    skladby: Optional[dict] = None, vypis_doc_id: Optional[str] = None,
 ) -> DrawingResult:
     pdf_path = _SOURCE_ROOT / row.source_path
     if not pdf_path.exists():
@@ -350,6 +435,30 @@ def process_drawing(
             else:
                 dropped.add(hit.code)         # proximity odhad bez zhody = šum → zahoď
 
+    # Skladbové značky (S#) → navigačné regióny na Výpis skladieb (D-043 C). Bez hrán
+    # (skladba nemá vlastný uzol): cieľ = dokument Výpis, otvorený na strane skladby.
+    skladba_count = 0
+    if skladby and vypis_doc_id:
+        marks = set(skladby)
+        for i in range(doc.page_count):
+            for sh in detect_skladby(doc[i], i + 1, marks):
+                bbox = _to_bottom_left(sh.bbox, sh.page_size)
+                key = (sh.page, tuple(bbox), sh.mark)   # mark v kľúči (cieľ je 1 dokument)
+                if key in seen:
+                    continue
+                seen.add(key)
+                regions.append({
+                    "page": sh.page,
+                    "bbox": bbox,
+                    "page_size": [round(sh.page_size[0], 2), round(sh.page_size[1], 2)],
+                    "target_id": str(vypis_doc_id),
+                    "target_route": SKLADBA_ROUTE,
+                    "target_page": skladby[sh.mark],
+                    "layer": SKLADBA_LAYER,
+                    "label": sh.mark,
+                })
+                skladba_count += 1
+
     if not dry:
         for from_id in matched_ids:
             _link(cur, from_id, doc_id, dry)
@@ -357,7 +466,8 @@ def process_drawing(
 
     detected = len({h.code for h in hits})
     return DrawingResult(
-        row.container_name, detected, len(matched_ids), len(regions), unmatched, dropped
+        row.container_name, detected, len(matched_ids), len(regions), unmatched, dropped,
+        skladba_count,
     )
 
 
@@ -378,21 +488,32 @@ def main(argv: Optional[list[str]] = None) -> int:
 
     matcher = CodeMatcher(SNIM)
     drawings = read_drawings()
+    skladby = read_skladby()
     print(f"Výkresy v manifeste (VD): {len(drawings)}")
+    print(f"Skladby z Výpisu (S# → strana): {skladby or '— (Výpis nenájdený)'}")
 
     total_links = 0
     total_regions = 0
+    total_skladby = 0
     with psycopg.connect(database_url()) as conn:
         with conn.cursor() as cur:
             refs = _load_refs(cur)
             types_by_assembly = _types_by_assembly(refs)
+            vypis_doc_id = _doc_id(cur, _VYPIS_CONTAINER) if skladby else None
+            if skladby and vypis_doc_id is None:
+                print(f"  ! Výpis '{_VYPIS_CONTAINER}' nie je v DB — skladby sa nelinkujú.")
             print(f"object_ref v DB (asset/type): {len(refs)}\n")
             for row in drawings:
-                res = process_drawing(cur, row, matcher, refs, types_by_assembly, args.dry_run)
+                res = process_drawing(
+                    cur, row, matcher, refs, types_by_assembly, args.dry_run,
+                    skladby, vypis_doc_id,
+                )
                 total_links += res.matched
                 total_regions += res.regions
+                total_skladby += res.skladba_regions
                 print(f"  {res.container_name:46s} detegovaných {res.detected:3d} "
-                      f"→ zhoda {res.matched:3d} prvkov | regiónov {res.regions:3d}")
+                      f"→ zhoda {res.matched:3d} prvkov | regiónov {res.regions:3d} "
+                      f"(z toho skladby {res.skladba_regions:2d})")
                 if args.show_unmatched and res.unmatched_codes:
                     print(f"      bez zhody (medzera): {sorted(res.unmatched_codes)}")
                 if args.show_unmatched and res.dropped_proximity:
@@ -401,11 +522,12 @@ def main(argv: Optional[list[str]] = None) -> int:
         if args.dry_run:
             conn.rollback()
             print(f"\nSúčet: {total_links} prvkov / {total_regions} regiónov "
-                  f"(--dry-run → do DB sa nezapisuje).")
+                  f"(z toho {total_skladby} skladbových) (--dry-run → do DB sa nezapisuje).")
         else:
             conn.commit()
             print(f"\nHotovo: {total_links} element-väzieb (role='{LINK_ROLE}') + "
-                  f"{total_regions} link-regiónov v _drawing_links zapísaných.")
+                  f"{total_regions} link-regiónov ({total_skladby} skladbových) "
+                  f"v _drawing_links zapísaných.")
     return 0
 
 

@@ -745,10 +745,10 @@ región mieri na stránku **typu** (1 cieľ). Otvorené (nie blokujúce): hĺbka
 
 ---
 
-### D-043 — Skladby (kompozičné značky `S1`–`S9`) ako vlastný systém značenia — *návrh*
-**Status:** návrh, vyvolaný diagnostikou pokrytia odkazov vo výkresoch (Rez-A). **Nie je
-blokujúci** — aditívne rozšírenie, dá sa odložiť. Treba rozhodnúť rozsah pred ďalším
-ladením detekcie.
+### D-043 — Skladby (kompozičné značky `S1`–`S9`) ako vlastný systém značenia
+**Status:** **rozhodnuté — možnosť C (link na Výpis skladieb)**, implementované. Vyvolané
+diagnostikou pokrytia odkazov vo výkresoch (Rez-A). Možnosť A (skladba ako uzol) ostáva
+ako budúce bohatšie rozšírenie.
 
 **Kontext:** Vo výkresoch (najmä rezoch/detailoch) existujú **dva paralelné systémy
 značenia**, ktoré sme doteraz nerozlišovali:
@@ -764,24 +764,38 @@ regex SNIM kódu (`^[A-Z]{2}\d{2}…` vs. `S` + 1 číslica), (b) `S` nie je TSP
 schéme, a hlavne (c) **v DB neexistuje uzol skladby** — nie je sa na čo naviazať. Vizuálne
 to pôsobí ako „veľa odkazov chýba", hoci ide o iný dátový druh, ktorý sme nikdy nemodelovali.
 
-**Možnosti:**
-- **A — skladba ako uzol (`object_type='assembly'`, aditívne k D-018).** Seed z „Výpisu
-  skladieb": každá skladba `S1`–`S9` = riadok v `objects` (object_ref napr. `S1`, `name`
-  = popis skladby, vrstvy do `properties`). Detekcia rozšírená o skladbový vzor (vlastná
-  „kategória"/matcher mimo SNIM TSP), `S#` bubliny → `rel_has_document`/región na uzol
-  skladby. Bonus: prvok s kódom (`ST01`) sa dá previazať na svoju skladbu (`rel_*`) →
-  „z čoho je strecha zložená". **Najviac v duchu „správne previazaných dát" (D-003).**
-- **B — skladba mimo rozsah (status quo).** `S#` značky sa explicitne neriešia; ostávajú
-  needetegované. Žiadna práca, ale demo nevie ukázať väzbu prvok → skladba.
+**Zvažované možnosti:**
+- **A — skladba ako uzol (`object_type='assembly'`, aditívne k D-018).** Každá skladba =
+  riadok v `objects`, vrstvy do `properties`, väzba prvok↔skladba. Najbohatšie, ale nový
+  uzol + seed + detail UI. **Odložené ako budúce rozšírenie.**
+- **B — mimo rozsah (status quo).** `S#` sa neriešia. Zamietnuté (demo nevie ukázať skladby).
+- **C — link na Výpis skladieb (PDF strana). ✅ zvolené.** Bublina `S#` sa nelinkuje na
+  objekt, ale **na dokument Výpis skladieb otvorený na strane danej skladby**. Reuse
+  existujúcej prehliadačky (D-042) — žiadny nový `object_type`, žiadna migrácia.
 
-**Odporúčanie:** **A**, ale ako samostatný malý sprint po dokončení D-042 ladenia —
-aditívne (nový `object_type`, žiadna zmena existujúcej schémy ani SNIM definície),
-hodnotovo silné pre demo. Detekciu skladieb riešiť ako **druhú kategóriu matchera**
-(nie hack do SNIM regexu), nech ostáva schéma čistá (D-033). Do rozhodnutia platí B.
+**Rozhodnutie (C — implementované):**
+- **Žiadny uzol skladby, žiadna hrana.** Skladba je čistý **navigačný región** v
+  `_drawing_links` výkresu: `target_route='drawing'`, `target_id` = `objects.id` dokumentu
+  Výpis skladieb, **`target_page`** = strana skladby, `layer='skladba'`, `label='S#'`.
+  `rel_has_document` sa pre skladby **netvorí** (smer D-014 je objekt→dokument; skladba
+  nemá objekt). Cena: jeden navigačný hop, nulová zmena schémy/grafu.
+- **Detekcia mimo SNIM matchera (D-033 čistota).** `S#` značky riešené samostatne
+  (`detect_skladby`, whitelist značiek z Výpisu) — **nie** hackom do SNIM regexu.
+- **Mapa `S#` → strana z Výpisu (`read_skladby`).** Každá skladba = jedna strana; značka sa
+  identifikuje kotvou: token `S#`, ktorý má vo svojej hlavičke „Skladba …" (vertikálny pás
+  < 18 pt) — odfiltruje textové „S4" v špecifikácii materiálu (napr. pás „PV 200 S4 N").
+  Zistené: `S1→3 … S9→10` (bez S7). Overené end-to-end v preview: klik `S1` v Reze →
+  Výpis na strane 3 (vegetačná strecha, ST01.20).
+- **Frontend (`drawing-viewer.tsx`):** skladbový región = `<a href="/drawing/{id}?page={n}">`
+  (bežná navigácia, **bez** bočného panela/`onSelect`), vizuálne **jantárová** farba odlišuje
+  skladby od prvkových kódov (primárna). `DrawingRegion` rozšírený o `targetPage` a route `drawing`.
+- **Efekt (`--dry-run`/zápis):** +26 skladbových regiónov (Rez-A +20, Pôdorys strechy +6);
+  spolu **378 → 404** regiónov. Element-väzby (193) nedotknuté.
 
-**Otvorené:** presný tvar `object_ref` skladby (`S1` vs. prefixovaný), či vrstvy parsovať
-z „Výpisu skladieb" automaticky (tabuľka v PDF) alebo seedovať ručne, a vzťah prvok↔skladba
-(nová hrana `rel_has_assembly` vs. reuse). Dorieši sa pri ratifikácii.
+**Budúce (možnosť A) — otvorené:** ak bude treba štruktúrované dáta skladby (vrstvy,
+materiály, hrúbky ako uzol + väzba prvok↔skladba „z čoho je strecha zložená"), spraviť
+aditívne nad C: `object_type='assembly'`, vrstvy parsované z tabuľky Výpisu, región `S#`
+prepnúť z dokumentu na uzol skladby. C ostáva fallback.
 
 ---
 
