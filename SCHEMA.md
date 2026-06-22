@@ -335,8 +335,10 @@ kódovacej schémy (field-source resolver: pset / atribút / klasifikácia + `ex
 nie z IFC `Tag`. Definícia schémy žije v ETL/projektovom configu (`etl/scheme.py`), nie
 nutne v DB. Multi-projekt `project` entita + per-projekt schéma = aditívne pri 2. projekte.
 
-**Trvalo mimo scope:** geometria / RepresentationMaps (sme dátový viewer);
-`property_set_templates` (bSDD validácia) — až pri validácii handoveru.
+**Trvalo mimo scope:** geometria v DB / mesh ukladanie / RepresentationMaps — Postgres sa
+geometrie nedotýka ani s príchodom 3D renderingu; IFClite (D-044) je aplikačná klient-side
+vrstva, geometria zostáva ephemerálna v prehliadači. `property_set_templates` (bSDD
+validácia) — až pri validácii handoveru.
 
 ---
 

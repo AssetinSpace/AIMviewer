@@ -76,6 +76,7 @@ Primárny use case: AIM Viewer — ukážka správne previazaných dát.
 - Nedávať IFC atribúty do `properties` — sú to stĺpce
 - Nezahadzovať adresy/org-väzby zo zdroja — uložiť do `_contact`/`_org` v `properties` (kým nie je C)
 - Nebudovať features bez zodpovedajúceho záznamu v DECISIONS.md
+- Nikdy neukladať geometriu/meshe do DB — 3D rendering je ephemerálna klient-side vrstva (IFClite, D-044)
 
 ## Priestorová hierarchia
 ```
@@ -86,3 +87,8 @@ Každá úroveň je riadok v `objects` (líši sa `object_type`), prepojená cez
 ## RDF / ICDD
 RDF nie je interná databáza — len export formát.
 Export generuje Python skript z Postgres dát do ICDD kontajnera (ISO 21597).
+
+## 3D Viewer — IFClite (D-044)
+Geometria = **ephemerálna v prehliadači** (IFClite WASM, klient-side, IFC súbor neopustí tab).
+**Postgres sa geometrie nikdy nedotýka.** Spojka medzi 3D scénou a dátami = **IFC GUID**
+(`ifc_guid_history`, D-010). Plánované ako S5 — paralelná vetva, neblokuje S4/DV.
