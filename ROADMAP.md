@@ -236,4 +236,22 @@ naming convention finálny tvar) sú v DECISIONS §7.
 - 3D / IFC.js geometria (D-007: sme dátový viewer, nie geometrický).
 
 ---
-*Posledná aktualizácia: 2026-06-20 — E4 (PDF výkres auto-linking) hotový (**D-041**): `etl/pdf_link.py` deteguje SNIM kódy z výkresov (PyMuPDF), matchuje v troch dôverových vrstvách (`full`/`proximity`/`bare`) — odfiltrované false-pos `OV01.00.00`/`ZV01.02` bez straty dverí, prefix-match holých typových kódov; **193 element-väzieb** zapísaných (`source='pdf_link (E4)'`, idempotentné, E3 nedotknuté). Viewer: sekcie „Zobrazený vo výkrese" (asset/asset_type) a „Prvky vo výkrese" (podlažie/budova) — `relations.ts` + `drawing-list.tsx`/`drawing-elements.tsx`. Predtým E3: 13 PDF (CDE naming, D-036). **Ďalej: konsolidačná / review fáza** — postupné kontrolované dopilovanie hotového (S0–S3 + E1–E4) podľa feedbacku; **E5 (ICDD export) odložené** do uzavretia review pass. Naplánovaný sprint **DV — Interaktívna prehliadačka výkresov** (**D-042**, klikateľné SNIM kódy obojsmerne) ako demo feature na odprezentovanie previazanosti — kostra rozhodnutá, detaily sa doladia počas sprintu (fázy A dáta → B MVP → C in-app → D obojsmernosť).*
+
+## Budúce smery — kandidáti
+
+> Tieto smery majú rozhodnutý rámec, ale čakajú na konkrétnu zákazku alebo úzus z reálnej
+> prevádzky. Nie sú v aktívnom sprintu — zaznamené v `DECISIONS.md` §8.
+
+- **Pasportizácia existujúcich budov** (D-044) — priestorový/technický/stavebný pasport
+  pre prevádzku a údržbu. Zostávame data/CDE provider (D-001); operatíva (CAFM/Odoo)
+  ostáva externá (Odoo as-is, žiadna prestavba). Platform features: 360° fotky naviazané
+  na space/asset, pasportizačný register s provenance/LOA (USIBD, LOIN), LOIN validácia
+  úplnosti, COBie/ICDD export (D-015). Dynamika = Cesta A (governance/monitoring) teraz;
+  Cesta B (vlastné dynamické dáta) neskôr. Schéma sa nemení — všetko aditívne (D-018).
+  Závisí od potvrdenia zákazky, ktorá bude zároveň field study.
+
+- **3D IFC Viewer** (D-037) + **PDF vedľa IFC** (D-038) + **Georeferencing** (D-039)
+  — geometrická vrstva nad dátovým viewerom; závislé navzájom, prídu po S4.
+
+---
+*Posledná aktualizácia: 2026-06-22 — Pridaná sekcia „Budúce smery — kandidáti": Pasportizácia existujúcich budov (**D-044**) + 3D/PDF/Georeferencing (**D-037–D-039**). Predtým: E4 hotový (**D-041**, 193 element-väzieb); konsolidačná/review fáza; **E5 (ICDD export) odložené**; DV (interaktívna prehliadačka) hotová (**D-042**, fázy A–D).*
