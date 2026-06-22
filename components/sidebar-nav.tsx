@@ -7,6 +7,7 @@ import {
   Box,
   Building2,
   ChevronRight,
+  Cuboid,
   FileText,
   User,
   type LucideIcon,
@@ -86,24 +87,40 @@ function Section({
 }
 
 export function SidebarNav({ nav }: { nav: SidebarNavData }) {
+  const pathname = usePathname();
   const empty =
     nav.assetTypes.length === 0 &&
     nav.persons.length === 0 &&
     nav.organizations.length === 0 &&
     nav.documents.length === 0;
-  if (empty) return null;
 
   return (
     <div className="mt-2 border-t pt-1">
-      <Section title="Typy assetov" icon={Box} items={nav.assetTypes} hrefBase="/type" />
-      <Section title="Osoby" icon={User} items={nav.persons} hrefBase="/node" />
-      <Section
-        title="Organizácie"
-        icon={Building2}
-        items={nav.organizations}
-        hrefBase="/node"
-      />
-      <Section title="Dokumenty" icon={FileText} items={nav.documents} hrefBase="/drawing" />
+      <Link
+        href="/ifc"
+        className={cn(
+          "mt-3 flex items-center gap-2 rounded-md px-2 py-1.5 text-sm",
+          pathname === "/ifc"
+            ? "bg-sidebar-accent text-sidebar-accent-foreground"
+            : "text-muted-foreground hover:bg-sidebar-accent/60 hover:text-foreground"
+        )}
+      >
+        <Cuboid className="size-4 shrink-0" />
+        <span>3D Model</span>
+      </Link>
+      {!empty && (
+        <>
+          <Section title="Typy assetov" icon={Box} items={nav.assetTypes} hrefBase="/type" />
+          <Section title="Osoby" icon={User} items={nav.persons} hrefBase="/node" />
+          <Section
+            title="Organizácie"
+            icon={Building2}
+            items={nav.organizations}
+            hrefBase="/node"
+          />
+          <Section title="Dokumenty" icon={FileText} items={nav.documents} hrefBase="/drawing" />
+        </>
+      )}
     </div>
   );
 }

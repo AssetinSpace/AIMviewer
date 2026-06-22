@@ -40,3 +40,6 @@ etl/data/
 
 # Podklady z diplomky (~79 MB binárok: IFC/PDF/IDS) — držané v OneDrive, necommitovať
 podklady/
+
+# IFC WASM (copiée par postinstall depuis node_modules/@ifc-lite/wasm)
+public/ifc-lite_bg.wasm
