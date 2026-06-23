@@ -9,10 +9,13 @@ const AIM_CACHE = { revalidate: 60, tags: ["aim"] };
 /** ifc_guid → objects.id (aktívne záznamy, valid_until IS NULL). */
 export type GuidMap = Record<string, string>;
 
-/** Verejná URL IFC súboru. Produkcia: NEXT_PUBLIC_IFC_URL env var (Supabase Storage).
- *  Lokálny fallback: public/model.ifc (D-044). */
+/** Verejná URL IFC súboru.
+ *  Priorita: NEXT_PUBLIC_IFC_URL env var → Supabase Storage bucket `ifc/` → /model.ifc. */
 export function getIfcUrl(): string {
-  return process.env.NEXT_PUBLIC_IFC_URL ?? "/model.ifc";
+  return (
+    process.env.NEXT_PUBLIC_IFC_URL ??
+    "https://acwoupricatirhlfkhvk.supabase.co/storage/v1/object/public/ifc/ASR.ifc"
+  );
 }
 
 async function fetchGuidMapImpl(): Promise<GuidMap> {
