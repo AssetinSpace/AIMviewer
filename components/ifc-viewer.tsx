@@ -26,6 +26,10 @@ export function IFCViewer({ ifcUrl, guidMap, focus, onSelect }: Props) {
   const [status, setStatus] = useState<"loading" | "error" | "ready">("loading");
   const [errorMsg, setErrorMsg] = useState("");
   const [progress, setProgress] = useState("");
+  const [floors, setFloors] = useState<Array<{ eid: number; name: string }>>([]);
+  const [selectedFloor, setSelectedFloor] = useState<number | null>(null);
+  const sceneRef = useRef<THREE.Group | null>(null);
+  const eidToStoreyRef = useRef<Map<number, number>>(new Map());
 
   useEffect(() => {
     const container = containerRef.current;
@@ -113,6 +117,29 @@ export function IFCViewer({ ifcUrl, guidMap, focus, onSelect }: Props) {
           exprToGuid.set(parseInt(rm[1], 10), rm[2]);
         }
 
+        // ── IfcBuildingStorey → názvy poschodí ──────────────────────
+        const storeyNames = new Map<number, string>();
+        const storeyRe = /#(\d+)=IFCBUILDINGSTOREY\('[^']*',[^,]*,'([^']*)'/gi;
+        let sm: RegExpExecArray | null;
+        while ((sm = storeyRe.exec(ifcText)) !== null) {
+          storeyNames.set(parseInt(sm[1], 10), sm[2]);
+        }
+
+        // ── IfcRelContainedInSpatialStructure → eid → poschodie ─────
+        // Format: IFCRELCONTAINEDINSPATIALSTRUCTURE(...,(#e1,#e2,...),#storeyId)
+        const eidToStorey = new Map<number, number>();
+        const containRe =
+          /IFCRELCONTAINEDINSPATIALSTRUCTURE\([^(]+\(([^)]*)\),#(\d+)\)/gi;
+        let cm: RegExpExecArray | null;
+        while ((cm = containRe.exec(ifcText)) !== null) {
+          const storeyEid = parseInt(cm[2], 10);
+          if (!storeyNames.has(storeyEid)) continue; // ignoruj non-storey kontajnery
+          for (const ref of (cm[1].match(/#(\d+)/g) ?? [])) {
+            eidToStorey.set(parseInt(ref.slice(1), 10), storeyEid);
+          }
+        }
+        eidToStoreyRef.current = eidToStorey;
+
         // ── GLB konverzia cez IFClite ───────────────────────────────
         setProgress("Spracúvam geometriu…");
         const api = new IfcAPI();
@@ -137,6 +164,13 @@ export function IFCViewer({ ifcUrl, guidMap, focus, onSelect }: Props) {
         if (cancelled) return;
 
         scene.add(gltf.scene);
+        sceneRef.current = gltf.scene;
+
+        setFloors(
+          Array.from(storeyNames.entries())
+            .map(([eid, name]) => ({ eid, name }))
+            .sort((a, b) => a.name.localeCompare(b.name, "sk"))
+        );
 
         // Centruj kameru na model
         const box = new THREE.Box3().setFromObject(gltf.scene);
@@ -267,6 +301,19 @@ export function IFCViewer({ ifcUrl, guidMap, focus, onSelect }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ifcUrl]);
 
+  // Prepína mesh.visible podľa vybraného poschodia bez re-parse IFC
+  useEffect(() => {
+    const scene = sceneRef.current;
+    if (!scene) return;
+    scene.traverse((node) => {
+      if (!(node instanceof THREE.Mesh)) return;
+      const eid = getEidFromObject(node);
+      if (eid === undefined) return;
+      node.visible =
+        selectedFloor === null || eidToStoreyRef.current.get(eid) === selectedFloor;
+    });
+  }, [selectedFloor]);
+
   return (
     <div className="relative h-full w-full overflow-hidden rounded-md ring-1 ring-border">
       <div ref={containerRef} className="h-full w-full" />
@@ -289,6 +336,36 @@ export function IFCViewer({ ifcUrl, guidMap, focus, onSelect }: Props) {
             <code className="rounded bg-muted px-1">public/model.ifc</code> prítomný,
             alebo nastavte <code className="rounded bg-muted px-1">NEXT_PUBLIC_IFC_URL</code>.
           </span>
+        </div>
+      )}
+
+      {status === "ready" && floors.length > 0 && (
+        <div className="absolute top-2 left-2 flex flex-wrap gap-1">
+          <button
+            type="button"
+            onClick={() => setSelectedFloor(null)}
+            className={`rounded px-2 py-1 text-xs font-medium transition-colors backdrop-blur-sm ${
+              selectedFloor === null
+                ? "bg-primary text-primary-foreground"
+                : "bg-background/80 text-foreground hover:bg-secondary"
+            }`}
+          >
+            Všetky
+          </button>
+          {floors.map((f) => (
+            <button
+              key={f.eid}
+              type="button"
+              onClick={() => setSelectedFloor(f.eid)}
+              className={`rounded px-2 py-1 text-xs font-medium transition-colors backdrop-blur-sm ${
+                selectedFloor === f.eid
+                  ? "bg-primary text-primary-foreground"
+                  : "bg-background/80 text-foreground hover:bg-secondary"
+              }`}
+            >
+              {f.name}
+            </button>
+          ))}
         </div>
       )}
 
