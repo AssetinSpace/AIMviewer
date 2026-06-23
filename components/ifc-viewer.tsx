@@ -30,6 +30,7 @@ export function IFCViewer({ ifcUrl, guidMap, focus, onSelect }: Props) {
   const [selectedFloor, setSelectedFloor] = useState<number | null>(null);
   const sceneRef = useRef<THREE.Group | null>(null);
   const eidToStoreyRef = useRef<Map<number, number>>(new Map());
+  const deselectRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -191,6 +192,9 @@ export function IFCViewer({ ifcUrl, guidMap, focus, onSelect }: Props) {
           if (targetEid !== undefined) {
             highlightEid(gltf.scene, targetEid);
             zoomToEid(gltf.scene, targetEid, camera, orbitControls);
+            // Automaticky aktivuj poschodie cieľového prvku
+            const focusStorey = eidToStorey.get(targetEid);
+            if (focusStorey !== undefined) setSelectedFloor(focusStorey);
           }
         }
 
@@ -207,6 +211,10 @@ export function IFCViewer({ ifcUrl, guidMap, focus, onSelect }: Props) {
             savedMaterials.clear();
             currentSelectedEid = undefined;
           }
+          deselectRef.current = () => {
+            clearSelection();
+            onSelect(null);
+          };
 
           function pick(clientX: number, clientY: number) {
             const rect = renderer!.domElement.getBoundingClientRect();
@@ -300,6 +308,15 @@ export function IFCViewer({ ifcUrl, guidMap, focus, onSelect }: Props) {
     // ifcUrl a focus sú stabilné počas životnosti stránky — reload sa nerobí
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ifcUrl]);
+
+  // Escape = zruší výber prvku (highlight + panel), poschodový filter zostáva
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") deselectRef.current?.();
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
 
   // Prepína mesh.visible podľa vybraného poschodia bez re-parse IFC
   useEffect(() => {
