@@ -18,7 +18,7 @@ interface Props {
   ifcUrl: string;
   guidMap: GuidMap;
   focus?: string;
-  onSelect?: (element: SelectedElement) => void;
+  onSelect?: (element: SelectedElement | null) => void;
 }
 
 export function IFCViewer({ ifcUrl, guidMap, focus, onSelect }: Props) {
@@ -180,7 +180,13 @@ export function IFCViewer({ ifcUrl, guidMap, focus, onSelect }: Props) {
             mouse.y = -((clientY - rect.top) / rect.height) * 2 + 1;
             raycaster.setFromCamera(mouse, camera!);
             const hits = raycaster.intersectObjects(gltf.scene.children, true);
-            if (hits.length === 0) return;
+            if (hits.length === 0) {
+              if (currentSelectedEid !== undefined) {
+                clearSelection();
+                onSelect?.(null);
+              }
+              return;
+            }
             const eid = getEidFromObject(hits[0].object);
             if (eid === undefined || eid === currentSelectedEid) return;
             const guid = exprToGuid.get(eid);
