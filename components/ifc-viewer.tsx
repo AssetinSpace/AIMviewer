@@ -166,10 +166,12 @@ export function IFCViewer({ ifcUrl, guidMap, focus, onSelect }: Props) {
           const mouse = new THREE.Vector2();
           let pointerDownPos = { x: 0, y: 0 };
           const savedMaterials = new Map<THREE.Mesh, THREE.Material | THREE.Material[]>();
+          let currentSelectedEid: number | undefined;
 
           function clearSelection() {
             savedMaterials.forEach((mat, mesh) => { mesh.material = mat; });
             savedMaterials.clear();
+            currentSelectedEid = undefined;
           }
 
           function pick(clientX: number, clientY: number) {
@@ -180,12 +182,13 @@ export function IFCViewer({ ifcUrl, guidMap, focus, onSelect }: Props) {
             const hits = raycaster.intersectObjects(gltf.scene.children, true);
             if (hits.length === 0) return;
             const eid = getEidFromObject(hits[0].object);
-            if (eid === undefined) return;
+            if (eid === undefined || eid === currentSelectedEid) return;
             const guid = exprToGuid.get(eid);
             if (!guid) return;
             const objectId = guidMap[guid];
             if (!objectId) return;
             clearSelection();
+            currentSelectedEid = eid;
             gltf.scene.traverse((node) => {
               if (!(node instanceof THREE.Mesh)) return;
               if (getEidFromObject(node) !== eid) return;
