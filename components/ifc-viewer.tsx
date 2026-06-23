@@ -164,37 +164,47 @@ export function IFCViewer({ ifcUrl, guidMap, focus, onSelect }: Props) {
         if (onSelect) {
           const raycaster = new THREE.Raycaster();
           const mouse = new THREE.Vector2();
-          let mouseDownPos = { x: 0, y: 0 };
+          let pointerDownPos = { x: 0, y: 0 };
 
-          renderer.domElement.addEventListener("mousedown", (e) => {
-            mouseDownPos = { x: e.clientX, y: e.clientY };
-          });
-
-          renderer.domElement.addEventListener("mouseup", (e) => {
-            // Ignoruj drag (orbit control)
-            if (
-              Math.abs(e.clientX - mouseDownPos.x) > 4 ||
-              Math.abs(e.clientY - mouseDownPos.y) > 4
-            )
-              return;
-
+          function pick(clientX: number, clientY: number) {
             const rect = renderer!.domElement.getBoundingClientRect();
-            mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
-            mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+            mouse.x = ((clientX - rect.left) / rect.width) * 2 - 1;
+            mouse.y = -((clientY - rect.top) / rect.height) * 2 + 1;
             raycaster.setFromCamera(mouse, camera!);
-
             const hits = raycaster.intersectObjects(gltf.scene.children, true);
             if (hits.length === 0) return;
-
             const eid = getEidFromObject(hits[0].object);
             if (eid === undefined) return;
             const guid = exprToGuid.get(eid);
             if (!guid) return;
             const objectId = guidMap[guid];
             if (!objectId) return;
+            onSelect!({ id: objectId, route: "node", label: guid });
+          }
 
-            onSelect({ id: objectId, route: "node", label: guid });
+          // Mouse (desktop)
+          renderer.domElement.addEventListener("mousedown", (e) => {
+            pointerDownPos = { x: e.clientX, y: e.clientY };
           });
+          renderer.domElement.addEventListener("mouseup", (e) => {
+            if (Math.abs(e.clientX - pointerDownPos.x) > 6 ||
+                Math.abs(e.clientY - pointerDownPos.y) > 6) return;
+            pick(e.clientX, e.clientY);
+          });
+
+          // Touch (mobile) — single tap
+          renderer.domElement.addEventListener("touchstart", (e) => {
+            if (e.touches.length === 1) {
+              pointerDownPos = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+            }
+          }, { passive: true });
+          renderer.domElement.addEventListener("touchend", (e) => {
+            if (e.changedTouches.length !== 1) return;
+            const t = e.changedTouches[0];
+            if (Math.abs(t.clientX - pointerDownPos.x) > 10 ||
+                Math.abs(t.clientY - pointerDownPos.y) > 10) return;
+            pick(t.clientX, t.clientY);
+          }, { passive: true });
         }
 
         setStatus("ready");
