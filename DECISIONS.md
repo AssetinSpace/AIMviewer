@@ -834,14 +834,89 @@ prepnúť z dokumentu na uzol skladby. C ostáva fallback.
 
 ---
 
+### D-044 — IFC 3D viewer (IFClite): geometria ako ephemerálny kontajner viazaný cez GUID
+
+**Rozhodnutie:** Do AIM Viewer sa integruje **IFC 3D prehliadačka cez IFClite**
+(LTplus AG / Louis Trümpler, MPL-2.0). Kľúčový architektonický princíp:
+> **Postgres drží perzistentnú pravdu o dátach. Prehliadač drží ephemerálnu geometriu**
+> (parsovanú klient-side — IFC súbor neopustí browser tab). Spája ich **IFC GUID**.
+> **Postgres sa geometrie NIKDY nedotkne** — žiadne meshe, žiadny geometrický cache v DB.
+
+Toto NEporušuje D-007 (sme dátový viewer, nie geometrický): geometria sa neukladá ani
+nerozoberá ako dáta — len sa renderuje klient-side a **orchestruje ako informačný
+kontajner** (referencovaný, prepojený cez GUID, zabaliteľný do ICDD pri handoveri, D-015).
+Orchestrovať kontajner ≠ spracovať geometriu ako dáta.
+
+**Technológia (IFClite):**
+- Rust+WASM core, `@ifc-lite/wasm` npm/CDN (**pre-built WASM — nevyžaduje Rust
+  toolchain**, vibecoding-friendly, D-004); WebGL/Three.js rendering template (WebGPU
+  voliteľne neskôr); ~260 KB gzip.
+- Podporuje IFC2X3/IFC4/IFC4X3/IFC5 (IFCX); MPL-2.0 (použitie/úprava/redistribúcia OK).
+- Modulárne (30+ TS balíkov, 5 Rust crates) — berie sa len potrebné.
+- Parsing a rendering oddelené: IFClite vie len podať meshe do existujúceho scene graphu.
+- Relevantné neskôr: `drawing-2d` (rezy/pôdorysy → kryje S5/S6 split-screen zámer
+  D-038), `IfcQuery`+DuckDB-WASM, IDS validátor.
+
+**Tri úrovne ambície (fázovanie S5):**
+1. **Embedded 3D panel** — zobrazí IFC, žiadna väzba na dáta (najslabší príbeh;
+   postačí pre vizuálny trust signal).
+2. **Obojsmerná selekcia** *(cieľový demo moment)* — klik na element v 3D → asset
+   karta (`/node/[id]`, D-027); klik v strome (D-027) alebo na karte (D-028) →
+   zvýraznenie prvku v 3D. Spojka = IFC GUID cez `ifc_guid_history` (D-010). Mapovacia
+   vrstva `Master UUID ↔ GUID` sa stavia ako **znovupoužiteľná funkcia** (volá ju aj
+   úroveň 3 aj prípadný LLM interface, D-005).
+3. **Query bridging** — geometrický/priestorový výber v IFClite → dotaz na DB; opačne
+   dátový filter → zvýraznenie v 3D. Autorita dotazu zostáva v DB (`v_asset_effective`/
+   `v_asset_classifications` = jediný zdroj pravdy, D-028); IFClite query len na to, čo
+   DB nevie (geometria, priestorová proximita). Prepojiteľné s LLM interface neskôr.
+
+**Dôvod (strategický rámec — dve publiká, jeden zážitok):**
+Demo číta dve roviny toho istého toku:
+- **Vyšší manažment:** farebný 3D model = trust signal, dôkaz schopnosti pokrytia
+  všetkých typov informácií vrátane geometrickej. Jednoduchý vstup do dát.
+- **Praktici s reálnymi dátami:** za každým prvkom — dedičnosť, GUID história,
+  zodpovednosti, klasifikačné fasety (D-028/D-029/D-041). Druhá rovina rovnakého kliku.
+Posolstvo nie je „vieme renderovať IFC" (komodita), ale „vieme každý typ informácie —
+geometrickú, dokumentovú, vlastnostnú, klasifikačnú, zodpovednostnú — držať prepojený
+okolo jednej stabilnej identity a odovzdať ako štandardný kontajner" (CDE/ISO 19650,
+D-003). **3D je brána do dát a dôkaz pokrytia, nie jadro.** Dramaturgia: pekný model
+upúta → klik na element → odhalí informačnú hĺbku. Obe roviny v jednom plynulom toku,
+nie ako oddelené záložky.
+
+**Riziká a mitigácie:**
+- **Rozmazanie identity produktu:** 3D nesmie byť landing page — demo začína dátami,
+  3D vedie späť do dát; sémantika Viewera sa nemení.
+- **Scope creep:** tvrdé pravidlo — Postgres sa geometrie nedotkne (žiadny mesh/cache
+  v DB). 3D je izolovaný modul; jeho pád nesmie zhodiť dátový viewer.
+- **GUID bridging krehký:** IFC GUIDs nestabilné pri reexporte (D-010). Pre prvé demo:
+  použiť **ten istý IFC súbor** (ASR.ifc) na render aj ako zdroj GUIDov v DB (E2 ETL)
+  → GUIDs sedí triviálne; triviálnosť je zámer, nie náhoda. GUID história ako „wow" ukázať
+  až s dvoma verziami IFC a otestovaným párovaním cez `ifc_guid_history`.
+- **Maturita závislosti:** IFClite je mladý projekt (1.x, jeden hlavný autor); pin verziu
+  (nie `latest`), preferovať `threejs` (WebGL) template pred WebGPU pre naprieč-
+  prehliadačovú kompatibilitu.
+
+**Dôsledok:**
+- Logicky **S5 — paralelná vetva**, nezačína kým nie je S4 polish uzavretý, ale
+  **neblokuje S4 ani DV sprint** (D-042). Schéma DB sa **nemení** (geometria nie je v DB
+  — čisto aplikačná vrstva).
+- Predpoklad úrovne 2: GUIDs v DB zodpovedajú renderovanému IFC. E2 ETL naloadoval
+  ASR.ifc → triviálne splnené pre prvé demo (D-031); žiadny ďalší ETL nie je potrebný.
+- Konkretizuje a superceduje kandidáta **D-037** (§8). Budúce D-038/D-039 (split-screen,
+  georeferencing) závisia od S5 úrovne 2+.
+
+---
+
 ## 8. Budúce rozhodnutia (D-037+)
 
 > Brainstorm smerov, ešte **nerozhodnuté** — sú to kandidáti, nie záväzky.
 > Číslovanie rezervované; finálne rozhodnutie sa zapíše až keď príde na rad
 > (najskôr post-S4, po funkčnom ETL s reálnym IFC z diplomky).
 
-### D-037 — 3D IFC Viewer integrácia *(kandidát)*
-**Kontext:** AIM Viewer je momentálne čisto dátový (S0–S3). Keď príde čas na geometrickú
+### D-037 — 3D IFC Viewer integrácia *(→ rozhodnuté ako D-044)*
+**Status: supercedovaný D-044** — rozhodnutie prijaté, viď D-044 (IFClite, S5,
+paralelná vetva, obojsmerná selekcia cez IFC GUID). Predpoklad ETL (S4) splnený (E2 ✅).
+**Kontext (zachovaný pre históriu):** AIM Viewer je momentálne čisto dátový (S0–S3). Keď príde čas na geometrickú
 vrstvu, kandidát je IFClite (`@ifc-lite/geometry` + Three.js integrácia do existujúceho
 Next.js). WebGPU renderer alebo Three.js podľa browser support požiadaviek.
 **Otvorené otázky:** Kedy (post-S4), ako hlboko (read-only viewer vs. mutácie), server
@@ -873,4 +948,4 @@ v PDF výkrese — eliminuje manuálnu prácu pri párovaní.
 
 ---
 
-*Posledná aktualizácia: 2026-06-20 — E3 hotový (**D-036**): dokumentová naming convention = CDE štandard Jihočeského kraja (ISO 19650: `Projekt_StupeňPD_ČástDíla_Profese_TypSouboru_Číslo_Popis`, väzba cez `target_ref` v manifeste). Postavené: `etl/doc_scheme.py` (parser + CDE slovníky), `podklady/docs.csv`, migrácia `documents.storage_type` (aditívna), public bucket `documents/`, `etl/doc_upload.py` (13 PDF nahraných + zapísaných do grafu, idempotentné). Brainstorm §8 prečíslovaný na **D-037/D-038/D-039**. Pridané **D-040** (priestory: `IfcSpace.LongName` → prípona `spaces`, Viewer zobrazí „číslo — popis"; migrácia `spaces` + `v_spaces`, re-load ETL bez `--reset`, placeholder „Space" sa berie ako prázdny — 75/89 reálnych názvov). Pridané **D-041** (E4 PDF výkres auto-linking hotový): tri dôverové vrstvy matchu (`full`/`proximity`/`bare`) — odfiltrované false-pos `OV01.00.00`/`ZV01.02` bez straty dverí, prefix-match holých typových kódov; **193 element-väzieb** (`source='pdf_link (E4)'`, idempotentné, E3 nedotknuté); Viewer sekcie „Zobrazený vo výkrese" (asset/type) a „Prvky vo výkrese" (podlažie/budova). Pridané **D-042** (plánované) — interaktívna prehliadačka výkresov s klikateľnými SNIM kódmi (obojsmerné prvok↔výkres) na **odprezentovanie previazanosti**: link regióny v `documents.properties._drawing_links` (bez zmeny schémy, D-022), detekcia ostáva jeden pipeline (`pdf_link.py` plní hrany aj regióny), fázy A (dáta) → B (MVP URI-anotácie) → C (in-app react-pdf) → D (obojsmernosť); užšia podmnožina D-038 bez 3D/georeferencingu. Detaily sa doladia počas sprintu „DV".*
+*Posledná aktualizácia: 2026-06-22 — Pridané **D-044** (IFC 3D viewer — IFClite): geometria ako ephemerálny kontajner klient-side (Rust+WASM, WebGL/Three.js template); princíp Postgres=dáta / prehliadač=ephemerálna geometria / spojka IFC GUID cez `ifc_guid_history`; tri úrovne ambície (embedded panel → obojsmerná selekcia → query bridging); zariadené ako S5 paralelná vetva (neblokuje S4/DV). Superceduje kandidáta D-037. Schéma DB sa nemení. Predtým 2026-06-20 — E3 hotový (**D-036**): dokumentová naming convention = CDE štandard Jihočeského kraja (ISO 19650: `Projekt_StupeňPD_ČástDíla_Profese_TypSouboru_Číslo_Popis`, väzba cez `target_ref` v manifeste). Postavené: `etl/doc_scheme.py` (parser + CDE slovníky), `podklady/docs.csv`, migrácia `documents.storage_type` (aditívna), public bucket `documents/`, `etl/doc_upload.py` (13 PDF nahraných + zapísaných do grafu, idempotentné). Brainstorm §8 prečíslovaný na **D-037/D-038/D-039**. Pridané **D-040** (priestory: `IfcSpace.LongName` → prípona `spaces`, Viewer zobrazí „číslo — popis"; migrácia `spaces` + `v_spaces`, re-load ETL bez `--reset`, placeholder „Space" sa berie ako prázdny — 75/89 reálnych názvov). Pridané **D-041** (E4 PDF výkres auto-linking hotový): tri dôverové vrstvy matchu (`full`/`proximity`/`bare`) — odfiltrované false-pos `OV01.00.00`/`ZV01.02` bez straty dverí, prefix-match holých typových kódov; **193 element-väzieb** (`source='pdf_link (E4)'`, idempotentné, E3 nedotknuté); Viewer sekcie „Zobrazený vo výkrese" (asset/type) a „Prvky vo výkrese" (podlažie/budova). Pridané **D-042** (plánované) — interaktívna prehliadačka výkresov s klikateľnými SNIM kódmi (obojsmerné prvok↔výkres) na **odprezentovanie previazanosti**: link regióny v `documents.properties._drawing_links` (bez zmeny schémy, D-022), detekcia ostáva jeden pipeline (`pdf_link.py` plní hrany aj regióny), fázy A (dáta) → B (MVP URI-anotácie) → C (in-app react-pdf) → D (obojsmernosť); užšia podmnožina D-038 bez 3D/georeferencingu. Detaily sa doladia počas sprintu „DV".*

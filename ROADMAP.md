@@ -7,7 +7,7 @@
 
 ---
 
-## Stav (2026-06-20)
+## Stav (2026-06-22)
 
 > 🔍 **Teraz: konsolidačná / review fáza (nie nový sprint).** E1–E4 a S0–S3 sú hotové;
 > namiesto rozbiehania E5 **postupne prechádzame a dopilujeme to, čo už máme** —
@@ -28,6 +28,7 @@
 - 📋 **DV — Interaktívna prehliadačka výkresov** (klikateľné SNIM kódy, obojsmerne) —
   **naplánované** ako demo feature na odprezentovanie previazanosti (D-042); kostra hotová,
   detaily sa doladia počas sprintu. Spustí sa ako prvá feature po review passe.
+- 📋 **S5 — IFC 3D viewer** (plánované, D-044, **paralelná vetva — neblokuje S4/DV**): obojsmerná selekcia 3D↔dáta cez IFC GUID, IFClite WASM klient-side
 - ⏸️ LLM interface — **parkované** (S-LLM), doladíme neskôr
 
 **Máme:** Supabase Cloud (projekt `acwoupricatirhlfkhvk`) + GitHub repo (`AssetinSpace/AIMviewer`) + Vercel deploy (auto-deploy z `main`). **Chýba zatiaľ:** vlastná doména (príde v S4).
@@ -53,6 +54,7 @@
 | **S2 — Asset karta (jadro)** ✅ | Detail assetu: properties s provenance (vlastné/zdedené/prepísané), zdedený `predefined_type`, link na type `/type/[id]`, breadcrumb, klasifikácie s badge `occurrence`/`type`. **Tu sa ukáže dedičnosť.** | `v_asset_effective`, `v_asset_classifications` |
 | **S3 — Dokumenty + zodpovednosti** ✅ | Na karte (a genericky na každom uzle): dokumenty (`rel_has_document`), zodpovedné osoby/firmy s rolami a platnosťou (`rel_responsible_for`, `rel_member_of`), panel histórie IFC GUID. Klikateľné detaily person/organization/document — generický object route (D-029). | `documents`, `persons`, `ifc_guid_history` |
 | **S4 — Polish & launch** 🟢 | Vizuálny polish, responsivita, empty states; výmena seedu za reálne ETL dáta z diplomky; vlastná doména + verejné spustenie. | — |
+| **S5 — IFC 3D viewer** 📋 plánované | 3D panel (IFClite, klient-side WASM); **obojsmerná selekcia**: klik na element v 3D → asset karta (`/node/[id]`), klik v strome/karte → zvýraznenie v 3D. Spojka = IFC GUID cez `ifc_guid_history`. **Paralelná vetva — neblokuje S4 ani DV.** | D-044, `ifc_guid_history` |
 
 ### Detail
 
@@ -87,10 +89,33 @@
 **S4 — Polish & launch**
 - Závisí od ETL vetvy (reálne dáta). Doména + verejné spustenie (D-007 otvorená otázka).
 
+**S5 — IFC 3D viewer** 📋 plánované (D-044)
+> Paralelná vetva — nezačína kým nie je S4 polish uzavretý, **neblokuje** S4 ani DV sprint.
+> Predpoklad: GUIDs v DB zodpovedajú renderovanému IFC. E2 ETL naloadoval ASR.ifc →
+> triviálne splnené; ten istý súbor na render aj ako zdroj GUIDov v DB (D-044, zámer).
+- **Fáza 1 — Embedded 3D panel:** IFClite (`@ifc-lite/wasm`, WebGL/Three.js template)
+  vložený do Viewera; zobrazuje ASR.ifc klient-side. Izolovaný modul — jeho pád nesmie
+  zhodiť dátový viewer.
+- **Fáza 2 — Obojsmerná selekcia** *(cieľový demo moment):* klik na element v 3D →
+  asset karta (`/node/[id]`); klik v strome (D-027) alebo na karte (D-028) → zvýraznenie
+  prvku v 3D. Spojka = IFC GUID cez `ifc_guid_history`. Mapovacia funkcia
+  `Master UUID ↔ GUID` = znovupoužiteľná (volá ju aj fáza 3 aj budúci LLM interface).
+- **Fáza 3 — Query bridging:** geometrický výber v IFClite → DB dotaz; dátový filter →
+  3D zvýraznenie. Autorita dotazu zostáva v DB (`v_asset_effective`, D-028). Závisí od
+  fázy 2; prepojiteľné s S-LLM neskôr.
+- **Guardraily:** Postgres sa geometrie nedotýka (žiadny mesh/cache v DB); pin verzia
+  IFClite (nie `latest`); preferovať Three.js WebGL template pred WebGPU.
+- Akceptačné (fáza 2): klik na konkrétne dvere v 3D → `DD01.06.03` asset karta
+  s provenance, zodpovednosťami, výkresom; klik na `DD01.06.03` v strome → zvýraznená
+  v 3D. Schéma DB sa **nemení** (čisto aplikačná vrstva).
+
 ---
 
 ## Parkované / paralelné
 
+- **S5 — IFC 3D viewer** (paralelná vetva, D-044): IFClite WASM/Three.js, obojsmerná
+  selekcia 3D↔dáta cez IFC GUID. Nezačína kým nie je S4 uzavretý; **neblokuje S4/DV**.
+  Schéma DB sa nemení (geometria klient-side, Postgres sa jej nedotýka).
 - **S-LLM — LLM interface** (parkované, doladíme neskôr): chat nad dátami,
   Claude text-to-SQL (D-005) s guardrailmi (read-only, whitelist views, row limit).
   Model sa vyberie pri spustení (`claude-opus-4-8` vs lacnejší pre demo).
@@ -233,7 +258,9 @@ naming convention finálny tvar) sú v DECISIONS §7.
 
 ## Mimo scope (zatiaľ)
 - Auth + RLS (príde s verejným/multi-user prístupom — aditívne, D-025).
-- 3D / IFC.js geometria (D-007: sme dátový viewer, nie geometrický).
+- Geometria v DB / mesh ukladanie — Postgres sa geometrie nedotýka (trvalo mimo scope,
+  D-044). 3D rendering je plánovaný ako S5 — ephemerálna klient-side vrstva cez IFClite,
+  nie dáta v DB.
 
 ---
-*Posledná aktualizácia: 2026-06-20 — E4 (PDF výkres auto-linking) hotový (**D-041**): `etl/pdf_link.py` deteguje SNIM kódy z výkresov (PyMuPDF), matchuje v troch dôverových vrstvách (`full`/`proximity`/`bare`) — odfiltrované false-pos `OV01.00.00`/`ZV01.02` bez straty dverí, prefix-match holých typových kódov; **193 element-väzieb** zapísaných (`source='pdf_link (E4)'`, idempotentné, E3 nedotknuté). Viewer: sekcie „Zobrazený vo výkrese" (asset/asset_type) a „Prvky vo výkrese" (podlažie/budova) — `relations.ts` + `drawing-list.tsx`/`drawing-elements.tsx`. Predtým E3: 13 PDF (CDE naming, D-036). **Ďalej: konsolidačná / review fáza** — postupné kontrolované dopilovanie hotového (S0–S3 + E1–E4) podľa feedbacku; **E5 (ICDD export) odložené** do uzavretia review pass. Naplánovaný sprint **DV — Interaktívna prehliadačka výkresov** (**D-042**, klikateľné SNIM kódy obojsmerne) ako demo feature na odprezentovanie previazanosti — kostra rozhodnutá, detaily sa doladia počas sprintu (fázy A dáta → B MVP → C in-app → D obojsmernosť).*
+*Posledná aktualizácia: 2026-06-22 — Pridaný **S5 — IFC 3D viewer** (**D-044**, paralelná vetva): IFClite WASM/Three.js, obojsmerná selekcia 3D↔dáta cez IFC GUID cez `ifc_guid_history`; tri fázy (embedded panel → obojsmerná selekcia → query bridging); neblokuje S4 ani DV; Postgres sa geometrie nedotýka. Superceduje kandidáta D-037. Aktualizovaná zmienka „Mimo scope" (geometria v DB = trvalo mimo scope; 3D rendering = S5 aplikačná vrstva). Predtým 2026-06-20 — E4 (PDF výkres auto-linking) hotový (**D-041**): `etl/pdf_link.py` deteguje SNIM kódy z výkresov (PyMuPDF), matchuje v troch dôverových vrstvách (`full`/`proximity`/`bare`) — odfiltrované false-pos `OV01.00.00`/`ZV01.02` bez straty dverí, prefix-match holých typových kódov; **193 element-väzieb** zapísaných (`source='pdf_link (E4)'`, idempotentné, E3 nedotknuté). Viewer: sekcie „Zobrazený vo výkrese" (asset/asset_type) a „Prvky vo výkrese" (podlažie/budova) — `relations.ts` + `drawing-list.tsx`/`drawing-elements.tsx`. Predtým E3: 13 PDF (CDE naming, D-036). **Ďalej: konsolidačná / review fáza** — postupné kontrolované dopilovanie hotového (S0–S3 + E1–E4) podľa feedbacku; **E5 (ICDD export) odložené** do uzavretia review pass. Naplánovaný sprint **DV — Interaktívna prehliadačka výkresov** (**D-042**, klikateľné SNIM kódy obojsmerne) ako demo feature na odprezentovanie previazanosti — kostra rozhodnutá, detaily sa doladia počas sprintu (fázy A dáta → B MVP → C in-app → D obojsmernosť).*

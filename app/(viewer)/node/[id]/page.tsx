@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Cuboid } from "lucide-react";
 import { notFound, redirect } from "next/navigation";
 
 import { fetchNode, type NodeDetail, type NodeRef } from "@/lib/data/spatial";
@@ -204,6 +205,17 @@ async function AssetDetailView({ id }: { id: string }) {
 
   return (
     <>
+      {asset.ifc_guid && (
+        <div className="mb-4">
+          <Link
+            href={`/ifc?focus=${asset.ifc_guid}`}
+            className="inline-flex items-center gap-1.5 rounded-md bg-secondary px-3 py-1.5 text-sm font-medium hover:bg-secondary/80"
+          >
+            <Cuboid className="size-4" />
+            Zobraziť v 3D
+          </Link>
+        </div>
+      )}
       <Card className="mb-6">
         <CardHeader>
           <CardTitle>Atribúty</CardTitle>
