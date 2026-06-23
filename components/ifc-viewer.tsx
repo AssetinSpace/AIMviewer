@@ -165,6 +165,12 @@ export function IFCViewer({ ifcUrl, guidMap, focus, onSelect }: Props) {
           const raycaster = new THREE.Raycaster();
           const mouse = new THREE.Vector2();
           let pointerDownPos = { x: 0, y: 0 };
+          const savedMaterials = new Map<THREE.Mesh, THREE.Material | THREE.Material[]>();
+
+          function clearSelection() {
+            savedMaterials.forEach((mat, mesh) => { mesh.material = mat; });
+            savedMaterials.clear();
+          }
 
           function pick(clientX: number, clientY: number) {
             const rect = renderer!.domElement.getBoundingClientRect();
@@ -179,6 +185,17 @@ export function IFCViewer({ ifcUrl, guidMap, focus, onSelect }: Props) {
             if (!guid) return;
             const objectId = guidMap[guid];
             if (!objectId) return;
+            clearSelection();
+            gltf.scene.traverse((node) => {
+              if (!(node instanceof THREE.Mesh)) return;
+              if (getEidFromObject(node) !== eid) return;
+              savedMaterials.set(node, node.material);
+              node.material = new THREE.MeshStandardMaterial({
+                color: HIGHLIGHT_COLOR,
+                emissive: HIGHLIGHT_EMISSIVE,
+                emissiveIntensity: 0.4,
+              });
+            });
             onSelect!({ id: objectId, route: "node", label: guid });
           }
 
