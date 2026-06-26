@@ -7,21 +7,34 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 
 import type { SelectedElement } from "@/lib/data/drawing";
 import type { GuidMap } from "@/lib/data/ifc";
+import type { ViewerApi } from "@/lib/viewer-api";
 
 /** expressId → ifc_guid, budovaná z IFC STEP textu regex-om (rýchlejšie ako exportJson). */
 type ExprToGuid = Map<number, string>;
 
-const HIGHLIGHT_COLOR = new THREE.Color(0xf97316); // orange-500
+const HIGHLIGHT_COLOR = new THREE.Color(0xf97316); // orange-500 — pick selection
 const HIGHLIGHT_EMISSIVE = new THREE.Color(0x7c2d12); // dark ember
+
+const FILTER_COLOR = new THREE.Color(0x60a5fa); // blue-400 — filter / siblings
+const FILTER_EMISSIVE = new THREE.Color(0x1e3a8a); // blue-900
 
 interface Props {
   ifcUrl: string;
   guidMap: GuidMap;
   focus?: string;
+  apiRef?: React.RefObject<ViewerApi | null>;
   onSelect?: (element: SelectedElement) => void;
+  onPickedElement?: (objectId: string, guid: string) => void;
 }
 
-export function IFCViewer({ ifcUrl, guidMap, focus, onSelect }: Props) {
+export function IFCViewer({
+  ifcUrl,
+  guidMap,
+  focus,
+  apiRef,
+  onSelect,
+  onPickedElement,
+}: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [status, setStatus] = useState<"loading" | "error" | "ready">("loading");
   const [errorMsg, setErrorMsg] = useState("");
@@ -104,6 +117,9 @@ export function IFCViewer({ ifcUrl, guidMap, focus, onSelect }: Props) {
         const ifcText = await resp.text();
         if (cancelled) return;
 
+        // IFC buffer for @ifc-lite/query (Phase 4) — encoded once, stored in closure
+        const ifcBuffer = new TextEncoder().encode(ifcText);
+
         // ── expressId → ifc_guid z STEP textu ──────────────────────
         // Každá IfcRoot inštancia: #<id>=IFC<CLASS>('<22-char-GUID>',...
         const exprToGuid: ExprToGuid = new Map();
@@ -112,6 +128,13 @@ export function IFCViewer({ ifcUrl, guidMap, focus, onSelect }: Props) {
         while ((rm = guidRe.exec(ifcText)) !== null) {
           exprToGuid.set(parseInt(rm[1], 10), rm[2]);
         }
+
+        // Reverse maps — O(n) once, O(1) lookup for filter/bridging
+        const guidToExpr = new Map<string, number>(); // GUID → expressId
+        for (const [eid, guid] of exprToGuid) guidToExpr.set(guid, eid);
+
+        const objectIdToGuid = new Map<string, string>(); // objectId → GUID
+        for (const [guid, oid] of Object.entries(guidMap)) objectIdToGuid.set(oid, guid);
 
         // ── GLB konverzia cez IFClite ───────────────────────────────
         setProgress("Spracúvam geometriu…");
@@ -160,8 +183,62 @@ export function IFCViewer({ ifcUrl, guidMap, focus, onSelect }: Props) {
           }
         }
 
+        // ── Filter materials — separate from pick savedMaterials ────
+        const filterMaterials = new Map<THREE.Mesh, THREE.Material | THREE.Material[]>();
+
+        function applyFilter(
+          objectIds: ReadonlyArray<string>,
+          excludeOid?: string
+        ): void {
+          // Clear previous filter
+          filterMaterials.forEach((mat, mesh) => { mesh.material = mat; });
+          filterMaterials.clear();
+
+          if (objectIds.length === 0) return;
+
+          const targetEids = new Set<number>();
+          for (const oid of objectIds) {
+            if (oid === excludeOid) continue;
+            const guid = objectIdToGuid.get(oid);
+            if (!guid) continue;
+            const eid = guidToExpr.get(guid);
+            if (eid !== undefined) targetEids.add(eid);
+          }
+
+          gltf.scene.traverse((node) => {
+            if (!(node instanceof THREE.Mesh)) return;
+            const eid = getEidFromObject(node);
+            if (eid === undefined || !targetEids.has(eid)) return;
+            filterMaterials.set(node, node.material);
+            node.material = new THREE.MeshStandardMaterial({
+              color: FILTER_COLOR,
+              emissive: FILTER_EMISSIVE,
+              emissiveIntensity: 0.35,
+              transparent: true,
+              opacity: 0.92,
+            });
+          });
+        }
+
+        // ── Populate ViewerApi (accessible to workspace via apiRef) ─
+        if (apiRef) {
+          apiRef.current = {
+            highlightFilter: (oids, excludeOid) => applyFilter(oids, excludeOid),
+            clearFilter: () => applyFilter([]),
+            highlightSiblings: (oids, excludeOid) => applyFilter(oids, excludeOid),
+            focusObject: (guid) => {
+              const eid = guidToExpr.get(guid);
+              if (eid !== undefined && camera && orbitControls) {
+                highlightEid(gltf.scene, eid);
+                zoomToEid(gltf.scene, eid, camera, orbitControls);
+              }
+            },
+            getIfcBuffer: () => ifcBuffer,
+          };
+        }
+
         // ── Raycasting / picking (3D → karta, F2) ──────────────────
-        if (onSelect) {
+        if (onSelect || onPickedElement) {
           const raycaster = new THREE.Raycaster();
           const mouse = new THREE.Vector2();
           let pointerDownPos = { x: 0, y: 0 };
@@ -199,7 +276,8 @@ export function IFCViewer({ ifcUrl, guidMap, focus, onSelect }: Props) {
                 emissiveIntensity: 0.4,
               });
             });
-            onSelect!({ id: objectId, route: "node", label: guid });
+            onSelect?.({ id: objectId, route: "node", label: guid });
+            onPickedElement?.(objectId, guid);
           }
 
           // Mouse (desktop)
@@ -250,6 +328,7 @@ export function IFCViewer({ ifcUrl, guidMap, focus, onSelect }: Props) {
       cancelAnimationFrame(animId);
       resizeObs.disconnect();
       orbitControls?.dispose();
+      if (apiRef) apiRef.current = null;
       if (renderer) {
         if (container.contains(renderer.domElement)) {
           container.removeChild(renderer.domElement);
