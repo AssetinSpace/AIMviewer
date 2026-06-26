@@ -9,14 +9,18 @@ import type { SelectedElement } from "@/lib/data/drawing";
 import type { GuidMap } from "@/lib/data/ifc";
 import type { ViewerApi } from "@/lib/viewer-api";
 
-/** expressId → ifc_guid, budovaná z IFC STEP textu regex-om (rýchlejšie ako exportJson). */
+/** expressId → ifc_guid, budovaná z IFC STEP textu regex-om. */
 type ExprToGuid = Map<number, string>;
 
 const HIGHLIGHT_COLOR = new THREE.Color(0xf97316); // orange-500 — pick selection
-const HIGHLIGHT_EMISSIVE = new THREE.Color(0x7c2d12); // dark ember
+const HIGHLIGHT_EMISSIVE = new THREE.Color(0x7c2d12);
+const FILTER_COLOR = new THREE.Color(0x60a5fa);    // blue-400 — filter / siblings
+const FILTER_EMISSIVE = new THREE.Color(0x1e3a8a);
 
-const FILTER_COLOR = new THREE.Color(0x60a5fa); // blue-400 — filter / siblings
-const FILTER_EMISSIVE = new THREE.Color(0x1e3a8a); // blue-900
+interface StoreyInfo {
+  eid: number;
+  name: string;
+}
 
 interface Props {
   ifcUrl: string;
@@ -39,10 +43,37 @@ export function IFCViewer({
   const [status, setStatus] = useState<"loading" | "error" | "ready">("loading");
   const [errorMsg, setErrorMsg] = useState("");
   const [progress, setProgress] = useState("");
+  const [storeys, setStoreys] = useState<StoreyInfo[]>([]);
+  const [activeStoreyEid, setActiveStoreyEid] = useState<number | null>(null);
 
+  // Imperatívne refs — prístupné z useEffect-ov aj keyboard handlerov
+  const applyStoreyFilterRef = useRef<((eid: number | null) => void) | null>(null);
+  const clearSelectionRef = useRef<(() => void) | null>(null);
+
+  // ── Escape key — zruš selekciu ─────────────────────────────────────────
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") clearSelectionRef.current?.();
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
+
+  // ── Storey filter — re-aplikuj pri zmene aktívneho podlažia ────────────
+  useEffect(() => {
+    applyStoreyFilterRef.current?.(activeStoreyEid);
+  }, [activeStoreyEid]);
+
+  // ── Hlavný IFC effect ───────────────────────────────────────────────────
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
+
+    // Reset stavu pri zmene modelu
+    setStoreys([]);
+    setActiveStoreyEid(null);
+    applyStoreyFilterRef.current = null;
+    clearSelectionRef.current = null;
 
     let cancelled = false;
     let animId = 0;
@@ -63,7 +94,7 @@ export function IFCViewer({
       try {
         // ── Three.js scene ──────────────────────────────────────────
         const scene = new THREE.Scene();
-        scene.background = new THREE.Color(0xf1f5f9); // slate-100
+        scene.background = new THREE.Color(0xf1f5f9);
 
         camera = new THREE.PerspectiveCamera(
           45,
@@ -106,22 +137,20 @@ export function IFCViewer({
         };
         if (cancelled) return;
 
-        // Serve WASM from public/ (copied by postinstall, D-044)
         await initWasm("/ifc-lite_bg.wasm");
         if (cancelled) return;
 
-        // ── Fetch IFC file ──────────────────────────────────────────
+        // ── Fetch IFC ───────────────────────────────────────────────
         setProgress("Sťahujem IFC model…");
         const resp = await fetch(ifcUrl);
         if (!resp.ok) throw new Error(`IFC ${resp.status}: ${resp.statusText}`);
         const ifcText = await resp.text();
         if (cancelled) return;
 
-        // IFC buffer for @ifc-lite/query (Phase 4) — encoded once, stored in closure
+        // IFC buffer pre @ifc-lite/query (Phase 4)
         const ifcBuffer = new TextEncoder().encode(ifcText);
 
         // ── expressId → ifc_guid z STEP textu ──────────────────────
-        // Každá IfcRoot inštancia: #<id>=IFC<CLASS>('<22-char-GUID>',...
         const exprToGuid: ExprToGuid = new Map();
         const guidRe = /#(\d+)=IFC\w+\('([0-9A-Za-z_$]{22})'/g;
         let rm: RegExpExecArray | null;
@@ -129,12 +158,50 @@ export function IFCViewer({
           exprToGuid.set(parseInt(rm[1], 10), rm[2]);
         }
 
-        // Reverse maps — O(n) once, O(1) lookup for filter/bridging
-        const guidToExpr = new Map<string, number>(); // GUID → expressId
+        // Reverse mapy — O(n) raz, O(1) lookup
+        const guidToExpr = new Map<string, number>();
         for (const [eid, guid] of exprToGuid) guidToExpr.set(guid, eid);
 
-        const objectIdToGuid = new Map<string, string>(); // objectId → GUID
+        const objectIdToGuid = new Map<string, string>();
         for (const [guid, oid] of Object.entries(guidMap)) objectIdToGuid.set(oid, guid);
+
+        // ── Storey mapy z STEP textu ────────────────────────────────
+        // IfcBuildingStorey: #N=IFCBUILDINGSTOREY('guid',#owner,'Name',...
+        const storeyNames = new Map<number, string>();
+        const storeyRe =
+          /#(\d+)=IFCBUILDINGSTOREY\('[^']*',[^,]+,(?:'([^']*)'|\$)/g;
+        while ((rm = storeyRe.exec(ifcText)) !== null) {
+          storeyNames.set(
+            parseInt(rm[1], 10),
+            rm[2]?.trim() || `Podlažie #${rm[1]}`
+          );
+        }
+
+        // IfcRelContainedInSpatialStructure: (...elems...),#storeyEid
+        const elementToStorey = new Map<number, number>(); // eid → storeyEid
+        const storeyElements = new Map<number, Set<number>>(); // storeyEid → Set<eid>
+        const containRe =
+          /#\d+=IFCRELCONTAINEDINSPATIALSTRUCTURE\('[^']*',[^,]+,(?:'[^']*'|\$),(?:'[^']*'|\$),\(([^)]+)\),#(\d+)/g;
+        while ((rm = containRe.exec(ifcText)) !== null) {
+          const storeyEid = parseInt(rm[2], 10);
+          if (!storeyNames.has(storeyEid)) continue; // len reálne storeys
+          if (!storeyElements.has(storeyEid)) storeyElements.set(storeyEid, new Set());
+          const elemSet = storeyElements.get(storeyEid)!;
+          for (const ref of rm[1].split(",")) {
+            const eid = parseInt(ref.trim().replace(/^#/, ""), 10);
+            if (!isNaN(eid)) {
+              elemSet.add(eid);
+              elementToStorey.set(eid, storeyEid);
+            }
+          }
+        }
+
+        // Zoraď podlažia podľa mena (napr. 1NP < 2NP < 3NP)
+        const storeyInfos: StoreyInfo[] = Array.from(storeyNames.entries())
+          .filter(([eid]) => storeyElements.has(eid))
+          .map(([eid, name]) => ({ eid, name }))
+          .sort((a, b) => a.name.localeCompare(b.name, "sk"));
+        if (!cancelled) setStoreys(storeyInfos);
 
         // ── GLB konverzia cez IFClite ───────────────────────────────
         setProgress("Spracúvam geometriu…");
@@ -142,10 +209,10 @@ export function IFCViewer({
         const empty = new Uint32Array(0);
         const glbBytes = api.exportGlb(
           ifcText,
-          true, // include_metadata → expressId v node.userData
+          true,
           empty,
           empty,
-          "IfcOpeningElement,IfcSpace" // skryť otvory a priestory
+          "IfcOpeningElement,IfcSpace"
         );
         if (cancelled) return;
 
@@ -161,7 +228,6 @@ export function IFCViewer({
 
         scene.add(gltf.scene);
 
-        // Centruj kameru na model
         const box = new THREE.Box3().setFromObject(gltf.scene);
         const center = box.getCenter(new THREE.Vector3());
         const size = box.getSize(new THREE.Vector3());
@@ -174,26 +240,46 @@ export function IFCViewer({
         orbitControls.target.copy(center);
         orbitControls.update();
 
-        // ── Focus param (karta → 3D, F2) ───────────────────────────
+        // ── Storey visibility (žiadny re-parse GLB) ─────────────────
+        function applyStoreyFilter(storeyEid: number | null): void {
+          gltf.scene.traverse((node) => {
+            if (!(node instanceof THREE.Mesh)) return;
+            const eid = getEidFromObject(node);
+            if (storeyEid === null || eid === undefined) {
+              node.visible = true;
+              return;
+            }
+            const elemStorey = elementToStorey.get(eid);
+            // Prvky bez priradenia podlažia sú vždy viditeľné (napr. strecha)
+            node.visible = elemStorey === undefined || elemStorey === storeyEid;
+          });
+        }
+        applyStoreyFilterRef.current = applyStoreyFilter;
+
+        // ── Focus param (karta → 3D) ────────────────────────────────
         if (focus) {
           const targetEid = getEidForGuid(focus, exprToGuid);
           if (targetEid !== undefined) {
             highlightEid(gltf.scene, targetEid);
             zoomToEid(gltf.scene, targetEid, camera, orbitControls);
+            // Auto-zobraz podlažie fokusovaného prvku
+            const focusStorey = elementToStorey.get(targetEid);
+            if (focusStorey !== undefined && !cancelled) {
+              setActiveStoreyEid(focusStorey);
+              applyStoreyFilter(focusStorey); // okamžitý efekt (state update je async)
+            }
           }
         }
 
-        // ── Filter materials — separate from pick savedMaterials ────
+        // ── Filter materials (DB→3D, Query Bridging) ────────────────
         const filterMaterials = new Map<THREE.Mesh, THREE.Material | THREE.Material[]>();
 
         function applyFilter(
           objectIds: ReadonlyArray<string>,
           excludeOid?: string
         ): void {
-          // Clear previous filter
           filterMaterials.forEach((mat, mesh) => { mesh.material = mat; });
           filterMaterials.clear();
-
           if (objectIds.length === 0) return;
 
           const targetEids = new Set<number>();
@@ -220,7 +306,7 @@ export function IFCViewer({
           });
         }
 
-        // ── Populate ViewerApi (accessible to workspace via apiRef) ─
+        // ── ViewerApi ───────────────────────────────────────────────
         if (apiRef) {
           apiRef.current = {
             highlightFilter: (oids, excludeOid) => applyFilter(oids, excludeOid),
@@ -237,7 +323,7 @@ export function IFCViewer({
           };
         }
 
-        // ── Raycasting / picking (3D → karta, F2) ──────────────────
+        // ── Raycasting / picking ─────────────────────────────────────
         if (onSelect || onPickedElement) {
           const raycaster = new THREE.Raycaster();
           const mouse = new THREE.Vector2();
@@ -250,6 +336,7 @@ export function IFCViewer({
             savedMaterials.clear();
             currentSelectedEid = undefined;
           }
+          clearSelectionRef.current = clearSelection;
 
           function pick(clientX: number, clientY: number) {
             const rect = renderer!.domElement.getBoundingClientRect();
@@ -285,12 +372,14 @@ export function IFCViewer({
             pointerDownPos = { x: e.clientX, y: e.clientY };
           });
           renderer.domElement.addEventListener("mouseup", (e) => {
-            if (Math.abs(e.clientX - pointerDownPos.x) > 6 ||
-                Math.abs(e.clientY - pointerDownPos.y) > 6) return;
+            if (
+              Math.abs(e.clientX - pointerDownPos.x) > 6 ||
+              Math.abs(e.clientY - pointerDownPos.y) > 6
+            ) return;
             pick(e.clientX, e.clientY);
           });
 
-          // Touch (mobile) — single tap
+          // Touch (mobile)
           renderer.domElement.addEventListener("touchstart", (e) => {
             if (e.touches.length === 1) {
               pointerDownPos = { x: e.touches[0].clientX, y: e.touches[0].clientY };
@@ -299,8 +388,10 @@ export function IFCViewer({
           renderer.domElement.addEventListener("touchend", (e) => {
             if (e.changedTouches.length !== 1) return;
             const t = e.changedTouches[0];
-            if (Math.abs(t.clientX - pointerDownPos.x) > 10 ||
-                Math.abs(t.clientY - pointerDownPos.y) > 10) return;
+            if (
+              Math.abs(t.clientX - pointerDownPos.x) > 10 ||
+              Math.abs(t.clientY - pointerDownPos.y) > 10
+            ) return;
             pick(t.clientX, t.clientY);
           }, { passive: true });
         }
@@ -328,6 +419,8 @@ export function IFCViewer({
       cancelAnimationFrame(animId);
       resizeObs.disconnect();
       orbitControls?.dispose();
+      applyStoreyFilterRef.current = null;
+      clearSelectionRef.current = null;
       if (apiRef) apiRef.current = null;
       if (renderer) {
         if (container.contains(renderer.domElement)) {
@@ -336,7 +429,6 @@ export function IFCViewer({
         renderer.dispose();
       }
     };
-    // ifcUrl a focus sú stabilné počas životnosti stránky — reload sa nerobí
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ifcUrl]);
 
@@ -360,14 +452,48 @@ export function IFCViewer({
           <span className="text-xs text-muted-foreground">
             Skontrolujte, či je súbor{" "}
             <code className="rounded bg-muted px-1">public/model.ifc</code> prítomný,
-            alebo nastavte <code className="rounded bg-muted px-1">NEXT_PUBLIC_IFC_URL</code>.
+            alebo nastavte{" "}
+            <code className="rounded bg-muted px-1">NEXT_PUBLIC_IFC_URL</code>.
           </span>
+        </div>
+      )}
+
+      {/* Floor filter overlay — viditeľné len keď sú podlažia načítané */}
+      {status === "ready" && storeys.length > 0 && (
+        <div className="absolute left-2 top-2 flex flex-col gap-1">
+          <button
+            onClick={() => setActiveStoreyEid(null)}
+            className={[
+              "rounded px-2 py-1 text-[0.65rem] font-medium backdrop-blur-sm transition-colors",
+              activeStoreyEid === null
+                ? "bg-primary text-primary-foreground"
+                : "bg-background/80 text-muted-foreground hover:text-foreground",
+            ].join(" ")}
+          >
+            Všetky
+          </button>
+          {storeys.map((s) => (
+            <button
+              key={s.eid}
+              onClick={() =>
+                setActiveStoreyEid(s.eid === activeStoreyEid ? null : s.eid)
+              }
+              className={[
+                "rounded px-2 py-1 text-[0.65rem] font-medium backdrop-blur-sm transition-colors",
+                activeStoreyEid === s.eid
+                  ? "bg-primary text-primary-foreground"
+                  : "bg-background/80 text-muted-foreground hover:text-foreground",
+              ].join(" ")}
+            >
+              {s.name}
+            </button>
+          ))}
         </div>
       )}
 
       {status === "ready" && (
         <div className="absolute bottom-2 right-2 rounded bg-background/70 px-2 py-1 text-[0.65rem] text-muted-foreground backdrop-blur-sm">
-          Otáčanie: ľavé tlačidlo · Zoom: koliesko · Pan: pravé tlačidlo
+          Otáčanie: ľavé · Zoom: koliesko · Pan: pravé · Escape: zruš výber
         </div>
       )}
     </div>
@@ -397,12 +523,11 @@ function highlightEid(root: THREE.Group, eid: number): void {
   root.traverse((node) => {
     if (!(node instanceof THREE.Mesh)) return;
     if (getEidFromObject(node) !== eid) return;
-    const mat = new THREE.MeshStandardMaterial({
-      color: HIGHLIGHT_COLOR,
-      emissive: HIGHLIGHT_EMISSIVE,
+    node.material = new THREE.MeshStandardMaterial({
+      color: new THREE.Color(0xf97316),
+      emissive: new THREE.Color(0x7c2d12),
       emissiveIntensity: 0.4,
     });
-    node.material = mat;
   });
 }
 
