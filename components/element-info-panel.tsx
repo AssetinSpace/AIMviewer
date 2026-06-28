@@ -48,10 +48,13 @@ const TYPE_LABEL: Record<string, string> = {
 export function ElementInfoPanel({
   selected,
   onBack,
+  backLabel = "Späť na dokument",
 }: {
   selected: SelectedElement;
   /** Návrat na info o dokumente (prepnutie panela späť). */
   onBack: () => void;
+  /** Text tlačidla späť. V 3D prehliadači panel len zatvára (nie je „dokument"). */
+  backLabel?: string;
 }) {
   const [data, setData] = useState<NodeSummary | null>(null);
   const [state, setState] = useState<"loading" | "error" | "ok">("loading");
@@ -83,7 +86,7 @@ export function ElementInfoPanel({
         onClick={onBack}
         className="mb-3 inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
       >
-        <ArrowLeft className="size-3.5" /> Späť na dokument
+        <ArrowLeft className="size-3.5" /> {backLabel}
       </button>
       <div className="mb-3">
         <span className="inline-block rounded-full bg-secondary px-2 py-0.5 text-xs font-medium text-secondary-foreground">

@@ -100,7 +100,11 @@ export default function IFCWorkspace({
       {/* Right: element info panel */}
       {selected && (
         <aside className="shrink-0 lg:w-80">
-          <ElementInfoPanel selected={selected} onBack={() => setSelected(null)} />
+          <ElementInfoPanel
+            selected={selected}
+            onBack={() => setSelected(null)}
+            backLabel="Zavrieť"
+          />
         </aside>
       )}
     </div>
