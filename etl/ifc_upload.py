@@ -39,7 +39,8 @@ def _storage_env() -> tuple[str, str]:
             if p.exists():
                 load_dotenv(p, override=False)
     except ImportError:
-        pass
+        print("Warning: python-dotenv not found — env vars won't be loaded from .env files. "
+              "Install with: pip install python-dotenv")
     url = (os.environ.get("SUPABASE_URL") or "").rstrip("/")
     key = os.environ.get("SUPABASE_SERVICE_ROLE_KEY") or ""
     if not url or not key:

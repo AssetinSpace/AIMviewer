@@ -5,9 +5,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import type { ObjectType } from "@/lib/object-type";
-
-/** Spoločné ISR nastavenie pre cachované čítania (D-029 perf). */
-const AIM_CACHE = { revalidate: 60, tags: ["aim"] };
+import { AIM_CACHE, PDF_LINK_SOURCE } from "@/lib/data/constants";
 
 /**
  * Data-access pre generický object route (S3, D-029): ľahká meta pre dispatch
@@ -132,9 +130,6 @@ export interface NodeSummary {
   };
 }
 
-/** `source` E4 auto-linkingu výkresov (D-041) — odlišuje výkres-väzby od bežných. */
-const PDF_LINK_SOURCE = "pdf_link (E4)";
-
 async function fetchNodeSummaryImpl(id: string): Promise<NodeSummary | null> {
   const supabase = getSupabaseAdmin();
 
@@ -153,8 +148,9 @@ async function fetchNodeSummaryImpl(id: string): Promise<NodeSummary | null> {
   const isAsset = objectType === "asset";
   const isType = objectType === "asset_type";
 
-  // Typ (occurrence → type), klasifikácie/occurrences počty, dokumenty — naraz.
-  const [typeRes, clsRes, docRes, occRes] = await Promise.all([
+  // Typ, klasifikácie, dokumenty a počet occurrences — naraz; každá vetva vráti
+  // jednoduchý skalárny / pole typ, čím sa vyhneme unsafe `as` castom.
+  const [typeId, classificationCount, docRels, occurrenceCount] = await Promise.all([
     isAsset
       ? supabase
           .from("rel_defined_by_type")
@@ -162,43 +158,46 @@ async function fetchNodeSummaryImpl(id: string): Promise<NodeSummary | null> {
           .eq("from_id", id)
           .is("valid_until", null)
           .limit(1)
-      : Promise.resolve({ data: null, error: null }),
+          .then(({ data: d, error: e }) => {
+            if (e) throw new Error(e.message);
+            return (d?.[0]?.to_id as string | undefined) ?? null;
+          })
+      : Promise.resolve<string | null>(null),
     supabase
       .from("rel_has_classification")
       .select("id", { count: "exact", head: true })
       .eq("from_id", id)
-      .is("valid_until", null),
+      .is("valid_until", null)
+      .then(({ count, error: e }) => {
+        if (e) throw new Error(e.message);
+        return count ?? 0;
+      }),
     supabase
       .from("rel_has_document")
       .select("to_id, role, source")
       .eq("from_id", id)
-      .is("valid_until", null),
+      .is("valid_until", null)
+      .then(({ data: d, error: e }) => {
+        if (e) throw new Error(e.message);
+        return (d ?? []) as { to_id: string; role: string | null; source: string | null }[];
+      }),
     isType
       ? supabase
           .from("rel_defined_by_type")
           .select("id", { count: "exact", head: true })
           .eq("to_id", id)
           .is("valid_until", null)
-      : Promise.resolve({ count: 0, error: null }),
+          .then(({ count, error: e }) => {
+            if (e) throw new Error(e.message);
+            return count ?? 0;
+          })
+      : Promise.resolve<number>(0),
   ]);
 
-  let type: ObjectLink | null = null;
-  const typeId =
-    typeRes && "data" in typeRes ? (typeRes.data?.[0]?.to_id as string | undefined) : undefined;
-
-  // Priradené dokumenty — meta (názov/ref) k to_id; typ vyžaduje aj svoj `type`.
-  if ((docRes as { error: unknown }).error) {
-    throw new Error(String((docRes as { error: { message: string } }).error.message));
-  }
-  const docRows = ((docRes as { data: unknown }).data ?? []) as {
-    to_id: string;
-    role: string | null;
-    source: string | null;
-  }[];
   // dedupe per dokument; výkres (E4) má prednosť pri príznaku isDrawing
   const docOrder: string[] = [];
   const docMeta = new Map<string, { role: string | null; isDrawing: boolean }>();
-  for (const r of docRows) {
+  for (const r of docRels) {
     const isDrawing = r.source === PDF_LINK_SOURCE;
     const prev = docMeta.get(r.to_id);
     if (!prev) {
@@ -211,7 +210,7 @@ async function fetchNodeSummaryImpl(id: string): Promise<NodeSummary | null> {
 
   const linkIds = [...new Set([...(typeId ? [typeId] : []), ...docOrder])];
   const links = await loadObjectLinks(supabase, linkIds);
-  if (typeId) type = links.get(typeId) ?? null;
+  const type: ObjectLink | null = typeId ? (links.get(typeId) ?? null) : null;
 
   const documents: SummaryDocument[] = docOrder.map((did) => {
     const o = links.get(did);
@@ -240,8 +239,8 @@ async function fetchNodeSummaryImpl(id: string): Promise<NodeSummary | null> {
     type,
     documents,
     counts: {
-      classifications: (clsRes as { count: number | null }).count ?? 0,
-      occurrences: (occRes as { count: number | null }).count ?? 0,
+      classifications: classificationCount,
+      occurrences: occurrenceCount,
     },
   };
 }
