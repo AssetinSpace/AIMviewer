@@ -3,9 +3,7 @@ import "server-only";
 import { unstable_cache } from "next/cache";
 
 import { getSupabaseAdmin } from "@/lib/supabase/server";
-
-/** Spoločné ISR nastavenie pre cachované čítania (D-029 perf). */
-const AIM_CACHE = { revalidate: 60, tags: ["aim"] };
+import { AIM_CACHE } from "@/lib/data/constants";
 
 /**
  * Data-access vrstva pre in-app prehliadačku výkresov (D-042 fáza C). Číta zdrojové

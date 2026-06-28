@@ -3,16 +3,7 @@ import "server-only";
 import { unstable_cache } from "next/cache";
 
 import { getSupabaseAdmin } from "@/lib/supabase/server";
-
-/** Spoločné ISR nastavenie pre cachované čítania (D-029 perf). */
-const AIM_CACHE = { revalidate: 60, tags: ["aim"] };
-
-/**
- * `source` hrán z auto-linkingu výkresov (E4, D-041). Odlišuje element↔výkres
- * väzby (prvok je *zobrazený* vo výkrese) od bežných dokumentových väzieb (E3).
- * Zobrazujú sa vo vlastnej sekcii „Zobrazený vo výkrese", nie v „Dokumenty".
- */
-const PDF_LINK_SOURCE = "pdf_link (E4)";
+import { AIM_CACHE, PDF_LINK_SOURCE } from "@/lib/data/constants";
 
 /**
  * Data-access vrstva pre generické sekcie uzla (S3, D-029): dokumenty,

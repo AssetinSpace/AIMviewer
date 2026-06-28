@@ -5,6 +5,7 @@ import Link from "next/link";
 import { FileText } from "lucide-react";
 
 import { OBJECT_TYPE_LABEL, type ObjectType } from "@/lib/object-type";
+import { formatLocalDate } from "@/lib/utils";
 
 /**
  * Bočný panel s informáciami o **dokumente** (D-042 D+): predvolený obsah pravého
@@ -49,12 +50,6 @@ const TYPE_ORDER: ObjectType[] = [
   "organization",
 ];
 
-function fmtDate(v: string | null): string | null {
-  if (!v) return null;
-  const d = new Date(v);
-  return Number.isNaN(d.getTime()) ? v : d.toLocaleDateString("sk-SK");
-}
-
 function typeLabel(t: string): string {
   return OBJECT_TYPE_LABEL[t as ObjectType] ?? t;
 }
@@ -63,9 +58,9 @@ export function DocumentInfoPanel({ document }: { document: DocumentPanelData })
   const [filter, setFilter] = useState<string>("all"); // "all" | object_type
 
   const validity = (() => {
-    const from = fmtDate(document.validFrom);
+    const from = formatLocalDate(document.validFrom);
     if (!from) return null;
-    const until = fmtDate(document.validUntil);
+    const until = formatLocalDate(document.validUntil);
     return until ? `${from} – ${until}` : from;
   })();
 

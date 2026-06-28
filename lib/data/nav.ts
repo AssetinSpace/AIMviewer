@@ -3,6 +3,7 @@ import "server-only";
 import { unstable_cache } from "next/cache";
 
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { AIM_CACHE } from "@/lib/data/constants";
 
 /**
  * Navigačné zoznamy ne-priestorových uzlov pre sidebar (typy assetov, osoby,
@@ -65,4 +66,4 @@ export const fetchSidebarNav = unstable_cache(async (): Promise<SidebarNavData> 
   groups.documents.sort(byLabel);
 
   return groups;
-}, ["sidebar-nav"], { revalidate: 60, tags: ["aim"] });
+}, ["sidebar-nav"], AIM_CACHE);
