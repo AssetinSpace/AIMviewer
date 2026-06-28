@@ -6,4 +6,4 @@
 export const PDF_LINK_SOURCE = "pdf_link (E4)";
 
 /** Spoločné ISR nastavenie pre cachované čítania (D-029 perf). */
-export const AIM_CACHE = { revalidate: 60, tags: ["aim"] } as const;
+export const AIM_CACHE = { revalidate: 60, tags: ["aim"] };
