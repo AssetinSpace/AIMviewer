@@ -946,6 +946,47 @@ automaticky.
 v PDF výkrese — eliminuje manuálnu prácu pri párovaní.
 **Závislosť:** Vyžaduje D-038 (split-screen), ideálne `IfcGridAxis` v ETL pipeline.
 
+### D-045 — Pasportizácia existujúcich budov + posun k dynamike *(kandidát)*
+**Status:** brainstorm — strategické smery rozhodnuté, konkrétna zákazka nepotvrdená.
+
+**Kontext:** Nový use-case — pasportizácia existujúcej budovy pre prevádzku a údržbu
+(priestorový, technický/TZB, stavebný pasport, vybavenie). Zákazka v hre (zákazník bez
+CAFM), ale nie dotiahnutá — preto kandidát, nie finálne rozhodnutie.
+Odborný rámec overený: MPO ČR Pravidlá pre prevádzkovú pasportizáciu 2024 (statické dáta
+→ pasport; dynamické → CAFM); COBie handover štandard (Facility/Floor/Space/Type/Component/
+System/Contact/Document ≈ 1:1 s `objects` schémou → export prirodzený); USIBD LOA (measured
+vs represented accuracy) + LOIN/LOI (ISO 19650) pre provenance/kvalitu; v praxi provenance
+na úrovni scan session / survey batch, nie per-property.
+
+**Rozhodnuté (platí bez ohľadu na zákazku):**
+1. **Zostávame data/CDE provider (D-001)** — Nestávame sa CAFM. Funkcie delíme: statické
+   dáta (čo budova je) = naše; dynamické (čo sa s ňou deje) = operatíva.
+2. **Platform features (patria do platformy):** 360° fotky naviazané na space/asset (vizuálna
+   provenance zamerania), prepojenie 360°/2D/3D na IFC model (reálny diferenciátor, S5/S6
+   vízia), pasportizačný register s provenance/LOA, validácia úplnosti (LOIN-driven), export
+   do CAFM (COBie/ICDD, D-015).
+3. **Dynamika = hybrid — Cesta A teraz, dvere k B.** Cesta A = governance/monitoring nad
+   operatívou (sledovanie, či sa pravda v pasporte nerozchádza s realitou). Cesta B =
+   vlastnené dynamické dáta = neskôr, až keď reálna prevádzka povie, čo treba postaviť.
+4. **Pre zákazku — Odoo as-is** (žiadna prestavba). Odoo berie prevádzkový náklad (24/7);
+   my platíme len lacnú integráciu. Prestavba zamietnutá — tretí stack, verziová pasca,
+   slabší vibecoding leverage; ak investovať vývoj do operatívy, tak do vlastného stacku
+   (Cesta B), nie do cudzieho frameworku. Zákazka = field study pre budúcu vlastnú vrstvu.
+5. **Deliaca čiara** (lacné vyriešiť, vysoká hodnota): identita/lokácia/typové vlastnosti/
+   klasifikácie/dokumenty → pasport (naše); stav/work orders/servisy/náklady → operatíva.
+   Toto je governance diferenciátor.
+
+**Dôsledok pre schému:** ŽIADNA zmena. Nové `object_type` hodnoty (napr. `door`/`window`
+ako maintainable assets, povrchy ako properties priestoru), nové `rel_*` hrany, lifecycle
+events (vzor `ifc_guid_history` s `valid_from`/`valid_until`) + integračná vetva na Odoo =
+všetko aditívne. Model z D-018 to drží.
+
+**Otvorené (do potvrdenia zákazky):** granularita provenance (objekt vs session batch),
+stavebný pasport (povrchy ako properties priestoru vs samostatné objects), mapa vlastníctva
+polí pasport↔Odoo, metóda zamerania (3D scan/Matterport/ručne — zatiaľ neurčené).
+
+**Závislosť:** Vyžaduje reálnu zákazku (field study) + funkčný ETL pipeline (D-031).
+
 ---
 
-*Posledná aktualizácia: 2026-06-22 — Pridané **D-044** (IFC 3D viewer — IFClite): geometria ako ephemerálny kontajner klient-side (Rust+WASM, WebGL/Three.js template); princíp Postgres=dáta / prehliadač=ephemerálna geometria / spojka IFC GUID cez `ifc_guid_history`; tri úrovne ambície (embedded panel → obojsmerná selekcia → query bridging); zariadené ako S5 paralelná vetva (neblokuje S4/DV). Superceduje kandidáta D-037. Schéma DB sa nemení. Predtým 2026-06-20 — E3 hotový (**D-036**): dokumentová naming convention = CDE štandard Jihočeského kraja (ISO 19650: `Projekt_StupeňPD_ČástDíla_Profese_TypSouboru_Číslo_Popis`, väzba cez `target_ref` v manifeste). Postavené: `etl/doc_scheme.py` (parser + CDE slovníky), `podklady/docs.csv`, migrácia `documents.storage_type` (aditívna), public bucket `documents/`, `etl/doc_upload.py` (13 PDF nahraných + zapísaných do grafu, idempotentné). Brainstorm §8 prečíslovaný na **D-037/D-038/D-039**. Pridané **D-040** (priestory: `IfcSpace.LongName` → prípona `spaces`, Viewer zobrazí „číslo — popis"; migrácia `spaces` + `v_spaces`, re-load ETL bez `--reset`, placeholder „Space" sa berie ako prázdny — 75/89 reálnych názvov). Pridané **D-041** (E4 PDF výkres auto-linking hotový): tri dôverové vrstvy matchu (`full`/`proximity`/`bare`) — odfiltrované false-pos `OV01.00.00`/`ZV01.02` bez straty dverí, prefix-match holých typových kódov; **193 element-väzieb** (`source='pdf_link (E4)'`, idempotentné, E3 nedotknuté); Viewer sekcie „Zobrazený vo výkrese" (asset/type) a „Prvky vo výkrese" (podlažie/budova). Pridané **D-042** (plánované) — interaktívna prehliadačka výkresov s klikateľnými SNIM kódmi (obojsmerné prvok↔výkres) na **odprezentovanie previazanosti**: link regióny v `documents.properties._drawing_links` (bez zmeny schémy, D-022), detekcia ostáva jeden pipeline (`pdf_link.py` plní hrany aj regióny), fázy A (dáta) → B (MVP URI-anotácie) → C (in-app react-pdf) → D (obojsmernosť); užšia podmnožina D-038 bez 3D/georeferencingu. Detaily sa doladia počas sprintu „DV".*
+*Posledná aktualizácia: 2026-06-28 — **Zjednotenie vetiev do `main`**: 3D viewer (D-044) dotiahnutý na **úroveň 3 — query bridging** (floor filter cez STEP containment + Three.js visibility, Escape = zruš výber, obojsmerný DB↔3D filter bar, `/api/filter` + `/api/space-siblings`, `lib/data/filter.ts`); zlúčené aj code-review optimalizácie (error boundaries `app/**/error.tsx`, migrácia `20260628120000_missing_indexes.sql`, dedup refactory v `lib/data/*`). Superseded vetva `ifclite-library-review` zahodená (jej obsah je podmnožinou query-bridging; prenesený len konfigurovateľný back-label panela). Pridané **D-045** (kandidát): Pasportizácia existujúcich budov + posun k dynamike — brainstorm (zostávame data/CDE provider, platform features 360°/register/LOIN/COBie, dynamika Cesta A teraz + B neskôr, Odoo as-is, deliaca čiara pasport↔operatíva); ŽIADNA zmena schémy. Predtým 2026-06-22 — **sprint DV hotový**: D-042 fázy A–D (interaktívna prehliadačka výkresov, klikateľné SNIM kódy, obojsmerne) + doladenia (bočný info-panel, prehliadačka = kanonické zobrazenie PDF, filter „Pripojené k", región = fyzický výskyt kódu) + **D-043** (skladby `S1`–`S9` → Výpis skladieb) + **D-030 dodatok** (klientsky výkon: self-hostovaný pdf.js worker, preconnect Storage, cache `/api/element`) + **D-034 dodatok** (`IfcRailing` ako asset, madlá ZV 1→12). Linking: **197 element-väzieb / 414 link-regiónov**. Predtým 2026-06-22 — Pridané **D-044** (IFC 3D viewer — IFClite): geometria ako ephemerálny kontajner klient-side (Rust+WASM, WebGL/Three.js template); princíp Postgres=dáta / prehliadač=ephemerálna geometria / spojka IFC GUID cez `ifc_guid_history`; tri úrovne ambície (embedded panel → obojsmerná selekcia → query bridging); zariadené ako S5 paralelná vetva (neblokuje S4/DV). Superceduje kandidáta D-037. Schéma DB sa nemení. Predtým 2026-06-20 — E3 hotový (**D-036**): dokumentová naming convention = CDE štandard Jihočeského kraja (ISO 19650: `Projekt_StupeňPD_ČástDíla_Profese_TypSouboru_Číslo_Popis`, väzba cez `target_ref` v manifeste). Postavené: `etl/doc_scheme.py` (parser + CDE slovníky), `podklady/docs.csv`, migrácia `documents.storage_type` (aditívna), public bucket `documents/`, `etl/doc_upload.py` (13 PDF nahraných + zapísaných do grafu, idempotentné). Brainstorm §8 prečíslovaný na **D-037/D-038/D-039**. Pridané **D-040** (priestory: `IfcSpace.LongName` → prípona `spaces`, Viewer zobrazí „číslo — popis"; migrácia `spaces` + `v_spaces`, re-load ETL bez `--reset`, placeholder „Space" sa berie ako prázdny — 75/89 reálnych názvov). Pridané **D-041** (E4 PDF výkres auto-linking hotový): tri dôverové vrstvy matchu (`full`/`proximity`/`bare`) — odfiltrované false-pos `OV01.00.00`/`ZV01.02` bez straty dverí, prefix-match holých typových kódov; **193 element-väzieb** (`source='pdf_link (E4)'`, idempotentné, E3 nedotknuté); Viewer sekcie „Zobrazený vo výkrese" (asset/type) a „Prvky vo výkrese" (podlažie/budova). Pridané **D-042** (plánované) — interaktívna prehliadačka výkresov s klikateľnými SNIM kódmi (obojsmerné prvok↔výkres) na **odprezentovanie previazanosti**: link regióny v `documents.properties._drawing_links` (bez zmeny schémy, D-022), detekcia ostáva jeden pipeline (`pdf_link.py` plní hrany aj regióny), fázy A (dáta) → B (MVP URI-anotácie) → C (in-app react-pdf) → D (obojsmernosť); užšia podmnožina D-038 bez 3D/georeferencingu. Detaily sa doladia počas sprintu „DV".*
