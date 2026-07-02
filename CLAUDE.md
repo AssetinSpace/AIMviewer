@@ -38,12 +38,29 @@ Primárny use case: AIM Viewer — ukážka správne previazaných dát.
 - **Custom psety** → `properties[<názov>]`, akýkoľvek iný názov (bez povinného prefixu)
 - **Rezervované `_kľúče`** (`_contact`, `_org`…) = meta/zachytené dáta, NIE psety; psety nikdy nezačínajú `_`
 
-### Hrany (vzťahové tabuľky)
-- Prefix `rel_` + popis (`rel_located_in`, `rel_defined_by_type`, `rel_member_of`,
-  `rel_has_document`, `rel_has_classification`, `rel_responsible_for`)
+### Hrany (vzťahové tabuľky) — IFC-kanonické (D-048)
+- Každá hrana = konkrétny IFC `IfcRelationship` podtyp, **pomenovaná podľa neho**,
+  s granularitou akú rozlišuje IFC:
+  `rel_aggregates` (IfcRelAggregates), `rel_contained_in_spatial_structure`
+  (IfcRelContainedInSpatialStructure), `rel_defines_by_type` (IfcRelDefinesByType),
+  `rel_associates_document` (IfcRelAssociatesDocument), `rel_associates_classification`
+  (IfcRelAssociatesClassification), `rel_assigns_to_actor` (IfcRelAssignsToActor),
+  `rel_assigns_to_group` (IfcRelAssignsToGroup — systémy, D-047),
+  `rel_member_of` (IfcPersonAndOrganization — **resource, nie IfcRel**; poctivo mimo taxonómie)
+- **Fyzicky binárne `from→to` + naše meta stĺpce, NIE objektifikované N-árne IFC entity**
+  (preberáme identitu/granularitu IFC, nie serializačnú štruktúru — index nad IFC
+  sémantikou, nie STEP v Postgrese, D-046/D-048)
 - Povinné stĺpce: `id`, `valid_from`, `valid_until`, `source`
-- Smer: `from_id` → `to_id` (subjekt → objekt), oba FK na `objects(id)`
-- Výnimka: `rel_has_classification.to_id` → `classification_references`
+- Smer: `from_id` → `to_id` (subjekt → objekt) — konvencia ostáva jednotná; ktorý koniec
+  je IFC `Relating`, je v mapovaní v SCHEMA.md §5
+- **Namespace (D-048):** hrana **bez prefixu = IFC-kanonická** (serializuje sa na `IfcRel*`);
+  hrana, pre ktorú IFC **nemá koncept**, dostane prefix **`aim_`** (`aim_rel_*`, snake_case).
+  Prefix kóduje aj export: `rel_*`→`IfcRel`, `aim_*`→ICDD linkset/IFCX. Rezervované pre
+  skutočnú absenciu IFC konceptu (NIE koncept realizovaný inak — preto `rel_member_of`
+  ostáva `rel_`). Dnes žiadna `aim_*` hrana neexistuje; je to dopredná konvencia.
+- Výnimka: `rel_associates_classification.to_id` → `classification_references`
+- Spatial: `rel_aggregates` = dekompozícia štruktúry (Site→Building→Floor→Space);
+  `rel_contained_in_spatial_structure` = fyzický prvok (asset) v priestore/podlaží
 
 ### Type–occurrence (D-021)
 - Type = `object_type='asset_type'`, NIKDY nie je v `rel_located_in`
@@ -85,7 +102,9 @@ Primárny use case: AIM Viewer — ukážka správne previazaných dát.
 ```
 Site → Building → Floor → Space → Asset
 ```
-Každá úroveň je riadok v `objects` (líši sa `object_type`), prepojená cez `rel_located_in`.
+Každá úroveň je riadok v `objects` (líši sa `object_type`). Spatial väzby IFC-kanonicky
+(D-048): `rel_aggregates` medzi štruktúrami (Site→Building→Floor→Space),
+`rel_contained_in_spatial_structure` pre fyzický prvok (asset) v priestore/podlaží.
 
 ## RDF / ICDD
 RDF nie je interná databáza — len export formát.

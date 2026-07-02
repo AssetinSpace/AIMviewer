@@ -990,6 +990,129 @@ kandidáti (nie záväzky): E-sprint GUID matching pipeline (odomkne „wow" GUI
 z D-044 s dvoma verziami IFC), IDS/LOIN validácia cez IFClite (viaže sa na D-045),
 `status` enum zarovnanie pri najbližšej práci s dokumentmi.
 
+### D-047 — Demo north-star: LLM nad grafom + trust loop; ETL na distribučné systémy
+
+**Rozhodnutie:** Ťažiskom dema (wow efekt) je **prirodzený jazyk nad naším grafom** —
+nie hotové CDE workflow, nie GUID verziovanie (to je **podporné**, ukáže sa mimochodom).
+Naratív dema predáva **disciplínu, nie nástroj**: *„keď sú vaše dáta správne previazané
+(konvencia D-036 + identifikátory D-010 + IFC vzťahy), toto zvládnu aj vaše dáta."*
+
+**Headline dotaz (must):** *„na tomto `IfcDistributionSystem` nájdi uzatvárací `IfcValve`
+a v ktorej je miestnosti."* Kľúčové zistenie (over. proti IFC4.3 docs 2026-07-02): **je to
+grafový dotaz, nie geometria.** Rozklad na IFC vzťahy — všetky relačné, ETL-ovateľné do
+`objects`+`rel_*` bez geometrie:
+
+| Časť dotazu | IFC4.3 mechanizmus | U nás |
+|---|---|---|
+| „uzatvárací" | `IfcValve`/`IfcValveType`, `PredefinedType = ISOLATING` (+ `Pset_ValveTypeIsolating.IsNormallyOpen`) | `predefined_type` stĺpec (už je) + pset do `properties` |
+| „na tomto systéme" | `IfcRelAssignsToGroup` → `IfcDistributionSystem` (inverz `IsGroupedBy`) | nová hrana (IFC-kanonický názov) + uzol `object_type='system'` |
+| „v ktorej miestnosti" | `IfcRelContainedInSpatialStructure` → `IfcSpace` | `rel_located_in` → `spaces.long_name` (už je) |
+
+Fyzická konektivita „na presne tomto potrubí" existuje v IFC4.3 relačne (`IfcDistributionPort`
+vnorené cez `IfcRelNests`, spojené cez `IfcRelConnectsPorts` SOURCE→SINK) — **odložené ako
+rozšírenie**; must-have stojí na členstve v systéme, nie na portoch.
+
+**LLM = vlastné rozhranie (Claude, D-005), NIE IFClite LLM.** IFClite LLM medzičasom existuje
+(scripting agent, model selector Claude/GPT/Devstral), ale beží **sandboxovaný nad jedným IFC
+súborom** — nevidí našu DB, PDF-ká, názvy miestností, zodpovednosti, provenance, klasifikačné
+únie. Wow-odpoveď je náš graf → mozog musí byť náš. **IFClite = oči a ruky** (render, highlight,
+volaný nástroj na čisto geometrický fallback), nie mozog. Autorita dotazu v DB (D-028),
+guardraily D-005 (read-only, whitelist views, row limit).
+
+**Trust loop (najväčšia hodnota):** každá odpoveď je **dohľadateľná** — deep-link do 3D
+(highlight prvku cez IFClite) + do zdrojového dokumentu (región/riadok, na to už máme
+`_drawing_links`, D-042). Nie „ver mi", ale „ventil V-03, systém ÚK, miestnosť 2.14 — tu je
+v 3D, tu v pôdoryse, tu zdroj". Bez väzieb nie je čo citovať — a to je práve pointa pitchu.
+
+**Dôsledok:**
+- **S-LLM z parkoviska → kritická cesta.** GUID verziovanie demoté na podporné.
+- **ETL rozšírenie (aditívne, D-018/D-046):** `IfcDistributionSystem` (→ `system` uzol,
+  `IfcDistributionSystemEnum` → `predefined_type`), `IfcRelAssignsToGroup` (→ nová hrana),
+  `IfcValve`/`IfcValveType` predefined type + psety. Containment cez existujúci `rel_located_in`.
+  Názvy nových hrán = **IFC-kanonické** (viď D-046 IFC-first + pripravované sprísnenie na
+  IFC-kanonickú identitu vzťahov). Schéma sa **nemení** — len nové `object_type`/hrana.
+- **Upload/parse UI** = samostatná vetva (počítané, potrebné pre onboarding-naratív).
+
+**Dôvod:** Ťažiskom hodnoty nie je render (komodita — vie ho IFClite) ani samotný LLM
+(vie ho každý), ale **graf, nad ktorým sa dá pýtať a ktorého odpovede sú dohľadateľné až
+k zdroju** — a ten graf existuje len ak sú zdrojové dáta poriadne štruktúrované. Demo je
+dôkaz tejto tézy naživo.
+
+### D-048 — IFC-kanonická vrstva vzťahov (rozseknutie `rel_located_in`, plné zarovnanie)
+
+**Rozhodnutie:** Vrstva hrán sa **prestaví na IFC-kanonickú identitu** — každá hrana =
+konkrétny IFC `IfcRelationship` podtyp, pomenovaná podľa neho, s **granularitou akú
+rozlišuje IFC** (ISO 16739). Konkrétne `rel_located_in` sa **rozsekne** na dva vzťahy,
+ktoré IFC zámerne oddeľuje. Prijímame vyššiu cenu (refaktor ETL/app/views/seed, dlhšie
+trvanie) za správny fundament od začiatku. Sprísňuje D-046 (IFC-first naming) na plnú
+IFC-kanonickú identitu.
+
+**KRITICKÁ DELIACA ČIARA (aby sme si to „poriadnym" neposkazili):**
+Preberáme z IFC **identitu, pomenovanie a granularitu** vzťahov. **NEpreberáme fyzickú
+serializačnú štruktúru IFC.** IFC modeluje vzťahy ako *objektifikované N-árne entity*
+(jeden `IfcRel` s vlastným GlobalId spája 1 subjekt s N objektmi). My držíme **binárne
+hrany `from_id→to_id` + vlastné stĺpce** (`valid_from`/`valid_until`/`source`/`role`).
+Toto je zámerná odchýlka a je **lepšia pre nás**: per-hrana platnosť a provenance je náš
+moat (D-046 deklarovaná extenzia), binárne hrany sa lepšie dopytujú (aj pre LLM
+text-to-query, D-047). „IFC ako fyzické úložisko" = doložená slepá ulička (riedke tabuľky,
+zlý výkon, LLM-nepriateľské). Sme **index nad IFC sémantikou** (D-046), nie STEP v Postgrese.
+
+**Cieľová tabuľka hrán (from = subjekt, to = objekt — naša konvencia ostáva):**
+
+| Hrana | IFC relationship | IFC rodina | from_id | to_id | Pozn. (IFC Relating = to_id ak nie inak) |
+|---|---|---|---|---|---|
+| `rel_aggregates` | `IfcRelAggregates` | `IfcRelDecomposes` | časť (spatial child) | celok (spatial parent) | Site→Building→Floor→Space dekompozícia |
+| `rel_contained_in_spatial_structure` | `IfcRelContainedInSpatialStructure` | `IfcRelConnects` | prvok (asset) | priestor/podlažie | element umiestnený v štruktúre |
+| `rel_defines_by_type` | `IfcRelDefinesByType` | `IfcRelDefines` | occurrence | type | dedičnosť (D-021) |
+| `rel_associates_document` | `IfcRelAssociatesDocument` | `IfcRelAssociates` | objekt | document | + `role` |
+| `rel_associates_classification` | `IfcRelAssociatesClassification` | `IfcRelAssociates` | objekt | classification_reference | `to_id`→`classification_references` |
+| `rel_assigns_to_actor` | `IfcRelAssignsToActor` | `IfcRelAssigns` | actor (person/org) | objekt | + `role`; smer = IFC (Relating=from_id) |
+| `rel_assigns_to_group` | `IfcRelAssignsToGroup` | `IfcRelAssigns` | člen (element) | system (group) | **nová** (D-047, distribučné systémy) |
+| `rel_member_of` | `IfcPersonAndOrganization` | — (**resource, NIE IfcRel**) | person | organization | poctivo mimo IfcRel taxonómie — nenasilu IFC názov |
+
+**Namespace `aim_` pre naše rozšírenia (rozširuje D-022 na vrstvu vzťahov):** Hrany
+**bez prefixu = IFC-kanonické** (serializujú sa na `IfcRel*`). Hrany, pre ktoré IFC
+**nemá žiadny koncept**, dostanú prefix **`aim_`** (`aim_rel_*`) — snake_case kvôli D-012
+(nie CamelCase `AimRel`). Prefix zároveň kóduje **export cestu**: `rel_*` → `IfcRel`;
+`aim_*` → nie je IFC-serializovateľné, ide do ICDD linksetu / IFCX vrstvy. **Rezervované
+pre skutočnú absenciu IFC konceptu**, nie pre IFC koncept realizovaný inak: `rel_member_of`
+ostáva `rel_` (IFC ho pozná ako resource `IfcPersonAndOrganization`, len nie ako `IfcRel`).
+**Dnes to nepremenováva nič** — celá súčasná sada hrán má IFC domov (validácia, že
+zarovnanie je zdravé). `aim_` je **dopredná konvencia** pre budúce hrany bez IFC ekvivalentu
+(napr. `aim_rel_supersedes` — verziovanie dokumentov; cross-model federačné väzby ARCH↔TZB).
+
+**Smerová konvencia — rozhodnuté ponechať `subjekt→objekt`:** IFC používa per-vzťah
+orientáciu `Relating/Related` (napr. `IfcRelContainedInSpatialStructure.RelatingStructure`
+= kontajner). My držíme jednotné `from=subjekt→to=objekt` naprieč všetkými hranami
+(konzistentné, query- a LLM-friendly); ktorý koniec je IFC `Relating`, je zachytené
+v mapovaní vyššie. Neprevraciame smer per-vzťah — bola by to obrovská churn v ETL/app
+bez zisku.
+
+**Rozdeľovacie pravidlo (`rel_located_in` → dve tabuľky):**
+`from_id.object_type ∈ {building, floor, space}` → `rel_aggregates` (spatial dekompozícia);
+`from_id.object_type = asset` → `rel_contained_in_spatial_structure` (fyzický prvok v štruktúre).
+Unikátny aktívny rodič (`where valid_until is null`) sa zachová na oboch (`from_id`).
+Neskôr aditívne: `IfcRelReferencedInSpatialStructure` (sekundárna príslušnosť), `IfcRelNests`
++ `IfcRelConnectsPorts` (porty, D-047 konektivita) — obe majú miesto v tejto taxonómii.
+
+**Migračná stratégia:** nová forward migrácia (`nikdy nemazať migrácie` — D nesmieme
+prepisovať init): `ALTER TABLE RENAME` pre čisté 1:1 premeny; `CREATE` + `INSERT…SELECT`
+(rozdeľovacie pravidlo) + `DROP` pre split `rel_located_in`; nová `rel_assigns_to_group`;
+recreate views (`v_asset_effective`, `v_asset_classifications`). Dáta sú **regenerovateľné**
+(ETL z IFC, D-031 + seed) → žiadne riziko straty. Pre-prod, žiadne RLS/externí konzumenti.
+
+**Postupnosť implementácie (vetva `ifc-canonical-relations`):**
+1. Migrácia (DDL + backfill split + views + indexy/uniq). 2. ETL (`etl/transform.py`,
+`model.py`, `db.py`) — split spatial hrán, premenované hrany, `system`+`assigns_to_group`.
+3. App (`lib/data/*.ts`, komponenty) — repoint názvov, split spatial dotazov. 4. Seed
+(`supabase/seed.sql`) — alebo spoľahnúť sa na ETL. 5. Docs (SCHEMA §2.5/§5). 6. Verify
+(viewer: strom, karty, 3D). Až na čistej báze staviame D-047 ETL (ventily/systémy) a S-LLM.
+
+**Dôsledok:** Model z D-018 (`objects` + tenké prípony + typované hrany) sa **koncepčne
+nemení** — mení sa počet a názvy hrán (aditívne v duchu, breaking v implementácii).
+`object_type='system'` = ďalšia hodnota (validuje app/ETL, nie CHECK — D-018). CLAUDE.md
+a SCHEMA.md aktualizované na cieľový stav.
+
 ---
 
 ## 8. Budúce rozhodnutia (D-037+)
@@ -1074,4 +1197,4 @@ polí pasport↔Odoo, metóda zamerania (3D scan/Matterport/ručne — zatiaľ n
 
 ---
 
-*Posledná aktualizácia: 2026-07-02 — Pridané **D-046** (IFC alignment stratégia): IFC4.3 slovník teraz + pripravenosť na IFC5/IFCX. Overené proti IFC4.3 docs: `documents` už zarovnané na `IfcDocumentInformation` (D-014, vrátane `valid_from`/`valid_until` — sú to IFC atribúty); deklarované extenzie zúžené na metadáta-na-hrane, GUID históriu a cross-file väzby (export: ICDD dnes, IFCX layer zajtra); IFC-first naming pravidlo (nový atribút až po kontrole IFC4.3); build-vs-borrow update k IFClite (IDS→LOIN kandidát pre D-045, `drawing-2d` zlacňuje D-038/D-039); GUID stratégia pri re-exporte (`object_ref` primárny kľúč, Revit store-GUID parameter, matching pipeline ako budúci E-sprint). Schéma sa nemení. Predtým 2026-06-28 — **Zjednotenie vetiev do `main`**: 3D viewer (D-044) dotiahnutý na **úroveň 3 — query bridging** (floor filter cez STEP containment + Three.js visibility, Escape = zruš výber, obojsmerný DB↔3D filter bar, `/api/filter` + `/api/space-siblings`, `lib/data/filter.ts`); zlúčené aj code-review optimalizácie (error boundaries `app/**/error.tsx`, migrácia `20260628120000_missing_indexes.sql`, dedup refactory v `lib/data/*`). Superseded vetva `ifclite-library-review` zahodená (jej obsah je podmnožinou query-bridging; prenesený len konfigurovateľný back-label panela). Pridané **D-045** (kandidát): Pasportizácia existujúcich budov + posun k dynamike — brainstorm (zostávame data/CDE provider, platform features 360°/register/LOIN/COBie, dynamika Cesta A teraz + B neskôr, Odoo as-is, deliaca čiara pasport↔operatíva); ŽIADNA zmena schémy. Predtým 2026-06-22 — **sprint DV hotový**: D-042 fázy A–D (interaktívna prehliadačka výkresov, klikateľné SNIM kódy, obojsmerne) + doladenia (bočný info-panel, prehliadačka = kanonické zobrazenie PDF, filter „Pripojené k", región = fyzický výskyt kódu) + **D-043** (skladby `S1`–`S9` → Výpis skladieb) + **D-030 dodatok** (klientsky výkon: self-hostovaný pdf.js worker, preconnect Storage, cache `/api/element`) + **D-034 dodatok** (`IfcRailing` ako asset, madlá ZV 1→12). Linking: **197 element-väzieb / 414 link-regiónov**. Predtým 2026-06-22 — Pridané **D-044** (IFC 3D viewer — IFClite): geometria ako ephemerálny kontajner klient-side (Rust+WASM, WebGL/Three.js template); princíp Postgres=dáta / prehliadač=ephemerálna geometria / spojka IFC GUID cez `ifc_guid_history`; tri úrovne ambície (embedded panel → obojsmerná selekcia → query bridging); zariadené ako S5 paralelná vetva (neblokuje S4/DV). Superceduje kandidáta D-037. Schéma DB sa nemení. Predtým 2026-06-20 — E3 hotový (**D-036**): dokumentová naming convention = CDE štandard Jihočeského kraja (ISO 19650: `Projekt_StupeňPD_ČástDíla_Profese_TypSouboru_Číslo_Popis`, väzba cez `target_ref` v manifeste). Postavené: `etl/doc_scheme.py` (parser + CDE slovníky), `podklady/docs.csv`, migrácia `documents.storage_type` (aditívna), public bucket `documents/`, `etl/doc_upload.py` (13 PDF nahraných + zapísaných do grafu, idempotentné). Brainstorm §8 prečíslovaný na **D-037/D-038/D-039**. Pridané **D-040** (priestory: `IfcSpace.LongName` → prípona `spaces`, Viewer zobrazí „číslo — popis"; migrácia `spaces` + `v_spaces`, re-load ETL bez `--reset`, placeholder „Space" sa berie ako prázdny — 75/89 reálnych názvov). Pridané **D-041** (E4 PDF výkres auto-linking hotový): tri dôverové vrstvy matchu (`full`/`proximity`/`bare`) — odfiltrované false-pos `OV01.00.00`/`ZV01.02` bez straty dverí, prefix-match holých typových kódov; **193 element-väzieb** (`source='pdf_link (E4)'`, idempotentné, E3 nedotknuté); Viewer sekcie „Zobrazený vo výkrese" (asset/type) a „Prvky vo výkrese" (podlažie/budova). Pridané **D-042** (plánované) — interaktívna prehliadačka výkresov s klikateľnými SNIM kódmi (obojsmerné prvok↔výkres) na **odprezentovanie previazanosti**: link regióny v `documents.properties._drawing_links` (bez zmeny schémy, D-022), detekcia ostáva jeden pipeline (`pdf_link.py` plní hrany aj regióny), fázy A (dáta) → B (MVP URI-anotácie) → C (in-app react-pdf) → D (obojsmernosť); užšia podmnožina D-038 bez 3D/georeferencingu. Detaily sa doladia počas sprintu „DV".*
+*Posledná aktualizácia: 2026-07-02 — Pridané **D-047** (Demo north-star): ťažisko dema = LLM nad naším grafom + trust loop (dohľadateľné odpovede), nie CDE workflow ani GUID verziovanie (podporné). Headline dotaz „uzatvárací ventil na systéme + miestnosť" = grafový dotaz (over. IFC4.3: `IfcValveType.ISOLATING`, `IfcRelAssignsToGroup`→`IfcDistributionSystem`, containment→space), ETL-ovateľný bez geometrie. LLM = vlastné rozhranie (D-005), NIE IFClite LLM (sandbox nad IFC súborom, nevidí našu DB/PDF/miestnosti); IFClite = oči, nie mozog. S-LLM → kritická cesta; ETL rozšírenie na distribučné systémy/ventily (aditívne). Otvorené: sprísnenie IFC-kanonickej identity vzťahov (rename vs. per-row `ifc_class` diskriminátor pre `rel_located_in`) — čaká na potvrdenie. Predtým 2026-07-02 — Pridané **D-046** (IFC alignment stratégia): IFC4.3 slovník teraz + pripravenosť na IFC5/IFCX. Overené proti IFC4.3 docs: `documents` už zarovnané na `IfcDocumentInformation` (D-014, vrátane `valid_from`/`valid_until` — sú to IFC atribúty); deklarované extenzie zúžené na metadáta-na-hrane, GUID históriu a cross-file väzby (export: ICDD dnes, IFCX layer zajtra); IFC-first naming pravidlo (nový atribút až po kontrole IFC4.3); build-vs-borrow update k IFClite (IDS→LOIN kandidát pre D-045, `drawing-2d` zlacňuje D-038/D-039); GUID stratégia pri re-exporte (`object_ref` primárny kľúč, Revit store-GUID parameter, matching pipeline ako budúci E-sprint). Schéma sa nemení. Predtým 2026-06-28 — **Zjednotenie vetiev do `main`**: 3D viewer (D-044) dotiahnutý na **úroveň 3 — query bridging** (floor filter cez STEP containment + Three.js visibility, Escape = zruš výber, obojsmerný DB↔3D filter bar, `/api/filter` + `/api/space-siblings`, `lib/data/filter.ts`); zlúčené aj code-review optimalizácie (error boundaries `app/**/error.tsx`, migrácia `20260628120000_missing_indexes.sql`, dedup refactory v `lib/data/*`). Superseded vetva `ifclite-library-review` zahodená (jej obsah je podmnožinou query-bridging; prenesený len konfigurovateľný back-label panela). Pridané **D-045** (kandidát): Pasportizácia existujúcich budov + posun k dynamike — brainstorm (zostávame data/CDE provider, platform features 360°/register/LOIN/COBie, dynamika Cesta A teraz + B neskôr, Odoo as-is, deliaca čiara pasport↔operatíva); ŽIADNA zmena schémy. Predtým 2026-06-22 — **sprint DV hotový**: D-042 fázy A–D (interaktívna prehliadačka výkresov, klikateľné SNIM kódy, obojsmerne) + doladenia (bočný info-panel, prehliadačka = kanonické zobrazenie PDF, filter „Pripojené k", región = fyzický výskyt kódu) + **D-043** (skladby `S1`–`S9` → Výpis skladieb) + **D-030 dodatok** (klientsky výkon: self-hostovaný pdf.js worker, preconnect Storage, cache `/api/element`) + **D-034 dodatok** (`IfcRailing` ako asset, madlá ZV 1→12). Linking: **197 element-väzieb / 414 link-regiónov**. Predtým 2026-06-22 — Pridané **D-044** (IFC 3D viewer — IFClite): geometria ako ephemerálny kontajner klient-side (Rust+WASM, WebGL/Three.js template); princíp Postgres=dáta / prehliadač=ephemerálna geometria / spojka IFC GUID cez `ifc_guid_history`; tri úrovne ambície (embedded panel → obojsmerná selekcia → query bridging); zariadené ako S5 paralelná vetva (neblokuje S4/DV). Superceduje kandidáta D-037. Schéma DB sa nemení. Predtým 2026-06-20 — E3 hotový (**D-036**): dokumentová naming convention = CDE štandard Jihočeského kraja (ISO 19650: `Projekt_StupeňPD_ČástDíla_Profese_TypSouboru_Číslo_Popis`, väzba cez `target_ref` v manifeste). Postavené: `etl/doc_scheme.py` (parser + CDE slovníky), `podklady/docs.csv`, migrácia `documents.storage_type` (aditívna), public bucket `documents/`, `etl/doc_upload.py` (13 PDF nahraných + zapísaných do grafu, idempotentné). Brainstorm §8 prečíslovaný na **D-037/D-038/D-039**. Pridané **D-040** (priestory: `IfcSpace.LongName` → prípona `spaces`, Viewer zobrazí „číslo — popis"; migrácia `spaces` + `v_spaces`, re-load ETL bez `--reset`, placeholder „Space" sa berie ako prázdny — 75/89 reálnych názvov). Pridané **D-041** (E4 PDF výkres auto-linking hotový): tri dôverové vrstvy matchu (`full`/`proximity`/`bare`) — odfiltrované false-pos `OV01.00.00`/`ZV01.02` bez straty dverí, prefix-match holých typových kódov; **193 element-väzieb** (`source='pdf_link (E4)'`, idempotentné, E3 nedotknuté); Viewer sekcie „Zobrazený vo výkrese" (asset/type) a „Prvky vo výkrese" (podlažie/budova). Pridané **D-042** (plánované) — interaktívna prehliadačka výkresov s klikateľnými SNIM kódmi (obojsmerné prvok↔výkres) na **odprezentovanie previazanosti**: link regióny v `documents.properties._drawing_links` (bez zmeny schémy, D-022), detekcia ostáva jeden pipeline (`pdf_link.py` plní hrany aj regióny), fázy A (dáta) → B (MVP URI-anotácie) → C (in-app react-pdf) → D (obojsmernosť); užšia podmnožina D-038 bez 3D/georeferencingu. Detaily sa doladia počas sprintu „DV".*

@@ -44,7 +44,15 @@
   deklarované v SCHEMA.md §5. Follow-up kandidáti: GUID matching pipeline (dve verzie
   IFC → „wow" GUID histórie, D-044), IDS/LOIN validácia cez IFClite (D-045),
   `documents.status` enum zarovnanie. Schéma sa nemení.
-- ⏸️ LLM interface — **parkované** (S-LLM), doladíme neskôr
+- 🎯 **D-047 — Demo north-star: LLM nad grafom** (rozhodnuté 2026-07-02): ťažisko dema =
+  prirodzený jazyk nad naším grafom + **trust loop** (dohľadateľné odpovede). Headline
+  dotaz „uzatvárací ventil na `IfcDistributionSystem` + miestnosť" = **grafový dotaz**
+  (IFC4.3: `IfcValveType.ISOLATING`, `IfcRelAssignsToGroup`, containment→space), ETL bez
+  geometrie. LLM = **vlastné rozhranie** (D-005), NIE IFClite LLM (sandbox nad IFC súborom);
+  IFClite = oči, nie mozog. **S-LLM → kritická cesta**, GUID verziovanie podporné. ETL
+  rozšírenie na distribučné systémy/ventily (aditívne). Schéma sa nemení.
+- 🟢 **S-LLM — LLM interface** (D-047, **kritická cesta**): text-to-query nad grafom,
+  vlastné rozhranie (Claude, D-005), guardraily + povinná citácia zdroja (trust loop)
 
 **Máme:** Supabase Cloud (projekt `acwoupricatirhlfkhvk`) + GitHub repo (`AssetinSpace/AIMviewer`) + Vercel deploy (auto-deploy z `main`). **Chýba zatiaľ:** vlastná doména (príde v S4).
 
@@ -132,9 +140,12 @@
 - **S5 — IFC 3D viewer** (paralelná vetva, D-044): IFClite WASM/Three.js, obojsmerná
   selekcia 3D↔dáta cez IFC GUID. Nezačína kým nie je S4 uzavretý; **neblokuje S4/DV**.
   Schéma DB sa nemení (geometria klient-side, Postgres sa jej nedotýka).
-- **S-LLM — LLM interface** (parkované, doladíme neskôr): chat nad dátami,
-  Claude text-to-SQL (D-005) s guardrailmi (read-only, whitelist views, row limit).
-  Model sa vyberie pri spustení (`claude-opus-4-8` vs lacnejší pre demo).
+- **S-LLM — LLM interface** (**kritická cesta**, D-047 — už nie parkované): text-to-query
+  nad naším grafom, **vlastné rozhranie** (Claude, D-005) — NIE IFClite LLM (sandbox nad
+  IFC súborom, nevidí našu DB/PDF/miestnosti). Guardraily (read-only, whitelist views,
+  row limit) + **povinná citácia zdroja** (trust loop: deep-link do 3D + zdrojového
+  dokumentu). Headline dotaz = graf (ventil/systém/miestnosť), nie geometria. Model sa
+  vyberie pri spustení (`claude-opus-4-8` vs lacnejší pre demo).
 - **ETL pipeline** (paralelná vetva, D-031): `ifcopenshell` IFC → `objects`/`rel_*`,
   nahradí ručný seed reálnymi dátami z diplomky (vstup pre S4). **Scaffold v `etl/`**
   (extract/transform/load, idempotentný upsert, CLI) hotový a syntakticky overený;

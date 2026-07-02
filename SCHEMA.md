@@ -146,24 +146,38 @@ create unique index uniq_active_guid on ifc_guid_history (object_id) where valid
 
 ### 2.5 Hrany (D-009)
 
+Hrany sú **IFC-kanonické** (D-048): každá = konkrétny `IfcRelationship` podtyp.
+Fyzicky binárne `from→to` + naše meta stĺpce (NIE objektifikované N-árne IFC entity —
+sme index nad IFC sémantikou, nie STEP v Postgrese, D-046/D-048). Smer = `subjekt→objekt`.
+
 ```sql
--- Priestorová väzba (D-013). IFC: IfcRelAggregates + IfcRelContainedInSpatialStructure
-create table rel_located_in (
+-- Spatial dekompozícia (D-013, D-048). IFC: IfcRelAggregates (IfcRelDecomposes)
+-- Site→Building→Floor→Space. from = časť (child), to = celok (parent)
+create table rel_aggregates (
   id uuid primary key default gen_random_uuid(),
-  from_id uuid not null references objects(id) on delete cascade,
-  to_id   uuid not null references objects(id) on delete restrict,
+  from_id uuid not null references objects(id) on delete cascade,    -- spatial child
+  to_id   uuid not null references objects(id) on delete restrict,   -- spatial parent
   valid_from timestamptz not null default now(), valid_until timestamptz, source text
 );
 
--- Type–occurrence (D-021). IFC: IfcRelDefinesByType. 1:N
-create table rel_defined_by_type (
+-- Prvok v spatial štruktúre (D-013, D-048). IFC: IfcRelContainedInSpatialStructure (IfcRelConnects)
+-- from = fyzický prvok (asset), to = priestor/podlažie (IFC RelatingStructure)
+create table rel_contained_in_spatial_structure (
+  id uuid primary key default gen_random_uuid(),
+  from_id uuid not null references objects(id) on delete cascade,    -- asset
+  to_id   uuid not null references objects(id) on delete restrict,   -- space/floor
+  valid_from timestamptz not null default now(), valid_until timestamptz, source text
+);
+
+-- Type–occurrence (D-021). IFC: IfcRelDefinesByType (IfcRelDefines). 1:N
+create table rel_defines_by_type (
   id uuid primary key default gen_random_uuid(),
   from_id uuid not null references objects(id) on delete cascade,    -- occurrence
-  to_id   uuid not null references objects(id) on delete restrict,   -- type
+  to_id   uuid not null references objects(id) on delete restrict,   -- type (IFC RelatingType)
   valid_from timestamptz not null default now(), valid_until timestamptz, source text
 );
 
--- Osoba v organizácii (D-024). IFC: IfcPersonAndOrganization
+-- Osoba v organizácii (D-024). IFC: IfcPersonAndOrganization (RESOURCE, nie IfcRel — D-048)
 create table rel_member_of (
   id uuid primary key default gen_random_uuid(),
   from_id uuid not null references objects(id) on delete cascade,    -- person
@@ -173,30 +187,39 @@ create table rel_member_of (
   valid_until timestamptz, source text
 );
 
--- Dokument (D-014)
-create table rel_has_document (
+-- Dokument (D-014). IFC: IfcRelAssociatesDocument (IfcRelAssociates)
+create table rel_associates_document (
   id uuid primary key default gen_random_uuid(),
-  from_id uuid not null references objects(id) on delete cascade,
-  to_id   uuid not null references objects(id) on delete restrict,
+  from_id uuid not null references objects(id) on delete cascade,    -- objekt
+  to_id   uuid not null references objects(id) on delete restrict,   -- document (IFC RelatingDocument)
   role text,                 -- 'manual','certificate','as-built'…
   valid_from timestamptz not null default now(), valid_until timestamptz, source text
 );
 
--- Klasifikácia (D-011, D-023). Cieľ = referenčná tabuľka. Type aj occurrence
-create table rel_has_classification (
+-- Klasifikácia (D-011, D-023). IFC: IfcRelAssociatesClassification. Type aj occurrence
+create table rel_associates_classification (
   id uuid primary key default gen_random_uuid(),
-  from_id uuid not null references objects(id) on delete cascade,
+  from_id uuid not null references objects(id) on delete cascade,    -- objekt
   to_id   uuid not null references classification_references(id) on delete restrict,
   valid_from timestamptz not null default now(), valid_until timestamptz, source text
 );
 
--- Zodpovednosti (D-020). IFC: IfcRelAssignsToActor + IfcActorRole
--- from_id = person ALEBO organization
-create table rel_responsible_for (
+-- Zodpovednosti (D-020). IFC: IfcRelAssignsToActor + IfcActorRole (IfcRelAssigns)
+-- from_id = person ALEBO organization (IFC RelatingActor). Smer = IFC.
+create table rel_assigns_to_actor (
   id uuid primary key default gen_random_uuid(),
   from_id uuid not null references objects(id) on delete restrict,   -- actor (person|organization)
   to_id   uuid not null references objects(id) on delete cascade,    -- objekt
   role text not null,        -- acting role: 'owner','operator','maintainer','manufacturer'…
+  valid_from timestamptz not null default now(), valid_until timestamptz, source text
+);
+
+-- Členstvo v systéme (D-047). IFC: IfcRelAssignsToGroup (IfcRelAssigns)
+-- from = člen (napr. IfcValve), to = system (object_type='system', IfcDistributionSystem)
+create table rel_assigns_to_group (
+  id uuid primary key default gen_random_uuid(),
+  from_id uuid not null references objects(id) on delete cascade,    -- člen (element)
+  to_id   uuid not null references objects(id) on delete restrict,   -- system (IFC RelatingGroup)
   valid_from timestamptz not null default now(), valid_until timestamptz, source text
 );
 ```
@@ -204,15 +227,19 @@ create table rel_responsible_for (
 ### 2.6 Indexy + integrita hrán
 
 ```sql
-create index on rel_located_in (from_id);          create index on rel_located_in (to_id);
-create index on rel_defined_by_type (from_id);     create index on rel_defined_by_type (to_id);
-create index on rel_member_of (from_id);           create index on rel_member_of (to_id);
-create index on rel_has_document (from_id);         create index on rel_has_document (to_id);
-create index on rel_has_classification (from_id);
-create index on rel_responsible_for (from_id);      create index on rel_responsible_for (to_id);
+create index on rel_aggregates (from_id);                       create index on rel_aggregates (to_id);
+create index on rel_contained_in_spatial_structure (from_id);   create index on rel_contained_in_spatial_structure (to_id);
+create index on rel_defines_by_type (from_id);                  create index on rel_defines_by_type (to_id);
+create index on rel_member_of (from_id);                        create index on rel_member_of (to_id);
+create index on rel_associates_document (from_id);              create index on rel_associates_document (to_id);
+create index on rel_associates_classification (from_id);
+create index on rel_assigns_to_actor (from_id);                 create index on rel_assigns_to_actor (to_id);
+create index on rel_assigns_to_group (from_id);                 create index on rel_assigns_to_group (to_id);
 
-create unique index uniq_active_location on rel_located_in     (from_id) where valid_until is null;
-create unique index uniq_active_type     on rel_defined_by_type(from_id) where valid_until is null;
+-- Unikátny aktívny rodič: spatial child (aggregates) aj fyzický prvok (contained)
+create unique index uniq_active_aggregate on rel_aggregates                    (from_id) where valid_until is null;
+create unique index uniq_active_contained on rel_contained_in_spatial_structure(from_id) where valid_until is null;
+create unique index uniq_active_type      on rel_defines_by_type               (from_id) where valid_until is null;
 ```
 
 ### 2.7 Pohľady (Viewer / LLM)
@@ -228,7 +255,7 @@ create view v_asset_effective as
     jsonb_deep_merge(typ.properties, occ.properties)              as properties,
     typ.id as type_id, typ.name as type_name
   from objects occ
-  left join rel_defined_by_type r on r.from_id = occ.id and r.valid_until is null
+  left join rel_defines_by_type r on r.from_id = occ.id and r.valid_until is null
   left join objects typ on typ.id = r.to_id
   where occ.object_type = 'asset';
 
@@ -236,13 +263,13 @@ create view v_asset_effective as
 create view v_asset_classifications as
   select occ.id as object_id, rc.to_id as classification_ref_id, 'occurrence' as level
   from objects occ
-  join rel_has_classification rc on rc.from_id = occ.id and rc.valid_until is null
+  join rel_associates_classification rc on rc.from_id = occ.id and rc.valid_until is null
   where occ.object_type = 'asset'
   union
   select occ.id, rc.to_id, 'type'
   from objects occ
-  join rel_defined_by_type dt on dt.from_id = occ.id and dt.valid_until is null
-  join rel_has_classification rc on rc.from_id = dt.to_id and rc.valid_until is null
+  join rel_defines_by_type dt on dt.from_id = occ.id and dt.valid_until is null
+  join rel_associates_classification rc on rc.from_id = dt.to_id and rc.valid_until is null
   where occ.object_type = 'asset';
 
 create view v_floors as select o.*, f.elevation from objects o join floors f using (id);
@@ -287,14 +314,22 @@ CamelCase by vyžadoval úvodzovky a škodil LLM text-to-SQL). IFC väzba cez
 | `objects` (occurrence) | IfcObject (IfcProduct…) |
 | `object_type='asset_type'` | IfcTypeObject / IfcElementType |
 | `object_type='person'` / `'organization'` | IfcPerson / IfcOrganization |
-| `rel_located_in` | IfcRelAggregates + IfcRelContainedInSpatialStructure |
-| `rel_defined_by_type` | IfcRelDefinesByType |
-| `rel_member_of` | IfcPersonAndOrganization |
-| `rel_has_document` | IfcRelAssociatesDocument |
-| `rel_has_classification` | IfcRelAssociatesClassification |
-| `rel_responsible_for` | IfcRelAssignsToActor (+ IfcActorRole) |
+| `rel_aggregates` | IfcRelAggregates (IfcRelDecomposes) |
+| `rel_contained_in_spatial_structure` | IfcRelContainedInSpatialStructure (IfcRelConnects) |
+| `rel_defines_by_type` | IfcRelDefinesByType (IfcRelDefines) |
+| `rel_member_of` | IfcPersonAndOrganization (**resource, nie IfcRel** — D-048) |
+| `rel_associates_document` | IfcRelAssociatesDocument (IfcRelAssociates) |
+| `rel_associates_classification` | IfcRelAssociatesClassification (IfcRelAssociates) |
+| `rel_assigns_to_actor` | IfcRelAssignsToActor + IfcActorRole (IfcRelAssigns) |
+| `rel_assigns_to_group` | IfcRelAssignsToGroup (IfcRelAssigns) — systémy, D-047 |
 | `classification_systems` / `_references` | IfcClassification / IfcClassificationReference |
 | `documents` (prípona) | IfcDocumentInformation (atribútovo 1:1, viď nižšie) |
+
+**IFC-kanonická vrstva vzťahov (D-048):** hrany sú pomenované podľa `IfcRelationship`
+podtypov a majú **granularitu akú rozlišuje IFC** (preto `rel_located_in` rozseknuté na
+`rel_aggregates` + `rel_contained_in_spatial_structure`). Fyzicky sú to **binárne hrany +
+naše meta stĺpce**, NIE objektifikované N-árne IFC entity — preberáme identitu/granularitu,
+nie serializačnú štruktúru (index nad IFC sémantikou, nie STEP v Postgrese).
 
 **Atribútové zarovnanie `documents` ↔ `IfcDocumentInformation` (IFC4.3, D-046):**
 `identification`, `description`, `location`, `purpose`, `revision`, `document_owner`,
