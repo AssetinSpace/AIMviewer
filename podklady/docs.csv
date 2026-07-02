@@ -2,20 +2,20 @@
 # source_path  = cesta relatívna k podklady/FINAL/ (oddeľovač '/').
 # container_name = CDE názov (Projekt_StupeňPD_ČástDíla_Profese_TypSouboru_Číslo_Popis).
 # target_ref   = object_ref uzla, na ktorý sa dokument viaže (rel_has_document):
-#                'POLYFUNKčNÝ OBJEKT' = building; '1NP'..'5NP' = floor.
+#                'Polyfunkčný objekt' = building; '1NP'..'5NP' = floor.
 # status       = ISO 19650 stav (→ documents.status). revision = revízia (→ documents.revision).
 # role sa odvodzuje z TypSouboru v doc_scheme.py (VD→drawing, RP→report, …).
 source_path,container_name,target_ref,status,revision
-Príloha A - Pozemné staviteľstvo/A - Sprievodná správa.pdf,OCB_DPS_SO01_ARS_RP_001_Sprievodna-sprava,POLYFUNKčNÝ OBJEKT,A1,
-Príloha A - Pozemné staviteľstvo/B - Súhrnná technická správa.pdf,OCB_DPS_SO01_ARS_RP_002_Suhrnna-tech-sprava,POLYFUNKčNÝ OBJEKT,A1,
+Príloha A - Pozemné staviteľstvo/A - Sprievodná správa.pdf,OCB_DPS_SO01_ARS_RP_001_Sprievodna-sprava,Polyfunkčný objekt,A1,
+Príloha A - Pozemné staviteľstvo/B - Súhrnná technická správa.pdf,OCB_DPS_SO01_ARS_RP_002_Suhrnna-tech-sprava,Polyfunkčný objekt,A1,
 Príloha A - Pozemné staviteľstvo/3. D.1.1. Architektonicko-stavebné riešenie/D.1.1.01 - Pôdorys 1NP.pdf,OCB_DPS_SO01_ARS_VD_101_Pudorys-1NP,1NP,A1,
 Príloha A - Pozemné staviteľstvo/3. D.1.1. Architektonicko-stavebné riešenie/D.1.1.02 - Pôdorys 2NP.pdf,OCB_DPS_SO01_ARS_VD_102_Pudorys-2NP,2NP,A1,
 Príloha A - Pozemné staviteľstvo/3. D.1.1. Architektonicko-stavebné riešenie/D.1.1.03 - Pôdorys 3NP.pdf,OCB_DPS_SO01_ARS_VD_103_Pudorys-3NP,3NP,A1,
-Príloha A - Pozemné staviteľstvo/3. D.1.1. Architektonicko-stavebné riešenie/D.1.1.04 - Pôdorys strechy.pdf,OCB_DPS_SO01_ARS_VD_104_Pudorys-strechy,POLYFUNKčNÝ OBJEKT,A1,
-Príloha A - Pozemné staviteľstvo/3. D.1.1. Architektonicko-stavebné riešenie/D.1.1.05 - Rez A - Priečny rez hl. vstupom do objektu.pdf,OCB_DPS_SO01_ARS_VD_105_Rez-A,POLYFUNKčNÝ OBJEKT,A1,
-Príloha A - Pozemné staviteľstvo/3. D.1.1. Architektonicko-stavebné riešenie/D.1.1.09 - Výpis skladieb.pdf,OCB_DPS_SO01_ARS_VV_109_Vypis-skladieb,POLYFUNKčNÝ OBJEKT,A1,
+Príloha A - Pozemné staviteľstvo/3. D.1.1. Architektonicko-stavebné riešenie/D.1.1.04 - Pôdorys strechy.pdf,OCB_DPS_SO01_ARS_VD_104_Pudorys-strechy,Polyfunkčný objekt,A1,
+Príloha A - Pozemné staviteľstvo/3. D.1.1. Architektonicko-stavebné riešenie/D.1.1.05 - Rez A - Priečny rez hl. vstupom do objektu.pdf,OCB_DPS_SO01_ARS_VD_105_Rez-A,Polyfunkčný objekt,A1,
+Príloha A - Pozemné staviteľstvo/3. D.1.1. Architektonicko-stavebné riešenie/D.1.1.09 - Výpis skladieb.pdf,OCB_DPS_SO01_ARS_VV_109_Vypis-skladieb,Polyfunkčný objekt,A1,
 Príloha A - Pozemné staviteľstvo/5. D.1.3. Požiarne-bezpečnostné riešenie/D.1.3.02 - Pôdorys 1NP PBR.pdf,OCB_DPS_SO01_POZ_VD_302_Pudorys-1NP-PBR,1NP,A1,
-Príloha A - Pozemné staviteľstvo/6. Stavebná fyzika/4 - Preukaz energetickej náročnosti budovy.pdf,OCB_DPS_SO01_STF_RP_004_Preukaz-ENB,POLYFUNKčNÝ OBJEKT,A1,
-Príloha A - Pozemné staviteľstvo/1. Študijné a prípravné práce/S.01 - Štúdia využiteľnosti priestorov.pdf,OCB_ADS_SO01_ARS_ST_001_Studia-priestorov,POLYFUNKčNÝ OBJEKT,A1,
-Príloha B - Technika prostredia/3 - Nútené vetranie.pdf,OCB_DPS_SO01_VZT_RP_003_Nutene-vetranie,POLYFUNKčNÝ OBJEKT,A1,
-Príloha B - Technika prostredia/TP.03 - Regulačná schéma VZT.pdf,OCB_DPS_SO01_VZT_SC_303_Regulacna-schema-VZT,POLYFUNKčNÝ OBJEKT,A1,
+Príloha A - Pozemné staviteľstvo/6. Stavebná fyzika/4 - Preukaz energetickej náročnosti budovy.pdf,OCB_DPS_SO01_STF_RP_004_Preukaz-ENB,Polyfunkčný objekt,A1,
+Príloha A - Pozemné staviteľstvo/1. Študijné a prípravné práce/S.01 - Štúdia využiteľnosti priestorov.pdf,OCB_ADS_SO01_ARS_ST_001_Studia-priestorov,Polyfunkčný objekt,A1,
+Príloha B - Technika prostredia/3 - Nútené vetranie.pdf,OCB_DPS_SO01_VZT_RP_003_Nutene-vetranie,Polyfunkčný objekt,A1,
+Príloha B - Technika prostredia/TP.03 - Regulačná schéma VZT.pdf,OCB_DPS_SO01_VZT_SC_303_Regulacna-schema-VZT,Polyfunkčný objekt,A1,
