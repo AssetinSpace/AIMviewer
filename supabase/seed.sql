@@ -16,7 +16,8 @@
 --     `objects`, nikdy nie v `properties`.
 --   * `properties` obsahuje len property sety (Pset_/Qto_ = štandard,
 --     ostatné = custom) a rezervované `_kľúče` (meta, capture-don't-structure).
---   * object_type='asset_type' NIKDY nie je v rel_located_in.
+--   * object_type='asset_type' NIKDY nie je v spatial väzbách (rel_aggregates /
+--     rel_contained_in_spatial_structure).
 --
 -- UUID schéma (čitateľná):
 --   a0…0001 site · …0002 building · …0011/0012 floor · …0021–0024 space
@@ -51,7 +52,7 @@ on conflict (id) do nothing;
 -- -----------------------------------------------------------------------------
 -- 2. Asset type (D-021) — vzduchotechnická jednotka
 --    Type nesie zdieľané: predefined_type=AIRHANDLER, štandardný + custom pset.
---    Type NIKDY nie je v rel_located_in.
+--    Type NIKDY nie je v spatial väzbách (rel_aggregates / rel_contained_in_spatial_structure).
 -- -----------------------------------------------------------------------------
 insert into objects (id, object_type, object_ref, name, ifc_guid, ifc_type, predefined_type, properties) values
   ('a0000000-0000-0000-0000-0000000000a0', 'asset_type', 'TYP-VZT-AHU-5000', 'VZT jednotka AHU-5000',
@@ -165,10 +166,12 @@ on conflict (id) do nothing;
 -- =============================================================================
 
 -- -----------------------------------------------------------------------------
--- 8. rel_located_in — priestorová hierarchia + umiestnenie assetov
---    Site←Building←Floor←Space←Asset. asset_type sa tu NIKDY nevyskytuje.
+-- 8. Spatial väzby (D-048) — IFC-kanonicky rozdelené:
+--    rel_aggregates = dekompozícia štruktúry (Site←Building←Floor←Space),
+--    rel_contained_in_spatial_structure = fyzický prvok (asset) v priestore.
+--    asset_type sa v spatial väzbách NIKDY nevyskytuje.
 -- -----------------------------------------------------------------------------
-insert into rel_located_in (id, from_id, to_id, source) values
+insert into rel_aggregates (id, from_id, to_id, source) values
   -- building → site
   ('e1000000-0000-0000-0000-000000000002', 'a0000000-0000-0000-0000-000000000002', 'a0000000-0000-0000-0000-000000000001', 'seed'),
   -- floors → building
@@ -178,7 +181,10 @@ insert into rel_located_in (id, from_id, to_id, source) values
   ('e1000000-0000-0000-0000-000000000021', 'a0000000-0000-0000-0000-000000000021', 'a0000000-0000-0000-0000-000000000011', 'seed'),
   ('e1000000-0000-0000-0000-000000000022', 'a0000000-0000-0000-0000-000000000022', 'a0000000-0000-0000-0000-000000000011', 'seed'),
   ('e1000000-0000-0000-0000-000000000023', 'a0000000-0000-0000-0000-000000000023', 'a0000000-0000-0000-0000-000000000012', 'seed'),
-  ('e1000000-0000-0000-0000-000000000024', 'a0000000-0000-0000-0000-000000000024', 'a0000000-0000-0000-0000-000000000012', 'seed'),
+  ('e1000000-0000-0000-0000-000000000024', 'a0000000-0000-0000-0000-000000000024', 'a0000000-0000-0000-0000-000000000012', 'seed')
+on conflict (id) do nothing;
+
+insert into rel_contained_in_spatial_structure (id, from_id, to_id, source) values
   -- assety → spaces
   ('e1000000-0000-0000-0000-0000000000a1', 'a0000000-0000-0000-0000-0000000000a1', 'a0000000-0000-0000-0000-000000000022', 'seed'),  -- AHU-01 → strojovňa 1.02
   ('e1000000-0000-0000-0000-0000000000a2', 'a0000000-0000-0000-0000-0000000000a2', 'a0000000-0000-0000-0000-000000000021', 'seed'),  -- AHU-02 → tech. miestnosť 1.01
@@ -190,7 +196,7 @@ on conflict (id) do nothing;
 -- 9. rel_defined_by_type (D-021) — occurrence → asset_type (1:N)
 --    AHU-01 aj AHU-02 zdieľajú ten istý typ → dedičnosť psetov + predefined_type.
 -- -----------------------------------------------------------------------------
-insert into rel_defined_by_type (id, from_id, to_id, source) values
+insert into rel_defines_by_type (id, from_id, to_id, source) values
   ('e2000000-0000-0000-0000-0000000000a1', 'a0000000-0000-0000-0000-0000000000a1', 'a0000000-0000-0000-0000-0000000000a0', 'seed'),
   ('e2000000-0000-0000-0000-0000000000a2', 'a0000000-0000-0000-0000-0000000000a2', 'a0000000-0000-0000-0000-0000000000a0', 'seed')
 on conflict (id) do nothing;
@@ -208,7 +214,7 @@ on conflict (id) do nothing;
 -- 11. rel_responsible_for (D-020) — Ján Novák zodpovedný za 2 assety,
 --     dve RÔZNE acting roly (operator vs maintainer).
 -- -----------------------------------------------------------------------------
-insert into rel_responsible_for (id, from_id, to_id, role, valid_from, source) values
+insert into rel_assigns_to_actor (id, from_id, to_id, role, valid_from, source) values
   ('e4000000-0000-0000-0000-0000000000a1', 'a0000000-0000-0000-0000-0000000000b1', 'a0000000-0000-0000-0000-0000000000a1', 'operator',   '2024-03-01T00:00:00Z', 'seed'),
   ('e4000000-0000-0000-0000-0000000000a2', 'a0000000-0000-0000-0000-0000000000b1', 'a0000000-0000-0000-0000-0000000000a2', 'maintainer', '2024-03-01T00:00:00Z', 'seed')
 on conflict (id) do nothing;
@@ -217,7 +223,7 @@ on conflict (id) do nothing;
 -- -----------------------------------------------------------------------------
 -- 12. rel_has_document (D-014) — manuál pripojený na AHU-01
 -- -----------------------------------------------------------------------------
-insert into rel_has_document (id, from_id, to_id, role, source) values
+insert into rel_associates_document (id, from_id, to_id, role, source) values
   ('e5000000-0000-0000-0000-0000000000a1', 'a0000000-0000-0000-0000-0000000000a1', 'a0000000-0000-0000-0000-0000000000c0', 'manual', 'seed')
 on conflict (id) do nothing;
 
@@ -228,7 +234,7 @@ on conflict (id) do nothing;
 --     v_asset_classifications pre AHU-01 → 2 riadky (level 'type' + 'occurrence'),
 --     pre AHU-02 → 1 riadok (len zdedený 'type').
 -- -----------------------------------------------------------------------------
-insert into rel_has_classification (id, from_id, to_id, source) values
+insert into rel_associates_classification (id, from_id, to_id, source) values
   ('e6000000-0000-0000-0000-0000000000a0', 'a0000000-0000-0000-0000-0000000000a0', 'c2000000-0000-0000-0000-000000000001', 'seed'),  -- TYPE → Pr_70_65_04
   ('e6000000-0000-0000-0000-0000000000a1', 'a0000000-0000-0000-0000-0000000000a1', 'c2000000-0000-0000-0000-000000000002', 'seed')   -- AHU-01 → Ss_55_70_70
 on conflict (id) do nothing;
