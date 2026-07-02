@@ -76,6 +76,9 @@ Primárny use case: AIM Viewer — ukážka správne previazaných dát.
 - Nedávať IFC atribúty do `properties` — sú to stĺpce
 - Nezahadzovať adresy/org-väzby zo zdroja — uložiť do `_contact`/`_org` v `properties` (kým nie je C)
 - Nebudovať features bez zodpovedajúceho záznamu v DECISIONS.md
+- Nezavádzať nový atribút/hranu/enum bez kontroly IFC4.3 ekvivalentu — ak existuje,
+  prevziať IFC názov aj hodnoty doslovne; ak nie, zapísať ako deklarovanú extenziu
+  do SCHEMA.md §5 (IFC-first naming, D-046)
 - Nikdy neukladať geometriu/meshe do DB — 3D rendering je ephemerálna klient-side vrstva (IFClite, D-044)
 
 ## Priestorová hierarchia

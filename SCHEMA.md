@@ -294,6 +294,26 @@ CamelCase by vyžadoval úvodzovky a škodil LLM text-to-SQL). IFC väzba cez
 | `rel_has_classification` | IfcRelAssociatesClassification |
 | `rel_responsible_for` | IfcRelAssignsToActor (+ IfcActorRole) |
 | `classification_systems` / `_references` | IfcClassification / IfcClassificationReference |
+| `documents` (prípona) | IfcDocumentInformation (atribútovo 1:1, viď nižšie) |
+
+**Atribútové zarovnanie `documents` ↔ `IfcDocumentInformation` (IFC4.3, D-046):**
+`identification`, `description`, `location`, `purpose`, `revision`, `document_owner`,
+`status`, `valid_from`, `valid_until` = priamo IFC atribúty (snake_case). Chýbajúce
+(`intended_use`, `scope`, `editors`, `creation_time`, `last_revision_time`,
+`electronic_format`, `confidentiality`) sa pridajú aditívne, keď budú treba. `status`
+hodnoty zarovnať na `IfcDocumentStatusEnum` (DRAFT/FINAL/REVISION/NOTDEFINED).
+Verzie/hierarchia dokumentov v budúcnosti podľa `IsPointer`/`IsPointedTo`;
+odkaz na časť dokumentu podľa `HasDocumentReferences`.
+
+**IFC-first naming (D-046):** nový atribút/hrana/enum až po kontrole IFC4.3
+ekvivalentu — ak existuje, prevziať názov aj enum doslovne.
+
+**Deklarované extenzie nad IFC4.3 (D-046) — úplný zoznam:**
+- metadáta na hrane: `valid_from`/`valid_until`/`source`/dôverové vrstvy na `rel_*`
+  (IFC vzťahy nenesú platnosť ani provenance väzby),
+- `ifc_guid_history` + Master UUID (identita naprieč verziami súborov),
+- väzby naprieč IFC súbormi (federácia — natívne až IFC5).
+Pri exporte ich IFC nenesie → ICDD linksety (D-015), do budúcna IFCX layer komponenty.
 
 ---
 

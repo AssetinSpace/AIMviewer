@@ -38,6 +38,12 @@
   WASM klient-side, obojsmerná selekcia 3D↔dáta cez IFC GUID, **query bridging** (floor
   filter, DB↔3D filter bar, Escape deselect). Schéma DB sa nemení.
 - 📋 **D-045 — Pasportizácia + dynamika** (kandidát) — brainstorm, čaká na reálnu zákazku
+- ✅ **D-046 — IFC alignment stratégia** (rozhodnuté 2026-07-02): IFC4.3 slovník teraz
+  (súborový svet: IFC/ICDD/COBie), architektúra pripravená na IFC5/IFCX (naša DB =
+  konceptuálne „vrstva" nad dizajnovými modelmi). IFC-first naming pravidlo; extenzie
+  deklarované v SCHEMA.md §5. Follow-up kandidáti: GUID matching pipeline (dve verzie
+  IFC → „wow" GUID histórie, D-044), IDS/LOIN validácia cez IFClite (D-045),
+  `documents.status` enum zarovnanie. Schéma sa nemení.
 - ⏸️ LLM interface — **parkované** (S-LLM), doladíme neskôr
 
 **Máme:** Supabase Cloud (projekt `acwoupricatirhlfkhvk`) + GitHub repo (`AssetinSpace/AIMviewer`) + Vercel deploy (auto-deploy z `main`). **Chýba zatiaľ:** vlastná doména (príde v S4).
