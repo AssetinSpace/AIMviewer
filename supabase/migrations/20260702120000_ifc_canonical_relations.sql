@@ -28,10 +28,11 @@ alter table rel_has_document       rename to rel_associates_document;
 alter table rel_has_classification rename to rel_associates_classification;
 alter table rel_responsible_for    rename to rel_assigns_to_actor;
 
--- pomenované indexy z predošlých migrácií → držať názov = tabuľka (tidy)
-alter index idx_rel_has_classification_to_id rename to idx_rel_associates_classification_to_id;
-alter index idx_rel_has_document_to_id       rename to idx_rel_associates_document_to_id;
-alter index idx_rel_has_document_e4_from     rename to idx_rel_associates_document_e4_from;
+-- pomenované indexy z predošlých migrácií → držať názov = tabuľka (tidy).
+-- `if exists`: idempotentne toleruje prostredie, kde 20260628120000 nebežalo.
+alter index if exists idx_rel_has_classification_to_id rename to idx_rel_associates_classification_to_id;
+alter index if exists idx_rel_has_document_to_id       rename to idx_rel_associates_document_to_id;
+alter index if exists idx_rel_has_document_e4_from     rename to idx_rel_associates_document_e4_from;
 
 -- 2) Split rel_located_in → rel_aggregates + rel_contained_in_spatial_structure
 create table rel_aggregates (
