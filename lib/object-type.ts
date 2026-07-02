@@ -21,7 +21,7 @@ export const OBJECT_TYPE_LABEL: Record<ObjectType, string> = {
   document: "Dokument",
 };
 
-/** Acting roly zo `rel_responsible_for.role` (D-020, IfcActorRole). */
+/** Acting roly zo `rel_assigns_to_actor.role` (D-020, IfcActorRole). */
 export const ACTING_ROLE_LABEL: Record<string, string> = {
   owner: "vlastník",
   operator: "prevádzkovateľ",
@@ -29,7 +29,7 @@ export const ACTING_ROLE_LABEL: Record<string, string> = {
   manufacturer: "výrobca",
 };
 
-/** Roly dokumentovej väzby `rel_has_document.role` (D-014). */
+/** Roly dokumentovej väzby `rel_associates_document.role` (D-014). */
 export const DOC_ROLE_LABEL: Record<string, string> = {
   manual: "manuál",
   certificate: "certifikát",

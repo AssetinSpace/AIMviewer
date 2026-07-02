@@ -41,7 +41,7 @@ export interface Membership {
 
 export interface ResponsibilityOf {
   object: ObjectLink;
-  /** Acting rola (rel_responsible_for.role). */
+  /** Acting rola (rel_assigns_to_actor.role). */
   role: string;
   validFrom: string | null;
   validUntil: string | null;
@@ -102,7 +102,7 @@ export interface SummaryDocument {
   id: string;
   name: string | null;
   objectRef: string | null;
-  /** rel_has_document.role ('drawing', 'manual'…). */
+  /** rel_associates_document.role ('drawing', 'manual'…). */
   role: string | null;
   /** True ak ide o auto-prepojený výkres (E4, `source='pdf_link (E4)'`). */
   isDrawing: boolean;
@@ -153,7 +153,7 @@ async function fetchNodeSummaryImpl(id: string): Promise<NodeSummary | null> {
   const [typeId, classificationCount, docRels, occurrenceCount] = await Promise.all([
     isAsset
       ? supabase
-          .from("rel_defined_by_type")
+          .from("rel_defines_by_type")
           .select("to_id")
           .eq("from_id", id)
           .is("valid_until", null)
@@ -164,7 +164,7 @@ async function fetchNodeSummaryImpl(id: string): Promise<NodeSummary | null> {
           })
       : Promise.resolve<string | null>(null),
     supabase
-      .from("rel_has_classification")
+      .from("rel_associates_classification")
       .select("id", { count: "exact", head: true })
       .eq("from_id", id)
       .is("valid_until", null)
@@ -173,7 +173,7 @@ async function fetchNodeSummaryImpl(id: string): Promise<NodeSummary | null> {
         return count ?? 0;
       }),
     supabase
-      .from("rel_has_document")
+      .from("rel_associates_document")
       .select("to_id, role, source")
       .eq("from_id", id)
       .is("valid_until", null)
@@ -183,7 +183,7 @@ async function fetchNodeSummaryImpl(id: string): Promise<NodeSummary | null> {
       }),
     isType
       ? supabase
-          .from("rel_defined_by_type")
+          .from("rel_defines_by_type")
           .select("id", { count: "exact", head: true })
           .eq("to_id", id)
           .is("valid_until", null)
@@ -287,13 +287,13 @@ async function loadObjectLinks(
   return out;
 }
 
-/** Za čo aktor (person|organization) zodpovedá — reverz `rel_responsible_for`. */
+/** Za čo aktor (person|organization) zodpovedá — reverz `rel_assigns_to_actor`. */
 async function loadResponsibilitiesOf(
   supabase: SupabaseClient,
   actorId: string
 ): Promise<ResponsibilityOf[]> {
   const { data, error } = await supabase
-    .from("rel_responsible_for")
+    .from("rel_assigns_to_actor")
     .select("to_id, role, valid_from, valid_until")
     .eq("from_id", actorId)
     .is("valid_until", null);
@@ -469,7 +469,7 @@ async function fetchDocumentImpl(id: string): Promise<DocumentDetail | null> {
       .eq("id", id)
       .limit(1),
     supabase
-      .from("rel_has_document")
+      .from("rel_associates_document")
       .select("from_id, role")
       .eq("to_id", id)
       .is("valid_until", null),
@@ -482,7 +482,7 @@ async function fetchDocumentImpl(id: string): Promise<DocumentDetail | null> {
   if (dRes.error) throw new Error(dRes.error.message);
   const d = dRes.data?.[0];
 
-  // Pripojené k (rel_has_document, kde to_id = tento dokument).
+  // Pripojené k (rel_associates_document, kde to_id = tento dokument).
   if (relRes.error) throw new Error(relRes.error.message);
   const rels = (relRes.data ?? []) as { from_id: string; role: string | null }[];
   const links = await loadObjectLinks(

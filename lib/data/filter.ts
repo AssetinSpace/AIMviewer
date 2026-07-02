@@ -58,7 +58,7 @@ export async function fetchSpaceSiblings(
 
   // Find parent of this object
   const { data: parentRows, error: parentErr } = await supabase
-    .from("rel_located_in")
+    .from("rel_contained_in_spatial_structure")
     .select("to_id")
     .eq("from_id", objectId)
     .is("valid_until", null)
@@ -79,7 +79,7 @@ export async function fetchSpaceSiblings(
 
   // All assets in that space
   const { data: siblingRows, error: siblingErr } = await supabase
-    .from("rel_located_in")
+    .from("rel_contained_in_spatial_structure")
     .select("from_id")
     .eq("to_id", spaceId)
     .is("valid_until", null);

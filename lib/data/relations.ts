@@ -19,7 +19,7 @@ export interface DocumentRef {
   id: string;
   objectRef: string | null;
   name: string | null;
-  /** rel_has_document.role: 'manual','certificate','as-built'… */
+  /** rel_associates_document.role: 'manual','certificate','as-built'… */
   role: string | null;
   identification: string | null;
   description: string | null;
@@ -64,7 +64,7 @@ export interface Responsibility {
   actorType: "person" | "organization";
   actorName: string | null;
   actorRef: string | null;
-  /** Acting rola (rel_responsible_for.role): 'operator','maintainer'… */
+  /** Acting rola (rel_assigns_to_actor.role): 'operator','maintainer'… */
   role: string;
   validFrom: string | null;
   validUntil: string | null;
@@ -110,12 +110,12 @@ export const fetchNodeSections = unstable_cache(
   AIM_CACHE
 );
 
-/** Dokumenty pripojené na uzol (`rel_has_document` → `documents`, D-014). */
+/** Dokumenty pripojené na uzol (`rel_associates_document` → `documents`, D-014). */
 export async function fetchDocuments(objectId: string): Promise<DocumentRef[]> {
   const supabase = getSupabaseAdmin();
 
   const { data: rels, error } = await supabase
-    .from("rel_has_document")
+    .from("rel_associates_document")
     .select("to_id, role, source")
     .eq("from_id", objectId)
     .is("valid_until", null);
@@ -171,7 +171,7 @@ export async function fetchDocuments(objectId: string): Promise<DocumentRef[]> {
 
 /**
  * Výkresy, v ktorých je prvok (asset/asset_type) **zobrazený** — E4 auto-linking
- * (`rel_has_document` so `source='pdf_link (E4)'`, smer prvok → výkres, D-041).
+ * (`rel_associates_document` so `source='pdf_link (E4)'`, smer prvok → výkres, D-041).
  * Vracia priame verejné PDF URL (`documents.location`).
  */
 export async function fetchElementDrawings(
@@ -180,7 +180,7 @@ export async function fetchElementDrawings(
   const supabase = getSupabaseAdmin();
 
   const { data: rels, error } = await supabase
-    .from("rel_has_document")
+    .from("rel_associates_document")
     .select("to_id")
     .eq("from_id", objectId)
     .eq("source", PDF_LINK_SOURCE)
@@ -225,7 +225,7 @@ export async function fetchFloorDrawings(
 
   // 1) výkresy pripojené na uzol (E3 floor→drawing); E4 element-väzby vynechané
   const { data: drawRels, error } = await supabase
-    .from("rel_has_document")
+    .from("rel_associates_document")
     .select("to_id, source")
     .eq("from_id", objectId)
     .eq("role", "drawing")
@@ -246,7 +246,7 @@ export async function fetchFloorDrawings(
     supabase.from("objects").select("id, object_ref, name").in("id", drawingIds),
     supabase.from("documents").select("id, location").in("id", drawingIds),
     supabase
-      .from("rel_has_document")
+      .from("rel_associates_document")
       .select("from_id, to_id")
       .in("to_id", drawingIds)
       .eq("source", PDF_LINK_SOURCE)
@@ -325,7 +325,7 @@ export const fetchFloorDrawingsCached = unstable_cache(
 );
 
 /**
- * Zodpovednosti za uzol (`rel_responsible_for`, D-020). Actor je person alebo
+ * Zodpovednosti za uzol (`rel_assigns_to_actor`, D-020). Actor je person alebo
  * organization; pri osobe doplníme jej firmu (`rel_member_of`, D-024).
  */
 export async function fetchResponsibilities(
@@ -334,7 +334,7 @@ export async function fetchResponsibilities(
   const supabase = getSupabaseAdmin();
 
   const { data: rels, error } = await supabase
-    .from("rel_responsible_for")
+    .from("rel_assigns_to_actor")
     .select("from_id, role, valid_from, valid_until")
     .eq("to_id", objectId)
     .is("valid_until", null);

@@ -9,7 +9,8 @@ import { AIM_CACHE } from "@/lib/data/constants";
 /**
  * Data-access vrstva pre priestorovú hierarchiu (S1).
  *
- * Číta `objects` + aktívne hrany `rel_located_in` (D-013) a poskladá strom
+ * Číta `objects` + aktívne spatial hrany (`rel_aggregates` +
+ * `rel_contained_in_spatial_structure`, D-048) a poskladá strom
  * Site → Building → Floor → Space → Asset (D-018, D-021). `asset_type` sa tu
  * NIKDY nevyskytuje (type nemá polohu).
  *
@@ -69,16 +70,22 @@ interface Graph {
 const loadGraph = cache(async (): Promise<Graph> => {
   const supabase = getSupabaseAdmin();
 
-  const [objectsRes, relsRes, floorsRes, spacesRes] = await Promise.all([
+  const [objectsRes, aggRes, containedRes, floorsRes, spacesRes] = await Promise.all([
     supabase
       .from("objects")
       .select(
         "id, object_type, object_ref, name, ifc_type, ifc_guid, predefined_type"
       )
       .in("object_type", SPATIAL_TYPES as unknown as string[]),
-    // Len aktívne väzby (valid_until IS NULL) — partial-unique to garantuje 1 na dieťa.
+    // Spatial väzby IFC-kanonicky (D-048): dekompozícia štruktúry (rel_aggregates)
+    // + umiestnenie prvku (rel_contained_in_spatial_structure). Len aktívne
+    // (valid_until IS NULL) — partial-unique na oboch garantuje 1 rodiča na dieťa.
     supabase
-      .from("rel_located_in")
+      .from("rel_aggregates")
+      .select("from_id, to_id")
+      .is("valid_until", null),
+    supabase
+      .from("rel_contained_in_spatial_structure")
       .select("from_id, to_id")
       .is("valid_until", null),
     supabase.from("floors").select("id, elevation"),
@@ -86,7 +93,8 @@ const loadGraph = cache(async (): Promise<Graph> => {
   ]);
 
   if (objectsRes.error) throw new Error(objectsRes.error.message);
-  if (relsRes.error) throw new Error(relsRes.error.message);
+  if (aggRes.error) throw new Error(aggRes.error.message);
+  if (containedRes.error) throw new Error(containedRes.error.message);
   if (floorsRes.error) throw new Error(floorsRes.error.message);
   if (spacesRes.error) throw new Error(spacesRes.error.message);
 
@@ -122,7 +130,10 @@ const loadGraph = cache(async (): Promise<Graph> => {
 
   const childrenOf = new Map<string, string[]>();
   const parentOf = new Map<string, string>();
-  for (const r of relsRes.data ?? []) {
+  // Uzol je buď agregovaný (štruktúra) alebo obsiahnutý (prvok) — nikdy oboje,
+  // takže zliatie oboch tabuliek v parentOf nekoliduje.
+  const relRows = [...(aggRes.data ?? []), ...(containedRes.data ?? [])];
+  for (const r of relRows) {
     const from = r.from_id as string;
     const to = r.to_id as string;
     // Ignoruj hrany mimo priestorového grafu (napr. ak by to_id nebol v byId).
@@ -190,7 +201,7 @@ function toRef(row: ObjectRow): NodeRef {
 }
 
 /**
- * Detail jedného uzla + breadcrumb (chôdza nahor po `rel_located_in`)
+ * Detail jedného uzla + breadcrumb (chôdza nahor po spatial hranách)
  * a priami potomkovia. `null`, ak uzol neexistuje / nie je priestorový.
  */
 export const fetchNode = unstable_cache(

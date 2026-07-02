@@ -60,7 +60,7 @@ export interface AssetDetail {
   /** Efektívny PredefinedType + či bol zdedený z typu (D-021). */
   predefinedType: { value: string | null; inherited: boolean };
   userDefinedType: string | null;
-  /** Odkaz na asset_type (väzba `rel_defined_by_type`) alebo `null`. */
+  /** Odkaz na asset_type (väzba `rel_defines_by_type`) alebo `null`. */
   type: TypeRef | null;
   propertySets: PropertySetGroup[];
   classifications: ClassificationFacet[];
@@ -340,7 +340,7 @@ async function fetchAssetTypeImpl(id: string): Promise<AssetTypeDetail | null> {
 
   // Vlastné klasifikácie typu (level 'type' — zdedí ich každá occurrence).
   const { data: clsRows, error: clsErr } = await supabase
-    .from("rel_has_classification")
+    .from("rel_associates_classification")
     .select("to_id")
     .eq("from_id", id)
     .is("valid_until", null);
@@ -354,7 +354,7 @@ async function fetchAssetTypeImpl(id: string): Promise<AssetTypeDetail | null> {
 
   // Occurrence definované týmto typom (aktívne väzby).
   const { data: occRows, error: occErr } = await supabase
-    .from("rel_defined_by_type")
+    .from("rel_defines_by_type")
     .select("from_id")
     .eq("to_id", id)
     .is("valid_until", null);

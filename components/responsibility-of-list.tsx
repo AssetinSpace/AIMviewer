@@ -4,7 +4,7 @@ import type { ResponsibilityOf } from "@/lib/data/object";
 import { ACTING_ROLE_LABEL, OBJECT_TYPE_LABEL, roleLabel } from "@/lib/object-type";
 
 /**
- * Za čo aktor zodpovedá (S3, reverz `rel_responsible_for`) — na detaile osoby
+ * Za čo aktor zodpovedá (S3, reverz `rel_assigns_to_actor`) — na detaile osoby
  * a organizácie. Zrkadlo k `ResponsibilityList` (tá ide z pohľadu objektu).
  */
 export function ResponsibilityOfList({ items }: { items: ResponsibilityOf[] }) {
