@@ -18,16 +18,18 @@ objects  ──┐  (jeden uzlový priestor, Master UUID = kotva)
            ├─ documents (IfcDocumentInformation polia)
            └─ persons   (meno, kontakt)   ── organization = objects riadok
 
-HRANY (objects → objects, čisté FK):
-  rel_located_in        Site→Building→Floor→Space→Asset   (type NIKDY nemá polohu)
-  rel_defined_by_type   occurrence → type                 (IfcRelDefinesByType)
-  rel_member_of         person → organization             (IfcPersonAndOrganization)
-  rel_has_document      objekt → dokument
-  rel_responsible_for   person|organization → objekt      (role, platnosť = handover)
+HRANY (objects → objects, čisté FK) — IFC-kanonické (D-048):
+  rel_aggregates                      Site→Building→Floor→Space  (IfcRelAggregates)
+  rel_contained_in_spatial_structure  asset → priestor/podlažie  (IfcRelContainedInSpatialStructure)
+  rel_defines_by_type                 occurrence → type          (IfcRelDefinesByType)
+  rel_member_of                       person → organization      (IfcPersonAndOrganization)
+  rel_associates_document             objekt → dokument          (IfcRelAssociatesDocument)
+  rel_assigns_to_actor                person|organization → objekt  (role, platnosť = handover)
+  rel_assigns_to_group                element → system           (IfcRelAssignsToGroup, D-047)
 
 KLASIFIKÁCIA (referenčné dáta):
   classification_systems ◄─ classification_references
-  rel_has_classification  objekt(type aj occurrence) → reference
+  rel_associates_classification  objekt(type aj occurrence) → reference
 ```
 
 ---
@@ -90,7 +92,7 @@ create table floors (
 create table documents (        -- IfcDocumentInformation (D-014); .Name žije v objects.name
   id              uuid primary key references objects(id) on delete cascade,
   identification  text, description text, location text, purpose text, revision text,
-  document_owner  text,         -- dočasné; neskôr rel_responsible_for(role='owner')
+  document_owner  text,         -- dočasné; neskôr rel_assigns_to_actor(role='owner')
   status          text,
   valid_from      timestamptz,  -- platnosť revízie (≠ platnosť väzby)
   valid_until     timestamptz
@@ -357,9 +359,9 @@ Pri exporte ich IFC nenesie → ICDD linksety (D-015), do budúcna IFCX layer ko
 - **R1** Centrálna `objects` + typové prípony + typované FK hrany (D-018).
 - **R2** Klasifikácia dvojúrovňová, referenčné dáta (D-019).
 - **R3** `object_ref` ≠ klasifikačný kód (D-010/2).
-- **R4** Zodpovednosti od v1 cez aktorov + `rel_responsible_for` (D-020, spresnené D-024).
+- **R4** Zodpovednosti od v1 cez aktorov + `rel_assigns_to_actor` (D-020, spresnené D-024).
 - **R5** Štíhle uzly; stĺpec sa povýši migráciou až keď treba.
-- **R6** Type–occurrence: `rel_defined_by_type`, dedičnosť s prepisom (D-021).
+- **R6** Type–occurrence: `rel_defines_by_type`, dedičnosť s prepisom (D-021).
 - **R7** `properties` = tri vrstvy, rozlíšené prefixom názvu (D-022).
 - **R8** Klasifikácia na type aj occurrence; efektívna = union faset (D-023).
 - **R9** Aktori: teraz **B** (person + organization + `rel_member_of`), **C** plánované
@@ -407,7 +409,7 @@ Vedomé rozhodnutia pri implementácii (odsúhlasené, viď D-025):
 - **Views — len 4 explicitne menované** (`v_asset_effective`, `v_asset_classifications`,
   `v_floors`, `v_actors`). `v_documents`/`v_assets`/`v_spaces` („analogicky" v §2.7)
   sa doplnia neskôr podľa potreby Viewera — sú čisto aditívne.
-- **Indexy presne podľa §2.6.** `rel_has_classification` má index len na `from_id`
+- **Indexy presne podľa §2.6.** `rel_associates_classification` má index len na `from_id`
   (nie `to_id`) — držané podľa schémy, nie opomenutie.
 - **`updated_at` triggery** sú na 3 tabuľkách s týmto stĺpcom: `objects`,
   `classification_systems`, `classification_references`. Prípony (floors/documents/

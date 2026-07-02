@@ -73,9 +73,9 @@
 | Sprint | Cieľ (demovateľný výstup) | Kľúčové dáta |
 |---|---|---|
 | **S0 — Skeleton & deploy** ✅ | Next.js app beží lokálne aj na Verceli (default `*.vercel.app`), Supabase klient pripojený, test-fetch z `objects`. Repo prepojené s Vercelom (auto-deploy z `main`). | `objects` |
-| **S1 — Priestorová hierarchia** ✅ | Strom Site→Building→Floor→Space→Asset; klik na space → zoznam assetov. Data-access vrstva nad `objects` / `rel_located_in`. | `rel_located_in`, `v_floors` |
+| **S1 — Priestorová hierarchia** ✅ | Strom Site→Building→Floor→Space→Asset; klik na space → zoznam assetov. Data-access vrstva nad `objects` / spatial hrany (D-048). | `rel_aggregates`, `rel_contained_in_spatial_structure`, `v_floors` |
 | **S2 — Asset karta (jadro)** ✅ | Detail assetu: properties s provenance (vlastné/zdedené/prepísané), zdedený `predefined_type`, link na type `/type/[id]`, breadcrumb, klasifikácie s badge `occurrence`/`type`. **Tu sa ukáže dedičnosť.** | `v_asset_effective`, `v_asset_classifications` |
-| **S3 — Dokumenty + zodpovednosti** ✅ | Na karte (a genericky na každom uzle): dokumenty (`rel_has_document`), zodpovedné osoby/firmy s rolami a platnosťou (`rel_responsible_for`, `rel_member_of`), panel histórie IFC GUID. Klikateľné detaily person/organization/document — generický object route (D-029). | `documents`, `persons`, `ifc_guid_history` |
+| **S3 — Dokumenty + zodpovednosti** ✅ | Na karte (a genericky na každom uzle): dokumenty (`rel_associates_document`), zodpovedné osoby/firmy s rolami a platnosťou (`rel_assigns_to_actor`, `rel_member_of`), panel histórie IFC GUID. Klikateľné detaily person/organization/document — generický object route (D-029). | `documents`, `persons`, `ifc_guid_history` |
 | **S4 — Polish & launch** 🟢 | Vizuálny polish, responsivita, empty states; výmena seedu za reálne ETL dáta z diplomky; vlastná doména + verejné spustenie. | — |
 | **S5 — IFC 3D viewer** ✅ fáza 1–3 | 3D panel (IFClite, klient-side WASM); **obojsmerná selekcia**: klik na element v 3D → asset karta (`/node/[id]`), klik v strome/karte → zvýraznenie v 3D; **query bridging** (floor filter cez STEP containment, DB↔3D filter bar, Escape deselect). Spojka = IFC GUID cez `ifc_guid_history`. Schéma DB nezmenená. | D-044, `ifc_guid_history` |
 
@@ -88,7 +88,7 @@
 - Akceptačné: stránka na `*.vercel.app` zobrazí `select count(*) from objects`.
 
 **S1 — Priestorová hierarchia**
-- Query helpery nad `objects` + `rel_located_in` (rekurzia/úrovne).
+- Query helpery nad `objects` + spatial hrany (`rel_aggregates` / `rel_contained_in_spatial_structure`) (rekurzia/úrovne).
 - Navigovateľný strom; výber space → assety v ňom.
 - Akceptačné: prejdem z site až po konkrétny asset cez seed dáta.
 
@@ -99,7 +99,7 @@
 - Akceptačné ✅: AHU-01 ukáže `AirFlowRate:4800` (override) + zdedené z type + obe klasifikácie.
 
 **S3 — Dokumenty + zodpovednosti** ✅ (D-029)
-- `rel_has_document` → `documents`; `rel_responsible_for` (role, platnosť) + `rel_member_of`.
+- `rel_associates_document` → `documents`; `rel_assigns_to_actor` (role, platnosť) + `rel_member_of`.
 - Panel `ifc_guid_history` (aktívny + archivované). Sekcie generické na každom uzle.
 - Generický object route `/node/[id]` (person/organization/document detail) + obojsmerné
   prelinkovanie; `asset_type` → redirect na `/type/[id]`.
@@ -168,7 +168,7 @@
 | **E2 — ETL load reálnych dát** ✅ | Rozsah importu policy (D-034) + konsolidácia podlaží (D-035) + 18 SNIM kategórií + doladené mapovanie (hierarchia, psety, klasifikácie, GUID). Idempotentný `--reset` load do Supabase. Viewer beží na **reálnej budove z IFC** namiesto seedu. | D-031/D-034/D-035 |
 | **E3 — Document storage + upload** ✅ | Naming convention = **CDE štandard** (D-036, `doc_scheme.py`); migrácia `documents.storage_type`; public bucket `documents/`; `etl/doc_upload.py` (manifest `docs.csv` → upload + document uzly + `rel_has_document`). **13 PDF nahraných**, viditeľné na karte budovy/podlažia vo Vieweri. | D-032/D-036 |
 | **E4 — PDF výkres auto-linking** ✅ | **PyMuPDF** text + bbox; regex **odvodený zo schémy**; **tri dôverové vrstvy matchu** (`full`/`proximity`/`bare`, D-041) — proximity bez zhody = šum (padli `OV01.00.00`/`ZV01.02` bez straty dverí), `bare` → prefix-match na typy. `etl/pdf_link.py` (výkresy `VD` z `docs.csv`, `--dry-run`/`--show-unmatched`). **193 element-väzieb zapísaných** (`source='pdf_link (E4)'`, idempotentné, E3 nedotknuté). Viewer: „Zobrazený vo výkrese" (asset/type) + „Prvky vo výkrese" (podlažie/budova). | D-032/D-033/D-041 |
-| **E5 — ICDD export** | `etl/icdd_export.py` (rdflib): `linkset.ttl` z `rel_has_document`, `payload_documents/`, prepínač `--embed-payloads`. **Stiahnuteľný ISO 21597 kontajner.** | D-015/D-032 |
+| **E5 — ICDD export** | `etl/icdd_export.py` (rdflib): `linkset.ttl` z `rel_associates_document`, `payload_documents/`, prepínač `--embed-payloads`. **Stiahnuteľný ISO 21597 kontajner.** | D-015/D-032 |
 | **E6 — Validácia** ⏸️ parkované | Coding scheme + IDS súbory → conformance report (čo nesedí proti požiadavkám). Až keď bude treba. | D-033 |
 | **DV — Interaktívna prehliadačka výkresov** ✅ hotové | Klikateľné SNIM kódy vo výkrese → detail prvku, **obojsmerne** (z karty prvku → výkres so zvýraznením). Na **odprezentovanie previazanosti** (D-003). Fázy **A–D hotové** (`pdf_link.py` → `_drawing_links` → `pdf_annotate.py` → in-app react-pdf `/drawing/[id]` → obojsmernosť) + D-043 skladby. **197 element-väzieb / 414 link-regiónov.** Bez zmeny schémy. | D-042, D-043 |
 

@@ -1,7 +1,7 @@
 # Manifest dokumentov pre E3 (D-036). Mapuje legacy PDF → CDE názov + cieľ väzby.
 # source_path  = cesta relatívna k podklady/FINAL/ (oddeľovač '/').
 # container_name = CDE názov (Projekt_StupeňPD_ČástDíla_Profese_TypSouboru_Číslo_Popis).
-# target_ref   = object_ref uzla, na ktorý sa dokument viaže (rel_has_document):
+# target_ref   = object_ref uzla, na ktorý sa dokument viaže (rel_associates_document):
 #                'Polyfunkčný objekt' = building; '1NP'..'5NP' = floor.
 # status       = ISO 19650 stav (→ documents.status). revision = revízia (→ documents.revision).
 # role sa odvodzuje z TypSouboru v doc_scheme.py (VD→drawing, RP→report, …).

@@ -193,7 +193,7 @@ on conflict (id) do nothing;
 
 
 -- -----------------------------------------------------------------------------
--- 9. rel_defined_by_type (D-021) — occurrence → asset_type (1:N)
+-- 9. rel_defines_by_type (D-021) — occurrence → asset_type (1:N)
 --    AHU-01 aj AHU-02 zdieľajú ten istý typ → dedičnosť psetov + predefined_type.
 -- -----------------------------------------------------------------------------
 insert into rel_defines_by_type (id, from_id, to_id, source) values
@@ -211,7 +211,7 @@ on conflict (id) do nothing;
 
 
 -- -----------------------------------------------------------------------------
--- 11. rel_responsible_for (D-020) — Ján Novák zodpovedný za 2 assety,
+-- 11. rel_assigns_to_actor (D-020) — Ján Novák zodpovedný za 2 assety,
 --     dve RÔZNE acting roly (operator vs maintainer).
 -- -----------------------------------------------------------------------------
 insert into rel_assigns_to_actor (id, from_id, to_id, role, valid_from, source) values
@@ -221,7 +221,7 @@ on conflict (id) do nothing;
 
 
 -- -----------------------------------------------------------------------------
--- 12. rel_has_document (D-014) — manuál pripojený na AHU-01
+-- 12. rel_associates_document (D-014) — manuál pripojený na AHU-01
 -- -----------------------------------------------------------------------------
 insert into rel_associates_document (id, from_id, to_id, role, source) values
   ('e5000000-0000-0000-0000-0000000000a1', 'a0000000-0000-0000-0000-0000000000a1', 'a0000000-0000-0000-0000-0000000000c0', 'manual', 'seed')
@@ -229,7 +229,7 @@ on conflict (id) do nothing;
 
 
 -- -----------------------------------------------------------------------------
--- 13. rel_has_classification (D-023) — union faset
+-- 13. rel_associates_classification (D-023) — union faset
 --     Pr_ kód na type (dedí ho každá occurrence) · Ss_ kód navyše na AHU-01.
 --     v_asset_classifications pre AHU-01 → 2 riadky (level 'type' + 'occurrence'),
 --     pre AHU-02 → 1 riadok (len zdedený 'type').

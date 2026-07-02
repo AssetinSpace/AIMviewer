@@ -63,14 +63,15 @@ Primárny use case: AIM Viewer — ukážka správne previazaných dát.
   `rel_contained_in_spatial_structure` = fyzický prvok (asset) v priestore/podlaží
 
 ### Type–occurrence (D-021)
-- Type = `object_type='asset_type'`, NIKDY nie je v `rel_located_in`
-- Väzba `rel_defined_by_type` (occurrence → type), 1:N
+- Type = `object_type='asset_type'`, NIKDY nie je v priestorovej štruktúre
+  (`rel_aggregates` / `rel_contained_in_spatial_structure`)
+- Väzba `rel_defines_by_type` (occurrence → type), 1:N
 - Dedičnosť s prepisom: type zdieľané, occurrence prepíše; effective z `v_asset_effective`
 
 ### Aktori (D-020, D-024) — úroveň B
 - `person` (prípona `persons`) a `organization` (objects riadok), väzba `rel_member_of`
-- `rel_responsible_for` ide z person aj z organization
-- Dve roly: `rel_responsible_for.role` (acting v zodpovednosti) vs `rel_member_of.role` (rola vo firme)
+- `rel_assigns_to_actor` ide z person aj z organization
+- Dve roly: `rel_assigns_to_actor.role` (acting v zodpovednosti) vs `rel_member_of.role` (rola vo firme)
 - C (org-hierarchia, štruktúrované adresy, intrinsic roly) = plánované aditívne rozšírenie
 
 ### Identita objektov (trojvrstvová, D-010)
@@ -81,7 +82,7 @@ Primárny use case: AIM Viewer — ukážka správne previazaných dát.
 ### Klasifikácia (D-011, D-019, D-023)
 - Nikdy hardcodovať konkrétny klasifikačný systém
 - Dvojúrovňová, referenčné dáta: `classification_systems` + `classification_references`
-- Väzba `rel_has_classification`, povolená na type aj occurrence
+- Väzba `rel_associates_classification`, povolená na type aj occurrence
 - Efektívna klasifikácia occurrence = **union** vlastných + zdedených z type (nie override)
 
 ## Čo nerobiť
