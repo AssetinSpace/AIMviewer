@@ -6,7 +6,7 @@ súbory do public bucketu `documents/` a zapíše ich do grafu ako prvotriedne u
     objects(object_type='document', object_ref=<CDE názov>)
       └─ documents (identification, description, revision, status, location,
                     storage_type='supabase')
-    rel_has_document(from=target_ref → to=dokument, role=<z TypSouboru>)
+    rel_associates_document(from=target_ref → to=dokument, role=<z TypSouboru>)
 
 Identita dokumentu = **CDE názov kontajnera** (`object_ref`, D-010 vrstva 2),
 metadáta sa parsujú cez `doc_scheme.py` (D-036). Väzba ide z manifestu (`target_ref`),
@@ -212,11 +212,11 @@ def _write_document(cur, row: ManifestRow, location: str, storage_type: str) -> 
         (doc_id, row.container_name, name, location, row.revision, row.status, storage_type),
     )
 
-    # 4) rel_has_document(target → dokument, role z TypSouboru)
+    # 4) rel_associates_document(target → dokument, role z TypSouboru)
     eid = ids.edge_id(row.target_ref, row.container_name, "has_document")
     cur.execute(
         """
-        insert into rel_has_document
+        insert into rel_associates_document
           (id, from_id, to_id, role, valid_from, valid_until, source)
         values (%s, %s, %s, %s, now(), null, %s)
         on conflict (id) do update set

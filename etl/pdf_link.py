@@ -2,7 +2,7 @@
 
 CDE názov dokumentu (E3, D-036) zámerne **nenesie** väzbu na konkrétny prvok —
 tá sa získa až z **obsahu výkresu**. Tu skenujeme PDF pôdorysy, detegujeme SNIM
-kódy (`scheme.py`) a vytvoríme `rel_has_document(prvok → výkres)`. Pôdorys 1NP sa
+kódy (`scheme.py`) a vytvoríme `rel_associates_document(prvok → výkres)`. Pôdorys 1NP sa
 tak automaticky prepojí na typy/inštancie prvkov v ňom.
 
 Pipeline (D-033):
@@ -11,7 +11,7 @@ Pipeline (D-033):
      Bublina na výkrese nie je vždy jeden reťazec (`SN11` a `01` zvlášť) → **proximity
      match**: holý Assembly Code sa spojí s blízkym číselným fragmentom.
   3. Match na `object_ref` v DB (typové `DD01.06` aj inštančné `DD01.06.03`).
-  4. `rel_has_document(from=prvok, to=výkres, role='drawing', source='pdf_link (E4)')`.
+  4. `rel_associates_document(from=prvok, to=výkres, role='drawing', source='pdf_link (E4)')`.
   5. Link regióny (D-042): per zhoda sa uloží bbox + cieľ do `objects.properties.
      _drawing_links` (JSONB, `_`-kľúč = konvencia D-022, BEZ migrácie). Súradnice
      v PDF bottom-left (y-flip raz, na zdroji). **Jeden pipeline** — tá istá detekcia
@@ -341,12 +341,12 @@ def _write_links(cur, doc_id: str, regions: list[dict]) -> None:
 def _link(cur, from_id: str, doc_id: str, dry: bool) -> None:
     if dry:
         return
-    # rel_has_document(from=prvok, to=výkres) — zachováva smer D-014 (objekt → dokument)
+    # rel_associates_document(from=prvok, to=výkres) — zachováva smer D-014 (objekt → dokument)
     # psycopg vracia UUID stĺpce ako uuid.UUID → edge_id pracuje so stringami
     eid = ids.edge_id(str(from_id), str(doc_id), "has_document")
     cur.execute(
         """
-        insert into rel_has_document
+        insert into rel_associates_document
           (id, from_id, to_id, role, valid_from, valid_until, source)
         values (%s, %s, %s, %s, now(), null, %s)
         on conflict (id) do update set role = excluded.role, source = excluded.source
@@ -391,7 +391,7 @@ def process_drawing(
     # Región = jeden **fyzický výskyt** kódu (klikací hotspot), NIE jeden prvok:
     # ten istý `object_ref` sa na výkrese opakuje (napr. `ST01.21` 4×) a každý výskyt
     # má byť klikateľný. Dedupe preto na úrovni (strana, bbox, cieľ) — nie cieľa.
-    # `rel_has_document` ostáva 1 hrana na prvok (sémantická väzba) → `matched_ids`.
+    # `rel_associates_document` ostáva 1 hrana na prvok (sémantická väzba) → `matched_ids`.
     regions: list[dict] = []
     seen: set[tuple] = set()          # (page, bbox, target_id) — proti exaktným duplicitám
     matched_ids: set[str] = set()     # cieľe pre hrany (dedupe na úrovni prvku)

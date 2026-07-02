@@ -15,11 +15,13 @@ from .model import StagedModel
 
 # edge_type → (tabuľka, či má stĺpec `role`)
 _EDGE_TABLES = {
-    "located_in": ("rel_located_in", False),
-    "defined_by_type": ("rel_defined_by_type", False),
+    # spatial split (D-048): aggregates = dekompozícia štruktúry, contained = prvok v štruktúre
+    "aggregates": ("rel_aggregates", False),
+    "contained": ("rel_contained_in_spatial_structure", False),
+    "defined_by_type": ("rel_defines_by_type", False),
     "member_of": ("rel_member_of", True),
-    "has_document": ("rel_has_document", True),
-    "responsible_for": ("rel_responsible_for", True),
+    "has_document": ("rel_associates_document", True),
+    "responsible_for": ("rel_assigns_to_actor", True),
 }
 
 
@@ -227,7 +229,7 @@ def _load_class_links(
         cid = ids.edge_id(c.from_ref, f"{c.system_name}:{c.identification}", "has_classification")
         cur.execute(
             """
-            insert into rel_has_classification
+            insert into rel_associates_classification
               (id, from_id, to_id, valid_from, valid_until, source)
             values (%s, %s, %s, coalesce(%s, now()), %s, %s)
             on conflict (id) do update set

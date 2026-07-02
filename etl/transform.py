@@ -2,11 +2,11 @@
 
 Pokrýva štandardné IFC vzory, ktoré schéma modeluje:
   • priestorová hierarchia  Site→Building→Storey→Space  (IfcRelAggregates /
-    IfcRelContainedInSpatialStructure)            → objects + rel_located_in
+    IfcRelContainedInSpatialStructure)            → objects + rel_aggregates / rel_contained_in_spatial_structure
   • elementy (occurrence) + ich typy               → objects(asset/asset_type)
-    + rel_defined_by_type (IfcRelDefinesByType)
+    + rel_defines_by_type (IfcRelDefinesByType)
   • property sety (Pset_/Qto_ = štandard, inak custom) → properties JSONB
-  • klasifikácie na type aj occurrence              → classification_* + rel_has_classification
+  • klasifikácie na type aj occurrence              → classification_* + rel_associates_classification
   • dokumenty, aktori (B)                            → documents/persons + rel_*
 
 POZN. (doladiť na model diplomky — D-031 prereq): zdroj `object_ref`
@@ -321,19 +321,19 @@ def to_staged(model: ifcopenshell.file, coding: CodingScheme = scheme_mod.SNIM) 
             return spatial_refs.get(target.id())
         return spatial_refs.get(host.id())
 
-    # located_in: building→site, floor→building, space→(reálne) podlažie
+    # Spatial dekompozícia (D-048, rel_aggregates): building→site, floor→building, space→podlažie
     for ent in model.by_type("IfcBuilding"):
         parent_ref = _spatial_ref(ue.get_aggregate(ent))
         if parent_ref is not None:
-            staged.edges.append(Edge("located_in", spatial_refs[ent.id()], parent_ref))
+            staged.edges.append(Edge("aggregates", spatial_refs[ent.id()], parent_ref))
     for st in real_floors:
         parent_ref = _spatial_ref(ue.get_aggregate(st))
         if parent_ref is not None:
-            staged.edges.append(Edge("located_in", spatial_refs[st.id()], parent_ref))
+            staged.edges.append(Edge("aggregates", spatial_refs[st.id()], parent_ref))
     for sp in model.by_type("IfcSpace"):
         parent_ref = _spatial_ref(ue.get_aggregate(sp) or ue.get_container(sp))
         if parent_ref is not None:
-            staged.edges.append(Edge("located_in", spatial_refs[sp.id()], parent_ref))
+            staged.edges.append(Edge("aggregates", spatial_refs[sp.id()], parent_ref))
 
     # 2) Elementy (asset, rozsah z policy D-034): inštančný `object_ref` zo schémy
     #    + zber typových kódov. Typové entity (IfcDoorType…) nemajú vlastné psety →
@@ -348,7 +348,7 @@ def to_staged(model: ifcopenshell.file, coding: CodingScheme = scheme_mod.SNIM) 
         add_object(el, "asset", ref)
         loc_ref = _spatial_ref(ue.get_container(el))
         if loc_ref is not None:
-            staged.edges.append(Edge("located_in", ref, loc_ref))
+            staged.edges.append(Edge("contained", ref, loc_ref))
         el_type = ue.get_type(el)
         if el_type is not None:
             asset_type_links.append((ref, el_type.id()))
@@ -420,7 +420,7 @@ def _collect_classifications(
     systems_seen: dict[str, ClassificationSystem],
     refs_seen: set[tuple[str, str]],
 ) -> None:
-    """IfcRelAssociatesClassification → systém + referencia + rel_has_classification."""
+    """IfcRelAssociatesClassification → systém + referencia + rel_associates_classification."""
     for assoc in attr(entity, "HasAssociations") or []:
         if not assoc.is_a("IfcRelAssociatesClassification"):
             continue
@@ -446,7 +446,7 @@ def _collect_classifications(
 
 
 def _collect_documents(model: ifcopenshell.file, refs: _RefAllocator, staged: StagedModel) -> None:
-    """IfcRelAssociatesDocument → document objekt + rel_has_document. TODO(model)."""
+    """IfcRelAssociatesDocument → document objekt + rel_associates_document. TODO(model)."""
     seen: dict[int, str] = {}
     for assoc in model.by_type("IfcRelAssociatesDocument"):
         info = attr(assoc, "RelatingDocument")
@@ -480,7 +480,7 @@ def _collect_documents(model: ifcopenshell.file, refs: _RefAllocator, staged: St
 
 
 def _collect_actors(model: ifcopenshell.file, refs: _RefAllocator, staged: StagedModel) -> None:
-    """IfcRelAssignsToActor → person/organization + rel_responsible_for. TODO(model)."""
+    """IfcRelAssignsToActor → person/organization + rel_assigns_to_actor. TODO(model)."""
     for rel in model.by_type("IfcRelAssignsToActor"):
         actor = attr(rel, "RelatingActor")
         if actor is None:

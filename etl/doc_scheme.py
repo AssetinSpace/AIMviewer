@@ -95,7 +95,7 @@ STATUSES: dict[str, str] = {
     "AB": "Skutočné prevedenie (as-built)",
 }
 
-# `rel_has_document.role` odvodené z Typ souboru (D-014 / object-type.ts vocab).
+# `rel_associates_document.role` odvodené z Typ souboru (D-014 / object-type.ts vocab).
 # Typ je forma kontajnera; rola je *vzťah* dokumentu k uzlu. Mapovanie je 1:N-bezpečné
 # (viacero typov môže mať rovnakú rolu) a default = "document".
 _TYPE_TO_ROLE: dict[str, str] = {
@@ -129,7 +129,7 @@ class DocumentMeta:
 
     @property
     def role(self) -> str:
-        """`rel_has_document.role` z Typ souboru (fallback `document`)."""
+        """`rel_associates_document.role` z Typ souboru (fallback `document`)."""
         if not self.doc_type:
             return DEFAULT_ROLE
         return _TYPE_TO_ROLE.get(self.doc_type, DEFAULT_ROLE)

@@ -53,8 +53,9 @@ class ObjectRow:
 
 @dataclass
 class Edge:
-    """Hrana objekt→objekt (`rel_located_in`/`_defined_by_type`/`_member_of`/
-    `_has_document`/`_responsible_for`). `role` len kde to tabuľka má."""
+    """Hrana objekt→objekt, IFC-kanonická (D-048): edge_type ∈ aggregates/contained/
+    defined_by_type/member_of/has_document/responsible_for → tabuľky rel_* v db.py.
+    `role` len kde to tabuľka má."""
 
     edge_type: str
     from_ref: str
@@ -84,7 +85,7 @@ class ClassificationRef:
 
 @dataclass
 class ClassLink:
-    """`rel_has_classification`: objekt → klasifikačná referencia (D-023)."""
+    """`rel_associates_classification`: objekt → klasifikačná referencia (D-023)."""
 
     from_ref: str
     system_name: str
