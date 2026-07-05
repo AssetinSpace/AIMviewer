@@ -198,6 +198,15 @@ class ScopePolicy:
     exclude_classes: tuple[str, ...] = ("IfcFeatureElement",)   # otvory/voidy — nikdy asset
     # funkčne samostatné prvky aj vnorené (osadené vo fasáde / v schodisku)
     nested_keep: tuple[str, ...] = ("IfcDoor", "IfcWindow", "IfcRailing")
+    # MEP „grouping" (D-049): prvky, kde nezáleží na inštancii — importujú sa ako asset,
+    # ale NEdostávajú priestorové containment (nezahltia strom); sú len členmi systému
+    # (rel_assigns_to_group). Potrubie/tvarovky/rozvody. Instančne-relevantné MEP prvky
+    # (air terminals, VZT jednotky) sem NEpatria → dostanú podlažie normálne.
+    group_only: tuple[str, ...] = (
+        "IfcDuctSegment", "IfcDuctFitting",
+        "IfcPipeSegment", "IfcPipeFitting",
+        "IfcCableSegment", "IfcCableFitting", "IfcCableCarrierSegment", "IfcCableCarrierFitting",
+    )
 
     def is_asset(self, is_a: Callable[[str], bool], top_level: bool) -> bool:
         if any(is_a(cls) for cls in self.exclude_classes):
@@ -205,6 +214,10 @@ class ScopePolicy:
         if top_level:
             return True
         return any(is_a(cls) for cls in self.nested_keep)
+
+    def is_group_only(self, is_a: Callable[[str], bool]) -> bool:
+        """Prvok sa importuje, ale bez priestorového containmentu (len člen systému, D-049)."""
+        return any(is_a(cls) for cls in self.group_only)
 
 
 @dataclass

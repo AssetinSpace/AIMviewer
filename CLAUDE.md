@@ -22,7 +22,8 @@ Primárny use case: AIM Viewer — ukážka správne previazaných dát.
 
 ### Uzly — centrálna tabuľka `objects` (D-018)
 - Všetky uzly sú riadky v `objects`, rozlíšené `object_type`:
-  site, building, floor, space, asset, asset_type, document, person, organization
+  site, building, floor, space, asset, asset_type, document, person, organization,
+  system (IfcDistributionSystem, D-047/D-049)
 - `object_type` validuje ETL/app (NIE CHECK — pridanie typu je aditívne)
 - Povinné stĺpce: `id UUID PRIMARY KEY` (Master UUID), `object_type`, `created_at`, `updated_at`
 - IFC atribúty (stĺpce): `ifc_guid` (nullable), `ifc_type`, `predefined_type`,

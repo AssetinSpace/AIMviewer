@@ -51,8 +51,18 @@
   geometrie. LLM = **vlastné rozhranie** (D-005), NIE IFClite LLM (sandbox nad IFC súborom);
   IFClite = oči, nie mozog. **S-LLM → kritická cesta**, GUID verziovanie podporné. ETL
   rozšírenie na distribučné systémy/ventily (aditívne). Schéma sa nemení.
+- ✅ **D-049 — VZT federácia + distribučné systémy** (hotové 2026-07-05): `Office centrum
+  Brno - VZT.ifc` federovaný do existujúcej ASR štruktúry (napojenie na existujúce podlažia
+  cez normalizovaný názov `1NP_VZT`→`1NP`, bez duplicitných spatial koreňov). **9 systémov**
+  (`object_type='system'`, IfcDistributionSystem) + **1029 `rel_assigns_to_group`** väzieb;
+  MEP prvky importované (air terminals/jednotky s podlažím, potrubie/tvarovky „group-only" —
+  len člen systému). ETL: `--federate` režim (`etl/transform.py`+`db.py`+`main.py`).
+  Viewer: „Súčasť systému" na karte prvku + systémový uzol „Prvky systému". VZT je čisté
+  vetranie (0 ventilov/miestností) → **headline dotaz s ventilom čaká na vodný ÚK/ZTI model**.
 - 🟢 **S-LLM — LLM interface** (D-047, **kritická cesta**): text-to-query nad grafom,
-  vlastné rozhranie (Claude, D-005), guardraily + povinná citácia zdroja (trust loop)
+  vlastné rozhranie (Claude, D-005), guardraily + povinná citácia zdroja (trust loop).
+  **ETL základ pripravený** (D-049: systémy + členstvo v grafe) — dotaz „systém → prvky/
+  jednotka + podlažie" je teraz grafovo zodpovedateľný.
 
 **Máme:** Supabase Cloud (projekt `acwoupricatirhlfkhvk`) + GitHub repo (`AssetinSpace/AIMviewer`) + Vercel deploy (auto-deploy z `main`). **Chýba zatiaľ:** vlastná doména (príde v S4).
 

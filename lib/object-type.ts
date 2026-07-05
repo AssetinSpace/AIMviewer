@@ -6,7 +6,8 @@ export type ObjectType =
   | "asset_type"
   | "person"
   | "organization"
-  | "document";
+  | "document"
+  | "system";
 
 /** Slovenské labely typov uzlov (zobrazenie vo Viewerі). */
 export const OBJECT_TYPE_LABEL: Record<ObjectType, string> = {
@@ -19,6 +20,18 @@ export const OBJECT_TYPE_LABEL: Record<ObjectType, string> = {
   person: "Osoba",
   organization: "Organizácia",
   document: "Dokument",
+  system: "Systém",
+};
+
+/** Labely `IfcDistributionSystemEnum` (predefined_type systému, D-047). */
+export const SYSTEM_TYPE_LABEL: Record<string, string> = {
+  VENTILATION: "vetranie",
+  EXHAUST: "odvod",
+  AIRCONDITIONING: "klimatizácia",
+  HEATING: "kúrenie",
+  COOLING: "chladenie",
+  WATERSUPPLY: "vodovod",
+  DRAINAGE: "kanalizácia",
 };
 
 /** Acting roly zo `rel_assigns_to_actor.role` (D-020, IfcActorRole). */

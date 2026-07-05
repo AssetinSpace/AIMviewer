@@ -54,6 +54,16 @@ export interface FloorDrawing {
   elements: ElementInDrawing[];
 }
 
+/** Systém, ktorého je prvok členom (`rel_assigns_to_group`, D-047) — pre asset kartu. */
+export interface SystemRef {
+  /** System `objects.id` — cieľ odkazu `/node/[id]`. */
+  id: string;
+  objectRef: string | null;
+  name: string | null;
+  /** IfcDistributionSystemEnum (VENTILATION/EXHAUST…). */
+  predefinedType: string | null;
+}
+
 export interface ActorOrg {
   id: string;
   name: string | null;
@@ -411,6 +421,43 @@ export async function fetchResponsibilities(
       };
     })
     .sort((a, b) => a.role.localeCompare(b.role, "sk"));
+}
+
+/**
+ * Systémy, ktorých je prvok členom (`rel_assigns_to_group`, smer člen → systém,
+ * D-047). Pre asset kartu: „súčasť systému" (vetranie/odvod…). Aktívne väzby.
+ */
+export async function fetchSystemMembership(
+  objectId: string
+): Promise<SystemRef[]> {
+  const supabase = getSupabaseAdmin();
+
+  const { data: rels, error } = await supabase
+    .from("rel_assigns_to_group")
+    .select("to_id")
+    .eq("from_id", objectId)
+    .is("valid_until", null);
+  if (error) throw new Error(error.message);
+
+  const systemIds = [...new Set((rels ?? []).map((r) => r.to_id as string))];
+  if (systemIds.length === 0) return [];
+
+  const { data: systems, error: sysErr } = await supabase
+    .from("objects")
+    .select("id, object_ref, name, predefined_type")
+    .in("id", systemIds);
+  if (sysErr) throw new Error(sysErr.message);
+
+  return (systems ?? [])
+    .map((s) => ({
+      id: s.id as string,
+      objectRef: (s.object_ref as string | null) ?? null,
+      name: (s.name as string | null) ?? null,
+      predefinedType: (s.predefined_type as string | null) ?? null,
+    }))
+    .sort((a, b) =>
+      (a.name ?? a.objectRef ?? "").localeCompare(b.name ?? b.objectRef ?? "", "sk")
+    );
 }
 
 /**

@@ -517,6 +517,106 @@ async function fetchDocumentImpl(id: string): Promise<DocumentDetail | null> {
   };
 }
 
+/** Skupina členov systému podľa IFC typu (D-047) — pre systémovú kartu. */
+export interface SystemMemberGroup {
+  ifcType: string | null;
+  count: number;
+  /** Členovia (odkazy) — orezané na `SYSTEM_MEMBER_LIST_CAP`. */
+  members: ObjectLink[];
+}
+
+export interface SystemDetail {
+  id: string;
+  object_ref: string | null;
+  name: string | null;
+  /** IfcDistributionSystemEnum (VENTILATION/EXHAUST…). */
+  predefinedType: string | null;
+  memberCount: number;
+  groups: SystemMemberGroup[];
+}
+
+/** Koľko členov na skupinu vypíšeme ako odkazy (zvyšok len počet — VZT má stovky). */
+const SYSTEM_MEMBER_LIST_CAP = 60;
+
+/** Detail systému (D-047): členovia (`rel_assigns_to_group`) zoskupení podľa IFC typu. */
+async function fetchSystemImpl(id: string): Promise<SystemDetail | null> {
+  const supabase = getSupabaseAdmin();
+
+  const [objRes, memRes] = await Promise.all([
+    supabase
+      .from("objects")
+      .select("id, object_ref, name, predefined_type")
+      .eq("id", id)
+      .eq("object_type", "system")
+      .limit(1),
+    supabase
+      .from("rel_assigns_to_group")
+      .select("from_id")
+      .eq("to_id", id)
+      .is("valid_until", null),
+  ]);
+
+  if (objRes.error) throw new Error(objRes.error.message);
+  const obj = objRes.data?.[0];
+  if (!obj) return null;
+
+  if (memRes.error) throw new Error(memRes.error.message);
+  const memberIds = [...new Set((memRes.data ?? []).map((r) => r.from_id as string))];
+
+  // Členské objekty s IFC typom (loadObjectLinks nemá ifc_type → vlastný dotaz).
+  const members =
+    memberIds.length > 0
+      ? await supabase
+          .from("objects")
+          .select("id, object_type, object_ref, name, ifc_type")
+          .in("id", memberIds)
+          .then(({ data, error }) => {
+            if (error) throw new Error(error.message);
+            return (data ?? []) as {
+              id: string;
+              object_type: string;
+              object_ref: string | null;
+              name: string | null;
+              ifc_type: string | null;
+            }[];
+          })
+      : [];
+
+  // Zoskup podľa IFC typu; skupiny podľa počtu zostupne, členovia orezaní.
+  const byType = new Map<string, SystemMemberGroup>();
+  for (const m of members) {
+    const key = m.ifc_type ?? "—";
+    let g = byType.get(key);
+    if (!g) {
+      g = { ifcType: m.ifc_type ?? null, count: 0, members: [] };
+      byType.set(key, g);
+    }
+    g.count += 1;
+    if (g.members.length < SYSTEM_MEMBER_LIST_CAP) {
+      g.members.push({
+        id: m.id,
+        object_type: m.object_type as ObjectType,
+        object_ref: m.object_ref ?? null,
+        name: m.name ?? null,
+      });
+    }
+  }
+  for (const g of byType.values())
+    g.members.sort((a, b) =>
+      (a.object_ref ?? a.name ?? "").localeCompare(b.object_ref ?? b.name ?? "", "sk")
+    );
+  const groups = [...byType.values()].sort((a, b) => b.count - a.count);
+
+  return {
+    id: obj.id as string,
+    object_ref: (obj.object_ref as string | null) ?? null,
+    name: (obj.name as string | null) ?? null,
+    predefinedType: (obj.predefined_type as string | null) ?? null,
+    memberCount: members.length,
+    groups,
+  };
+}
+
 // Cachované per id (ISR, D-029 perf) — render uzlov je tým eligible pre Full Route Cache.
 export const fetchObjectMeta = unstable_cache(
   fetchObjectMetaImpl,
@@ -539,3 +639,4 @@ export const fetchNodeSummary = unstable_cache(
   ["fetch-node-summary"],
   AIM_CACHE
 );
+export const fetchSystem = unstable_cache(fetchSystemImpl, ["fetch-system"], AIM_CACHE);

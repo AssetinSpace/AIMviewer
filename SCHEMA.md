@@ -65,7 +65,7 @@ returns jsonb language sql immutable as $$
 create table objects (
   id                uuid primary key default gen_random_uuid(),   -- Master UUID (D-010/1)
   object_type       text not null,     -- 'site','building','floor','space','asset','asset_type',
-                                        -- 'document','person','organization'
+                                        -- 'document','person','organization','system' (D-047)
   object_ref        text unique,       -- ľudsky čitateľná identita / QR (D-010/2)
   name              text,              -- IFC Name (atribút)
   ifc_guid          text,              -- IFC GlobalId — len atribút, nullable (D-010/3)
@@ -216,8 +216,12 @@ create table rel_assigns_to_actor (
   valid_from timestamptz not null default now(), valid_until timestamptz, source text
 );
 
--- Členstvo v systéme (D-047). IFC: IfcRelAssignsToGroup (IfcRelAssigns)
--- from = člen (napr. IfcValve), to = system (object_type='system', IfcDistributionSystem)
+-- Členstvo v systéme (D-047, V PREVÁDZKE — VZT federácia D-049). IFC: IfcRelAssignsToGroup
+-- (IfcRelAssigns). from = člen (IfcAirTerminal/IfcDuctSegment/…), to = system
+-- (object_type='system', IfcDistributionSystem; predefined_type = IfcDistributionSystemEnum).
+-- Federácia (D-049): disciplinárny model (VZT) sa napojí na existujúcu priestorovú štruktúru
+-- cez normalizovaný názov podlažia (`1NP_VZT`→`1NP`), spatial korene 2. modelu sa neemitujú;
+-- group-only MEP prvky (potrubie/tvarovky) nie sú v priestorovom strome, len členmi systému.
 create table rel_assigns_to_group (
   id uuid primary key default gen_random_uuid(),
   from_id uuid not null references objects(id) on delete cascade,    -- člen (element)
@@ -316,6 +320,7 @@ CamelCase by vyžadoval úvodzovky a škodil LLM text-to-SQL). IFC väzba cez
 | `objects` (occurrence) | IfcObject (IfcProduct…) |
 | `object_type='asset_type'` | IfcTypeObject / IfcElementType |
 | `object_type='person'` / `'organization'` | IfcPerson / IfcOrganization |
+| `object_type='system'` | IfcDistributionSystem (predefined_type = IfcDistributionSystemEnum), D-047 |
 | `rel_aggregates` | IfcRelAggregates (IfcRelDecomposes) |
 | `rel_contained_in_spatial_structure` | IfcRelContainedInSpatialStructure (IfcRelConnects) |
 | `rel_defines_by_type` | IfcRelDefinesByType (IfcRelDefines) |

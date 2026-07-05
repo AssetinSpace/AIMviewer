@@ -7,14 +7,16 @@ import { fetchAsset } from "@/lib/data/asset";
 import {
   fetchNodeSections,
   fetchFloorDrawingsCached,
+  fetchSystemMembership,
   type NodeSectionsData,
 } from "@/lib/data/relations";
 import {
   fetchObjectMeta,
   fetchPerson,
   fetchOrganization,
+  fetchSystem,
 } from "@/lib/data/object";
-import { OBJECT_TYPE_LABEL } from "@/lib/object-type";
+import { OBJECT_TYPE_LABEL, SYSTEM_TYPE_LABEL, roleLabel } from "@/lib/object-type";
 import { formatDate } from "@/lib/utils";
 import { PropertySets } from "@/components/property-sets";
 import { ClassificationList } from "@/components/classification-list";
@@ -182,6 +184,44 @@ async function FloorDrawingsSection({ id }: { id: string }) {
   );
 }
 
+/**
+ * „Súčasť systému" (D-047) — systémy, ktorých je prvok členom (`rel_assigns_to_group`).
+ * Skryje sa, ak prvok nie je v žiadnom systéme (napr. stavebné prvky ARCH).
+ */
+async function SystemMembershipSection({ id }: { id: string }) {
+  const systems = await fetchSystemMembership(id);
+  if (systems.length === 0) return null;
+  return (
+    <Card className="mb-6">
+      <CardHeader>
+        <CardTitle>
+          Súčasť systému{" "}
+          <span className="text-muted-foreground">({systems.length})</span>
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        <ul className="space-y-2">
+          {systems.map((s) => (
+            <li key={s.id} className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
+              <Link
+                href={`/node/${s.id}`}
+                className="font-medium text-foreground underline decoration-dotted underline-offset-2 hover:decoration-solid"
+              >
+                {s.name ?? s.objectRef ?? s.id}
+              </Link>
+              {s.predefinedType && (
+                <span className="rounded bg-secondary px-1.5 py-0.5 text-[0.65rem] font-medium text-secondary-foreground">
+                  {roleLabel(SYSTEM_TYPE_LABEL, s.predefinedType)}
+                </span>
+              )}
+            </li>
+          ))}
+        </ul>
+      </CardContent>
+    </Card>
+  );
+}
+
 /** Detail assetu (S2 jadro + S3 sekcie): atribúty, properties, klasifikácie,
  *  dokumenty, zodpovednosti, GUID história. */
 async function AssetDetailView({ id }: { id: string }) {
@@ -267,6 +307,8 @@ async function AssetDetailView({ id }: { id: string }) {
           <ClassificationList facets={asset.classifications} />
         </CardContent>
       </Card>
+
+      <SystemMembershipSection id={id} />
 
       <NodeSectionsCards data={sections} ifcGuid={asset.ifc_guid} nodeId={id} />
     </>
@@ -515,6 +557,82 @@ async function OrganizationView({ id }: { id: string }) {
 }
 
 /**
+ * Detail systému (D-047): členovia (`rel_assigns_to_group`) zoskupení podľa IFC
+ * typu. Ukazuje previazanosť „systém → prvky" (headline graf pre S-LLM).
+ */
+async function SystemView({ id }: { id: string }) {
+  const system = await fetchSystem(id);
+  if (!system) notFound();
+
+  return (
+    <div className="mx-auto max-w-3xl">
+      <NodeHeader type="system" name={system.name} objectRef={system.object_ref} />
+
+      <Card className="mb-6">
+        <CardHeader>
+          <CardTitle>Atribúty</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <dl className="divide-y divide-border">
+            <Field
+              label="Druh systému"
+              value={
+                system.predefinedType
+                  ? roleLabel(SYSTEM_TYPE_LABEL, system.predefinedType)
+                  : null
+              }
+            />
+            <Field label="Počet prvkov" value={system.memberCount || null} />
+          </dl>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>
+            Prvky systému{" "}
+            <span className="text-muted-foreground">({system.memberCount})</span>
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {system.groups.length === 0 ? (
+            <p className="text-sm text-muted-foreground">Systém nemá evidované prvky.</p>
+          ) : (
+            <div className="space-y-5">
+              {system.groups.map((g) => (
+                <div key={g.ifcType ?? "—"}>
+                  <h3 className="mb-2 flex items-center gap-2 text-sm font-medium">
+                    <span className="font-mono text-[0.8rem]">{g.ifcType ?? "—"}</span>
+                    <span className="text-muted-foreground">({g.count})</span>
+                  </h3>
+                  <ul className="flex flex-wrap gap-1.5">
+                    {g.members.map((m) => (
+                      <li key={m.id}>
+                        <Link
+                          href={`/node/${m.id}`}
+                          className="inline-block rounded bg-secondary px-2 py-0.5 font-mono text-xs text-secondary-foreground hover:bg-secondary/80"
+                        >
+                          {m.object_ref ?? m.name ?? m.id}
+                        </Link>
+                      </li>
+                    ))}
+                    {g.count > g.members.length && (
+                      <li className="self-center text-xs text-muted-foreground">
+                        +{g.count - g.members.length} ďalších
+                      </li>
+                    )}
+                  </ul>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+/**
  * Generický object route (D-029): priestorové uzly cez `fetchNode` (S1), inak
  * dispatch podľa `object_type`. `asset_type` patrí na `/type/[id]`.
  */
@@ -540,6 +658,8 @@ export default async function NodePage({
       return <PersonView id={id} />;
     case "organization":
       return <OrganizationView id={id} />;
+    case "system":
+      return <SystemView id={id} />;
     case "document":
       // Dokumenty sa zobrazujú v prehliadačke (PDF + bočný panel, D-042 D+).
       redirect(`/drawing/${id}`);

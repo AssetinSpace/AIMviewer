@@ -67,16 +67,49 @@ interface Graph {
  * page (`fetchNode`) zdieľajú jeden výsledok namiesto dvoch identických setov
  * dotazov.
  */
-const loadGraph = cache(async (): Promise<Graph> => {
-  const supabase = getSupabaseAdmin();
+interface RawSpatialObject {
+  id: string;
+  object_type: string;
+  object_ref: string | null;
+  name: string | null;
+  ifc_type: string | null;
+  ifc_guid: string | null;
+  predefined_type: string | null;
+}
 
-  const [objectsRes, aggRes, containedRes, floorsRes, spacesRes] = await Promise.all([
-    supabase
+/**
+ * Načíta všetky priestorové objekty stránkovane (obchádza Supabase `db-max-rows`
+ * limit 1000). Stabilné poradie cez `order(id)` — nutné pre správne stránkovanie.
+ */
+async function loadSpatialObjects(
+  supabase: ReturnType<typeof getSupabaseAdmin>
+): Promise<RawSpatialObject[]> {
+  const PAGE = 1000;
+  const rows: RawSpatialObject[] = [];
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await supabase
       .from("objects")
       .select(
         "id, object_type, object_ref, name, ifc_type, ifc_guid, predefined_type"
       )
-      .in("object_type", SPATIAL_TYPES as unknown as string[]),
+      .in("object_type", SPATIAL_TYPES as unknown as string[])
+      .order("id", { ascending: true })
+      .range(from, from + PAGE - 1);
+    if (error) throw new Error(error.message);
+    rows.push(...((data ?? []) as RawSpatialObject[]));
+    if (!data || data.length < PAGE) break;
+  }
+  return rows;
+}
+
+const loadGraph = cache(async (): Promise<Graph> => {
+  const supabase = getSupabaseAdmin();
+
+  const [objectRows, aggRes, containedRes, floorsRes, spacesRes] = await Promise.all([
+    // Priestorové objekty stránkovane — Supabase capuje odpoveď na 1000 riadkov
+    // (`db-max-rows`), a assetov je po federácii VZT (D-049) > 1000. Bez stránkovania
+    // by sa prvky nad limit stratili z grafu (fetchNode → 404).
+    loadSpatialObjects(supabase),
     // Spatial väzby IFC-kanonicky (D-048): dekompozícia štruktúry (rel_aggregates)
     // + umiestnenie prvku (rel_contained_in_spatial_structure). Len aktívne
     // (valid_until IS NULL) — partial-unique na oboch garantuje 1 rodiča na dieťa.
@@ -92,7 +125,6 @@ const loadGraph = cache(async (): Promise<Graph> => {
     supabase.from("spaces").select("id, long_name"),
   ]);
 
-  if (objectsRes.error) throw new Error(objectsRes.error.message);
   if (aggRes.error) throw new Error(aggRes.error.message);
   if (containedRes.error) throw new Error(containedRes.error.message);
   if (floorsRes.error) throw new Error(floorsRes.error.message);
@@ -106,7 +138,7 @@ const loadGraph = cache(async (): Promise<Graph> => {
   );
 
   const byId = new Map<string, ObjectRow>();
-  for (const o of objectsRes.data ?? []) {
+  for (const o of objectRows) {
     const id = o.id as string;
     const rawName = (o.name as string | null) ?? null;
     // Priestor: zobraz "číslo — popis funkcie" (D-040). Name = číslo (IfcSpace.Name),
@@ -175,7 +207,10 @@ export const fetchSpatialTree = unstable_cache(
     const graph = await loadGraph();
     const roots: ObjectRow[] = [];
     for (const row of graph.byId.values()) {
-      if (!graph.parentOf.has(row.id)) roots.push(row);
+      // Koreň = priestorová štruktúra bez rodiča (site). `asset` bez rodiča je
+      // group-only MEP prvok (potrubie/tvarovky, D-049) — do stromu nepatrí
+      // (dostupný cez systém / priamy odkaz), inak by zaplavil sidebar.
+      if (!graph.parentOf.has(row.id) && row.object_type !== "asset") roots.push(row);
     }
     return roots.sort(compareNodes).map((r) => buildSubtree(r.id, graph));
   },

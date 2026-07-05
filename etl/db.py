@@ -22,7 +22,23 @@ _EDGE_TABLES = {
     "member_of": ("rel_member_of", True),
     "has_document": ("rel_associates_document", True),
     "responsible_for": ("rel_assigns_to_actor", True),
+    "assigns_to_group": ("rel_assigns_to_group", False),   # členstvo v systéme (D-047)
 }
+
+
+def fetch_existing_floors(url: str) -> list[tuple[str, object, object]]:
+    """Existujúce floor uzly `(object_ref, elevation, name)` — vstup pre federačné
+    mapovanie podlaží (D-049). Volá `main.py` pred VZT federate loadom."""
+    with psycopg.connect(url) as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "select o.object_ref, f.elevation, o.name from objects o "
+                "join floors f on f.id = o.id where o.object_type = 'floor'"
+            )
+            return [
+                (r[0], float(r[1]) if r[1] is not None else None, r[2])
+                for r in cur.fetchall()
+            ]
 
 
 def reset_data(cur) -> None:
@@ -191,7 +207,35 @@ def _load_guid_history(cur, model: StagedModel, obj_ids: dict[str, str]) -> None
         )
 
 
+def _resolve_cross_file_refs(cur, model: StagedModel, obj_ids: dict[str, str]) -> None:
+    """Doplní `obj_ids` o endpointy hrán, ktoré už existujú v DB (nie v tomto behu).
+
+    Federate load (D-049): VZT MEP containment ukazuje na **existujúce** floor uzly,
+    ktoré tento beh neemitoval. Dohľadáme ich id cez `object_ref`. Chýbajúci ref
+    (ani v behu, ani v DB) = tvrdá chyba (zlá federačná väzba)."""
+    missing = {
+        ref
+        for e in model.edges
+        for ref in (e.from_ref, e.to_ref)
+        if ref not in obj_ids
+    }
+    if not missing:
+        return
+    rows = cur.execute(
+        "select object_ref, id from objects where object_ref = any(%s)",
+        (list(missing),),
+    ).fetchall()
+    for object_ref, oid in rows:
+        obj_ids[object_ref] = oid
+    still = missing - obj_ids.keys()
+    if still:
+        raise ValueError(
+            f"Hrany odkazujú na neexistujúce object_ref (federácia, D-049): {sorted(still)}"
+        )
+
+
 def _load_edges(cur, model: StagedModel, obj_ids: dict[str, str]) -> None:
+    _resolve_cross_file_refs(cur, model, obj_ids)
     for e in model.edges:
         table, has_role = _EDGE_TABLES[e.edge_type]
         eid = ids.edge_id(e.from_ref, e.to_ref, e.edge_type)

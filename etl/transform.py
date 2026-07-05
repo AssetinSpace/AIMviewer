@@ -259,11 +259,43 @@ def _resolve_floors(model: ifcopenshell.file) -> tuple[list[Any], dict[int, Any]
     return real, mapping
 
 
-def to_staged(model: ifcopenshell.file, coding: CodingScheme = scheme_mod.SNIM) -> StagedModel:
+def to_staged(
+    model: ifcopenshell.file,
+    coding: CodingScheme = scheme_mod.SNIM,
+    federate: bool = False,
+    existing_floors: Optional[list[tuple[str, Optional[float], Optional[str]]]] = None,
+) -> StagedModel:
+    """IFC → staged model. `federate=True` (D-049) = disciplinárny model (VZT) sa napojí
+    na už naloženú priestorovú štruktúru: **neemitujú** sa jeho site/building/storey/space
+    ani ich `rel_aggregates`; prvky sa zavesia na **existujúce** floor uzly cez normalizovaný
+    názov podlažia (`1NP_VZT` → `1NP`), fallback najbližšia elevácia. `existing_floors` =
+    `[(object_ref, elevation, name), …]` z DB (dodá `main.py` pri federate loade); pri
+    dry-rune je None a ref sa odvodí priamo z `np_key` (zhoduje sa s konvenciou floor refov).
+    """
     staged = StagedModel()
     refs = _RefAllocator(coding)
     systems_seen: dict[str, ClassificationSystem] = {}
     refs_seen: set[tuple[str, str]] = set()
+
+    # Federačné mapovanie podlaží (D-049): np-kľúč / elevácia → existujúci floor object_ref.
+    floor_by_np: dict[str, str] = {}
+    floor_by_elev: list[tuple[float, str]] = []
+    for ref, elev, name in existing_floors or []:
+        key = _NP_PREFIX.search(name or ref or "")
+        if key:
+            floor_by_np.setdefault(key.group(0), ref)
+        if elev is not None:
+            floor_by_elev.append((elev, ref))
+
+    def external_floor_ref(storey: Any) -> Optional[str]:
+        """Object_ref existujúceho podlažia pre VZT storey (federate). np_key, inak elevácia."""
+        m = _NP_PREFIX.search(attr(storey, "Name") or "")
+        if m:
+            return floor_by_np.get(m.group(0), m.group(0))  # np_key = konvencia floor refu
+        if floor_by_elev:
+            e = _to_float(attr(storey, "Elevation")) or 0.0
+            return min(floor_by_elev, key=lambda t: abs(t[0] - e))[1]
+        return None
 
     def add_object(entity: Any, object_type: str, ref: str, **extra: Any) -> str:
         guid = attr(entity, "GlobalId")
@@ -294,46 +326,55 @@ def to_staged(model: ifcopenshell.file, coding: CodingScheme = scheme_mod.SNIM) 
     real_floors, storey_to_floor = _resolve_floors(model)
 
     spatial_refs: dict[int, str] = {}            # entity.id() → object_ref (emitnuté uzly)
-    for ifc_class, otype in (("IfcSite", "site"), ("IfcBuilding", "building")):
-        for ent in model.by_type(ifc_class):
-            spatial_refs[ent.id()] = add_object(ent, otype, refs.generic_ref(ent))
-    for st in real_floors:
-        spatial_refs[st.id()] = add_object(
-            st, "floor", refs.generic_ref(st), elevation=_to_float(attr(st, "Elevation"))
-        )
-    for sp in model.by_type("IfcSpace"):
-        # IfcSpace.Name = číslo miestnosti (→ objects.name), LongName = popis funkcie
-        # (Serverovňa, WC…) → prípona `spaces.long_name` (D-040). Generický Revit
-        # placeholder "Space" (nepomenovaná miestnosť) berieme ako prázdny.
-        long_name = attr(sp, "LongName")
-        if isinstance(long_name, str) and long_name.strip().lower() == "space":
-            long_name = None
-        spatial_refs[sp.id()] = add_object(
-            sp, "space", refs.generic_ref(sp), long_name=long_name
-        )
+    if not federate:
+        for ifc_class, otype in (("IfcSite", "site"), ("IfcBuilding", "building")):
+            for ent in model.by_type(ifc_class):
+                spatial_refs[ent.id()] = add_object(ent, otype, refs.generic_ref(ent))
+        for st in real_floors:
+            spatial_refs[st.id()] = add_object(
+                st, "floor", refs.generic_ref(st), elevation=_to_float(attr(st, "Elevation"))
+            )
+        for sp in model.by_type("IfcSpace"):
+            # IfcSpace.Name = číslo miestnosti (→ objects.name), LongName = popis funkcie
+            # (Serverovňa, WC…) → prípona `spaces.long_name` (D-040). Generický Revit
+            # placeholder "Space" (nepomenovaná miestnosť) berieme ako prázdny.
+            long_name = attr(sp, "LongName")
+            if isinstance(long_name, str) and long_name.strip().lower() == "space":
+                long_name = None
+            spatial_refs[sp.id()] = add_object(
+                sp, "space", refs.generic_ref(sp), long_name=long_name
+            )
 
     def _spatial_ref(host: Any) -> Optional[str]:
-        """Object_ref priestorového rodiča — podlažie premapuj na reálne (D-035)."""
+        """Object_ref priestorového rodiča — podlažie premapuj na reálne (D-035).
+
+        Federate (D-049): spatial korene VZT sa neemitujú → storey sa mapuje na
+        **existujúci** floor ref (`external_floor_ref`); ostatné kontajnery (site/building/
+        space VZT) → None (MEP prvky visia na podlaží, VZT nemá priestory)."""
         if host is None:
             return None
         if host.is_a("IfcBuildingStorey"):
+            if federate:
+                return external_floor_ref(host)
             target = storey_to_floor.get(host.id(), host)
             return spatial_refs.get(target.id())
         return spatial_refs.get(host.id())
 
-    # Spatial dekompozícia (D-048, rel_aggregates): building→site, floor→building, space→podlažie
-    for ent in model.by_type("IfcBuilding"):
-        parent_ref = _spatial_ref(ue.get_aggregate(ent))
-        if parent_ref is not None:
-            staged.edges.append(Edge("aggregates", spatial_refs[ent.id()], parent_ref))
-    for st in real_floors:
-        parent_ref = _spatial_ref(ue.get_aggregate(st))
-        if parent_ref is not None:
-            staged.edges.append(Edge("aggregates", spatial_refs[st.id()], parent_ref))
-    for sp in model.by_type("IfcSpace"):
-        parent_ref = _spatial_ref(ue.get_aggregate(sp) or ue.get_container(sp))
-        if parent_ref is not None:
-            staged.edges.append(Edge("aggregates", spatial_refs[sp.id()], parent_ref))
+    # Spatial dekompozícia (D-048, rel_aggregates): building→site, floor→building, space→podlažie.
+    # Vo federate režime sa NEemituje — VZT prvky sa zaraďujú do existujúcej štruktúry (D-049).
+    if not federate:
+        for ent in model.by_type("IfcBuilding"):
+            parent_ref = _spatial_ref(ue.get_aggregate(ent))
+            if parent_ref is not None:
+                staged.edges.append(Edge("aggregates", spatial_refs[ent.id()], parent_ref))
+        for st in real_floors:
+            parent_ref = _spatial_ref(ue.get_aggregate(st))
+            if parent_ref is not None:
+                staged.edges.append(Edge("aggregates", spatial_refs[st.id()], parent_ref))
+        for sp in model.by_type("IfcSpace"):
+            parent_ref = _spatial_ref(ue.get_aggregate(sp) or ue.get_container(sp))
+            if parent_ref is not None:
+                staged.edges.append(Edge("aggregates", spatial_refs[sp.id()], parent_ref))
 
     # 2) Elementy (asset, rozsah z policy D-034): inštančný `object_ref` zo schémy
     #    + zber typových kódov. Typové entity (IfcDoorType…) nemajú vlastné psety →
@@ -346,8 +387,10 @@ def to_staged(model: ifcopenshell.file, coding: CodingScheme = scheme_mod.SNIM) 
             continue
         ref, type_code = refs.allocate_asset(el)
         add_object(el, "asset", ref)
+        # Priestorové containment: group-only MEP prvky (potrubie/tvarovky, D-049) ho
+        # NEdostanú — sú len členmi systému (nezahltia strom); ostatné normálne.
         loc_ref = _spatial_ref(ue.get_container(el))
-        if loc_ref is not None:
+        if loc_ref is not None and not coding.scope.is_group_only(el.is_a):
             staged.edges.append(Edge("contained", ref, loc_ref))
         el_type = ue.get_type(el)
         if el_type is not None:
@@ -379,6 +422,23 @@ def to_staged(model: ifcopenshell.file, coding: CodingScheme = scheme_mod.SNIM) 
     for asset_ref, type_id in asset_type_links:
         if type_id in type_refs:
             staged.edges.append(Edge("defined_by_type", asset_ref, type_refs[type_id]))
+
+    # 4.5) Distribučné systémy (D-047) + členstvo. IfcDistributionSystem → object_type
+    #      'system' (predefined_type z IfcDistributionSystemEnum); IfcRelAssignsToGroup
+    #      (RelatingGroup = systém) → hrana assigns_to_group (člen → systém). Členom je
+    #      len prvok už emitnutý ako asset (refs._by_id) — žiadne dangling hrany.
+    system_refs: dict[int, str] = {}
+    for sysent in model.by_type("IfcDistributionSystem"):
+        system_refs[sysent.id()] = add_object(sysent, "system", refs.generic_ref(sysent))
+    for rel in model.by_type("IfcRelAssignsToGroup"):
+        group = attr(rel, "RelatingGroup")
+        if group is None or group.id() not in system_refs:
+            continue
+        sys_ref = system_refs[group.id()]
+        for member in attr(rel, "RelatedObjects") or []:
+            member_ref = refs._by_id.get(member.id())
+            if member_ref is not None:
+                staged.edges.append(Edge("assigns_to_group", member_ref, sys_ref))
 
     # 5) Dokumenty + aktori (best-effort, štruktúra je tu — doladiť na model, E2).
     _collect_documents(model, refs, staged)
