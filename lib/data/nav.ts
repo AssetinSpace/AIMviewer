@@ -20,12 +20,13 @@ export interface NavItem {
 
 export interface SidebarNavData {
   assetTypes: NavItem[];
+  systems: NavItem[];
   persons: NavItem[];
   organizations: NavItem[];
   documents: NavItem[];
 }
 
-const NAV_TYPES = ["asset_type", "person", "organization", "document"] as const;
+const NAV_TYPES = ["asset_type", "system", "person", "organization", "document"] as const;
 
 export const fetchSidebarNav = unstable_cache(async (): Promise<SidebarNavData> => {
   const supabase = getSupabaseAdmin();
@@ -37,12 +38,14 @@ export const fetchSidebarNav = unstable_cache(async (): Promise<SidebarNavData> 
 
   const groups: SidebarNavData = {
     assetTypes: [],
+    systems: [],
     persons: [],
     organizations: [],
     documents: [],
   };
   const bucket: Record<string, NavItem[]> = {
     asset_type: groups.assetTypes,
+    system: groups.systems,
     person: groups.persons,
     organization: groups.organizations,
     document: groups.documents,
@@ -61,6 +64,7 @@ export const fetchSidebarNav = unstable_cache(async (): Promise<SidebarNavData> 
   const byLabel = (a: NavItem, b: NavItem) =>
     (a.name ?? a.object_ref ?? "").localeCompare(b.name ?? b.object_ref ?? "", "sk");
   groups.assetTypes.sort(byLabel);
+  groups.systems.sort(byLabel);
   groups.persons.sort(byLabel);
   groups.organizations.sort(byLabel);
   groups.documents.sort(byLabel);

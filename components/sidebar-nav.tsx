@@ -10,6 +10,7 @@ import {
   Cuboid,
   FileText,
   User,
+  Waypoints,
   type LucideIcon,
 } from "lucide-react";
 
@@ -90,6 +91,7 @@ export function SidebarNav({ nav }: { nav: SidebarNavData }) {
   const pathname = usePathname();
   const empty =
     nav.assetTypes.length === 0 &&
+    nav.systems.length === 0 &&
     nav.persons.length === 0 &&
     nav.organizations.length === 0 &&
     nav.documents.length === 0;
@@ -111,6 +113,7 @@ export function SidebarNav({ nav }: { nav: SidebarNavData }) {
       {!empty && (
         <>
           <Section title="Typy assetov" icon={Box} items={nav.assetTypes} hrefBase="/type" />
+          <Section title="Systémy" icon={Waypoints} items={nav.systems} hrefBase="/node" />
           <Section title="Osoby" icon={User} items={nav.persons} hrefBase="/node" />
           <Section
             title="Organizácie"
