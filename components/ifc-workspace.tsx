@@ -1,35 +1,54 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { ElementInfoPanel } from "@/components/element-info-panel";
 import { FilterBar } from "@/components/filter-bar";
 import type { SelectedElement } from "@/lib/data/drawing";
-import type { GuidMap } from "@/lib/data/ifc";
+import type { GuidMap, IfcModelSource } from "@/lib/data/ifc";
 import type { ViewerApi } from "@/lib/viewer-api";
 
+const loadingFallback = () => (
+  <div className="flex h-full items-center justify-center rounded-md ring-1 ring-border text-sm text-muted-foreground">
+    Načítavam 3D prehliadač…
+  </div>
+);
+
+// WebGL (Three.js) — single-model, univerzálny fallback.
 const IFCViewer = dynamic(
   () => import("@/components/ifc-viewer").then((m) => m.IFCViewer),
-  {
-    ssr: false,
-    loading: () => (
-      <div className="flex h-full items-center justify-center rounded-md ring-1 ring-border text-sm text-muted-foreground">
-        Načítavam 3D prehliadač…
-      </div>
-    ),
-  }
+  { ssr: false, loading: loadingFallback }
+);
+
+// WebGPU (@ifc-lite/renderer) — federovaný multi-model, opt-in (?engine=gpu).
+const IFCViewerGPU = dynamic(
+  () => import("@/components/ifc-viewer-gpu").then((m) => m.IFCViewerGPU),
+  { ssr: false, loading: loadingFallback }
 );
 
 export default function IFCWorkspace({
   ifcUrl,
+  models,
   guidMap,
   focus,
 }: {
   ifcUrl: string;
+  models: IfcModelSource[];
   guidMap: GuidMap;
   focus?: string;
 }) {
+  // Engine výber: WebGPU sa použije len keď je opt-in (?engine=gpu) A dostupné.
+  // Default ostáva WebGL — nový renderer sa najprv overuje v Chrome.
+  const [useGpu, setUseGpu] = useState(false);
+  useEffect(() => {
+    // Klient-only hodnota (URL param + navigator.gpu) — číta sa až po mounte,
+    // aby nevznikol SSR/hydration mismatch.
+    const wants = new URLSearchParams(window.location.search).get("engine") === "gpu";
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setUseGpu(wants && typeof navigator !== "undefined" && "gpu" in navigator);
+  }, []);
+
   const viewerApiRef = useRef<ViewerApi | null>(null);
   const [selected, setSelected] = useState<SelectedElement | null>(null);
   const [activeFilterLabel, setActiveFilterLabel] = useState<string | null>(null);
@@ -86,14 +105,25 @@ export default function IFCWorkspace({
         )}
 
         <div style={{ height: "72vh" }}>
-          <IFCViewer
-            ifcUrl={ifcUrl}
-            guidMap={guidMap}
-            focus={focus}
-            apiRef={viewerApiRef}
-            onSelect={setSelected}
-            onPickedElement={handlePickedElement}
-          />
+          {useGpu ? (
+            <IFCViewerGPU
+              models={models}
+              guidMap={guidMap}
+              focus={focus}
+              apiRef={viewerApiRef}
+              onSelect={setSelected}
+              onPickedElement={handlePickedElement}
+            />
+          ) : (
+            <IFCViewer
+              ifcUrl={ifcUrl}
+              guidMap={guidMap}
+              focus={focus}
+              apiRef={viewerApiRef}
+              onSelect={setSelected}
+              onPickedElement={handlePickedElement}
+            />
+          )}
         </div>
       </div>
 

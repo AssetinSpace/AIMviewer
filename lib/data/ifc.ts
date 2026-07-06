@@ -9,13 +9,34 @@ const AIM_CACHE = { revalidate: 60, tags: ["aim"] };
 /** ifc_guid → objects.id (aktívne záznamy, valid_until IS NULL). */
 export type GuidMap = Record<string, string>;
 
-/** Verejná URL IFC súboru.
+const DEFAULT_ASR_URL =
+  "https://acwoupricatirhlfkhvk.supabase.co/storage/v1/object/public/ifc/ASR.ifc";
+
+/** Verejná URL primárneho (ASR) IFC súboru — používa single-model WebGL fallback.
  *  Priorita: NEXT_PUBLIC_IFC_URL env var → default Supabase Storage bucket `ifc/ASR.ifc`. */
 export function getIfcUrl(): string {
-  return (
-    process.env.NEXT_PUBLIC_IFC_URL ??
-    "https://acwoupricatirhlfkhvk.supabase.co/storage/v1/object/public/ifc/ASR.ifc"
-  );
+  return process.env.NEXT_PUBLIC_IFC_URL ?? DEFAULT_ASR_URL;
+}
+
+/** Jeden disciplinárny model v scéne (federácia, D-049). `id` = stabilný kľúč
+ *  pre federationRegistry aj toggle; `label` = popis v UI. */
+export interface IfcModelSource {
+  id: string;
+  label: string;
+  url: string;
+}
+
+/** Zoznam IFC modelov pre WebGPU (federovaný) viewer.
+ *  ASR je vždy prítomný; VZT (a ďalšie) sa pridá cez env, keď je nahraný do Storage.
+ *  - NEXT_PUBLIC_IFC_URL   → ASR (architektúra)
+ *  - NEXT_PUBLIC_VZT_URL   → VZT (vzduchotechnika, D-049) — voliteľné */
+export function getIfcModels(): IfcModelSource[] {
+  const models: IfcModelSource[] = [
+    { id: "asr", label: "ASR — architektúra", url: getIfcUrl() },
+  ];
+  const vzt = process.env.NEXT_PUBLIC_VZT_URL;
+  if (vzt) models.push({ id: "vzt", label: "VZT — vzduchotechnika", url: vzt });
+  return models;
 }
 
 async function fetchGuidMapImpl(): Promise<GuidMap> {

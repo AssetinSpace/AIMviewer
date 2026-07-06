@@ -1158,6 +1158,41 @@ policy. Port-konektivita (`IfcRelConnectsPorts`) je odložené rozšírenie (D-0
 
 ---
 
+### D-050 — WebGPU renderer (@ifc-lite/renderer) + federovaný multi-model viewer
+
+**Kontext:** Viewer (D-044) používal z IFClite jedinú funkciu (`IfcAPI.exportGlb`) a
+zvyšok — GUID mapa, podlažia, containment, picking — riešil **vlastnými regexmi nad
+STEP textom** a Three.js scénou nad jedným modelom. VZT (D-049) je federovaný v
+dátovom grafe, ale jeho **geometria sa v 3D nezobrazovala** (viewer vie len jeden
+natvrdo daný súbor). Prieskum IFClite ekosystému ukázal oficiálny **`@ifc-lite/renderer`**
+(WebGPU) s natívnou **federáciou modelov** (`federationRegistry`), GPU pickingom, section
+planes, hidden/isolated/color overrides a HW frustum cullingom — presne funkcie, ktoré
+sme si písali ručne.
+
+**Rozhodnutie:** Prebrať oficiálny renderer a federáciu namiesto reimplementácie.
+Bump IFClite stacku na v3 (`wasm` 3.x, `geometry` 3.x) + pridať `renderer`. Nový
+komponent `ifc-viewer-gpu.tsx` načíta N disciplinárnych modelov (ASR + VZT + …),
+federuje ich cez `federationRegistry` (ID offset per model), a umožní ich **zapínať/
+vypínať v jednej scéne**. Spojka 3D↔DB ostáva IFC GUID; DB sa geometrie nedotýka (D-044).
+
+**Guardrails / rozsah:**
+- **WebGPU-only** (renderer nemá WebGL fallback). Cieľové prostredie dema = Windows/Chrome.
+  Starší iOS Safari (< 26) sa vedome nepodporuje pre nový engine.
+- **Fallback zachovaný:** pôvodný WebGL viewer (`ifc-viewer.tsx`, Three.js, single-model)
+  ostáva a je **default**. Nový engine je **opt-in cez `?engine=gpu`** (a len keď
+  `navigator.gpu` existuje), kým sa runtime neoverí v Chrome. Prehodenie na default =
+  jednoriadková zmena.
+- **Modely cez env:** `NEXT_PUBLIC_IFC_URL` (ASR) + `NEXT_PUBLIC_VZT_URL` (VZT, voliteľné);
+  `getIfcModels()` v `lib/data/ifc.ts`. VZT treba najprv nahrať do Storage (`etl/ifc_upload.py`).
+- **Federácia vyžaduje `enableInstancing:false`** v `GeometryProcessor` (inak renderer
+  zahodí opakované occurrences druhého modelu).
+
+**Follow-up (neblokuje):** storey filter a per-prvok zoom v GPU viewri (v1 má model on/off,
+picking, DB→3D farebný filter, focus=select+fit); náhrada STEP-regexov `@ifc-lite/query`-om;
+DuckDB SQL pre D-047; clash detection VZT×ARCH; grid axes → D-039.
+
+---
+
 ## 8. Budúce rozhodnutia (D-037+)
 
 > Brainstorm smerov, ešte **nerozhodnuté** — sú to kandidáti, nie záväzky.

@@ -131,7 +131,7 @@ export function IFCViewer({
           default: (path?: string | URL | Request) => Promise<unknown>;
           IfcAPI: new () => {
             exportGlb(
-              content: string,
+              content: Uint8Array,
               includeMetadata: boolean,
               hidden: Uint32Array,
               isolated: Uint32Array,
@@ -227,7 +227,7 @@ export function IFCViewer({
         const api = new IfcAPI();
         const empty = new Uint32Array(0);
         const glbBytes = api.exportGlb(
-          ifcText,
+          ifcBuffer, // v3: exportGlb berie Uint8Array (predtým string)
           true,
           empty,
           empty,
