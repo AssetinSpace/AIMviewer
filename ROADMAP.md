@@ -59,10 +59,14 @@
   len člen systému). ETL: `--federate` režim (`etl/transform.py`+`db.py`+`main.py`).
   Viewer: „Súčasť systému" na karte prvku + systémový uzol „Prvky systému". VZT je čisté
   vetranie (0 ventilov/miestností) → **headline dotaz s ventilom čaká na vodný ÚK/ZTI model**.
-- 🟢 **S-LLM — LLM interface** (D-047, **kritická cesta**): text-to-query nad grafom,
-  vlastné rozhranie (Claude, D-005), guardraily + povinná citácia zdroja (trust loop).
-  **ETL základ pripravený** (D-049: systémy + členstvo v grafe) — dotaz „systém → prvky/
-  jednotka + podlažie" je teraz grafovo zodpovedateľný.
+- 🟢 **S-LLM — LLM interface** (D-047/**D-050**, **kritická cesta**): text-to-query nad grafom,
+  vlastné rozhranie, guardraily + povinná citácia zdroja (trust loop). **ETL základ pripravený**
+  (D-049: systémy + členstvo v grafe) — dotaz „systém → prvky/jednotka + podlažie" je teraz
+  grafovo zodpovedateľný. **F1 (backend rúra) HOTOVÁ:** provider-agnostická vrstva (`lib/llm/*`)
+  — tool-calling loop, adaptéry `anthropic` + `openai-compat` (model cez env, D-050),
+  4 grafové nástroje (`lib/llm/tools.ts` + `lib/data/systems.ts`), endpoint `app/api/ask`.
+  `tsc`+`lint`+build čisté; adaptéry a loop pokryté runtime testami. Ostáva F2 (D-049 jadro
+  naviazané na kontext prvku) → F3 (UI chat panel) → F4 (polish + guardraily).
 
 **Máme:** Supabase Cloud (projekt `acwoupricatirhlfkhvk`) + GitHub repo (`AssetinSpace/AIMviewer`) + Vercel deploy (auto-deploy z `main`). **Chýba zatiaľ:** vlastná doména (príde v S4).
 
