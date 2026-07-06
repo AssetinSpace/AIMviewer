@@ -1156,6 +1156,53 @@ dema (D-003) aj text-to-query (D-047). Name+elevačný match je pre tento pár m
 (rovnaký Revit projekt) deterministický; ako všeobecný princíp ho drží konfigurovateľná
 policy. Port-konektivita (`IfcRelConnectsPorts`) je odložené rozšírenie (D-047).
 
+### D-050 — S-LLM architektúra: tool-calling nad grafom + provider-agnostická vrstva
+
+**Kontext:** D-047 určil S-LLM (prirodzený jazyk nad grafom + trust loop) ako kritickú
+cestu; D-049 dodal ETL základ (systémy + členstvo). Sprint S-LLM sa rozbieha. Dve
+architektonické voľby bolo treba zafixovať pred kódom.
+
+**Rozhodnutie 1 — tool-calling, NIE SQL-generovanie:** LLM **nedostane SQL ani DB
+schému**. Namiesto toho volá uzavretú sadu **whitelistovaných grafových nástrojov**
+(`lib/llm/tools.ts`), ktoré sú tenké wrappery nad existujúcou data-access vrstvou
+(`lib/data/*`). Guardraily D-005 (read-only, whitelist views, row limit) sú tak splnené
+**konštrukciou** — model nikdy neskladá dotaz, len vyberá z nástrojov a ich argumentov.
+Tool-calling loop (zavolaj model → spusti nástroje → vráť výsledky → opakuj) žije
+v **provider-neutrálnom orchestrátore** (`lib/llm/orchestrator.ts`). SQL-generovanie
+ostáva dokumentovaná budúca extenzia, ak dotazy prerastú sadu nástrojov.
+
+**Rozhodnutie 2 — provider-agnostická vrstva (plug-in „barsaký" model cez API):**
+Model/provider sa vyberá **cez env, bez zmeny kódu**. Tri vrstvy:
+- **Orchestrátor** (neutral) — normalizované typy `ChatMessage`/`ToolSpec`/`ProviderTurn`.
+- **Adaptér** (`lib/llm/providers/*`) — preklad do/z konkrétneho API. Dva stačia na
+  prakticky ľubovoľný model: `anthropic` (`/v1/messages`, tool_use/tool_result bloky)
+  a `openai-compat` (`/chat/completions`, `tools`/`tool_calls`). OpenAI-kompatibilný
+  adaptér + konfigurovateľná `LLM_BASE_URL` obslúži OpenAI, OpenRouter, Groq, Together,
+  DeepSeek, lokálne vLLM/Ollama/LM Studio.
+- **Kľúč = univerzálny kontrakt:** JSON-schema definície nástrojov sú prenosné naprieč
+  providermi — `tools.ts` je provider-neutrálny, líši sa len drôtový formát v adaptéri.
+
+**Implementačné poznámky:**
+- Bez novej npm závislosti — adaptéry volajú API cez `fetch` (obe API sú jednoduché HTTP).
+  Menej lock-inu, menšia plocha, funguje aj offline/lokálny endpoint.
+- Env: `LLM_PROVIDER`, `LLM_MODEL`, `LLM_API_KEY`, `LLM_BASE_URL` (voliteľné),
+  `LLM_MAX_TOKENS`, `LLM_TEMPERATURE`. Factory `getLlmProvider()` číta env; **žiadny
+  model-id natvrdo v kóde** (chýbajúci `LLM_MODEL`/`LLM_API_KEY` → jasná chyba).
+- Kľúč je **server-only** (route handler `app/api/ask`), nikdy do prehliadača (D-025/D-026).
+- **Trust loop:** každá odpoveď nesie `citations[]` (objekt → `/node/{id}`, 3D `?focus=<guid>`
+  cez `ifc_guid`, dokument → výkres). Citácie skladá orchestrátor z tool-výsledkov —
+  deterministicky z dát, nie parsovaním textu. System-prompt vynucuje „odpovedaj len
+  z výsledkov nástrojov; ak nič, povedz to; cituj zdroj".
+
+**Dôsledok:** Schéma sa **nemení**. Nová vrstva `lib/llm/*` + `lib/data/systems.ts`
+(D-049 dotazy) + `app/api/ask/route.ts`. Fázy: F1 rúra (adaptéry + orchestrátor + API +
+prvé nástroje) → F2 D-049 jadro → F3 UI panel → F4 polish. Prompted-JSON fallback pre
+modely bez natívneho tool-callingu = neskoršie rozšírenie adaptéra.
+
+**Dôvod:** Hodnota dema je graf a dohľadateľnosť (D-047), nie konkrétny model — preto
+model vymeniteľný a mozog (výber nástrojov + citácia) náš. Tool-calling drží guardraily
+lacno a robí citácie deterministickými.
+
 ---
 
 ## 8. Budúce rozhodnutia (D-037+)
