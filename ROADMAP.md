@@ -70,6 +70,12 @@
   „tohto prvku" z URL (`/node|/type/<id>` → `contextObjectId`), klikateľné citácie (karta
   `/node/<id>` + 3D `/ifc?focus=<guid>`). Ostáva **F4** (polish + streaming + prompted-JSON
   fallback) a **end-to-end validácia** proti živej DB + reálnemu modelu (čaká na env kľúč).
+  ⏸️ **PAUZA (prerušené):** F1–F3 hotové a pushnuté, overené bez credentials (`tsc`/`lint`/
+  build + runtime testy adaptérov/loopu/context-parsingu). **F4 zámerne pozastavené** — jeho
+  jadro (ladenie system-promptu, prompted-JSON fallback, streaming, error/empty stavy) sa
+  ladí podľa reálneho správania, preto **čaká na jeden živý beh** (Supabase creds + LLM kľúč).
+  Bez neho by bolo F4 hádanie. Pokračovanie: doplniť `.env.local` a spustiť 2–3 otázky
+  cez panel „Opýtať sa", potom F4 cielene.
 
 **Máme:** Supabase Cloud (projekt `acwoupricatirhlfkhvk`) + GitHub repo (`AssetinSpace/AIMviewer`) + Vercel deploy (auto-deploy z `main`). **Chýba zatiaľ:** vlastná doména (príde v S4).
 
