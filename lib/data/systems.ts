@@ -48,23 +48,33 @@ export async function resolveObjects(
   if (!q) return [];
   const supabase = getSupabaseAdmin();
 
-  // Supabase `or` s ilike — % musí byť v hodnote; escapujeme zástupné znaky.
-  const safe = q.replace(/[%_,]/g, (m) => `\\${m}`);
-  const { data, error } = await supabase
-    .from("objects")
-    .select(OBJECT_COLS)
-    .or(`object_ref.ilike.%${safe}%,name.ilike.%${safe}%`)
-    .limit(limit);
-  if (error) throw new Error(error.message);
+  // Dva samostatné `.ilike()` dotazy (parametrizované, čiarka/rezervované znaky
+  // bezpečné) namiesto `.or()` s raw textom — potom zliatie a dedupe podľa id.
+  const pattern = `%${q}%`;
+  const [byRef, byName] = await Promise.all([
+    supabase.from("objects").select(OBJECT_COLS).ilike("object_ref", pattern).limit(limit),
+    supabase.from("objects").select(OBJECT_COLS).ilike("name", pattern).limit(limit),
+  ]);
+  if (byRef.error) throw new Error(byRef.error.message);
+  if (byName.error) throw new Error(byName.error.message);
 
-  const rows = (data ?? []).map(toMatch);
+  const seen = new Set<string>();
+  const rows: ObjectMatch[] = [];
+  for (const r of [...(byRef.data ?? []), ...(byName.data ?? [])]) {
+    const id = r.id as string;
+    if (seen.has(id)) continue;
+    seen.add(id);
+    rows.push(toMatch(r));
+  }
+
   const ql = q.toLowerCase();
-  return rows.sort((a, b) => {
+  rows.sort((a, b) => {
     const score = (m: ObjectMatch) =>
       (m.objectRef?.toLowerCase() === ql ? 0 : 1) +
       (m.objectRef?.toLowerCase().startsWith(ql) ? 0 : 1);
     return score(a) - score(b);
   });
+  return rows.slice(0, limit);
 }
 
 /** Základný opis jedného objektu podľa id. */
