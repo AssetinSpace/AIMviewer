@@ -540,13 +540,18 @@ def _collect_documents(model: ifcopenshell.file, refs: _RefAllocator, staged: St
 
 
 def _collect_actors(model: ifcopenshell.file, refs: _RefAllocator, staged: StagedModel) -> None:
-    """IfcRelAssignsToActor → person/organization + rel_assigns_to_actor. TODO(model)."""
+    """IfcRelAssignsToActor → person/organization + rel_assigns_to_actor. TODO(model).
+
+    `seen` dedupe-uje emitnuté person/org uzly: ten istý aktor (rovnaké `object_ref`)
+    môže figurovať vo viacerých actor-vzťahoch — bez dedupu by sme do `staged.objects`
+    pridali ten istý riadok N-krát (upsert je idempotentný, ale je to zbytočná práca)."""
+    seen: set[str] = set()
     for rel in model.by_type("IfcRelAssignsToActor"):
         actor = attr(rel, "RelatingActor")
         if actor is None:
             continue
         the_actor = attr(actor, "TheActor")
-        actor_ref = _actor_object(the_actor, refs, staged)
+        actor_ref = _actor_object(the_actor, refs, staged, seen)
         if actor_ref is None:
             continue
         role = attr(rel, "ActingRole")
@@ -558,27 +563,34 @@ def _collect_actors(model: ifcopenshell.file, refs: _RefAllocator, staged: Stage
                 )
 
 
-def _actor_object(the_actor: Any, refs: _RefAllocator, staged: StagedModel) -> Optional[str]:
+def _actor_object(
+    the_actor: Any, refs: _RefAllocator, staged: StagedModel, seen: set[str]
+) -> Optional[str]:
     """IfcPerson / IfcOrganization / IfcPersonAndOrganization → objekt(y) + rel_member_of."""
     if the_actor is None:
         return None
     if the_actor.is_a("IfcPersonAndOrganization"):
-        person_ref = _person_object(attr(the_actor, "ThePerson"), refs, staged)
-        org_ref = _org_object(attr(the_actor, "TheOrganization"), refs, staged)
+        person_ref = _person_object(attr(the_actor, "ThePerson"), refs, staged, seen)
+        org_ref = _org_object(attr(the_actor, "TheOrganization"), refs, staged, seen)
         if person_ref and org_ref:
             staged.edges.append(Edge("member_of", person_ref, org_ref))
         return person_ref or org_ref
     if the_actor.is_a("IfcPerson"):
-        return _person_object(the_actor, refs, staged)
+        return _person_object(the_actor, refs, staged, seen)
     if the_actor.is_a("IfcOrganization"):
-        return _org_object(the_actor, refs, staged)
+        return _org_object(the_actor, refs, staged, seen)
     return None
 
 
-def _person_object(person: Any, refs: _RefAllocator, staged: StagedModel) -> Optional[str]:
+def _person_object(
+    person: Any, refs: _RefAllocator, staged: StagedModel, seen: set[str]
+) -> Optional[str]:
     if person is None:
         return None
     ref = refs.ref(person)
+    if ref in seen:
+        return ref
+    seen.add(ref)
     given, family = attr(person, "GivenName"), attr(person, "FamilyName")
     name = " ".join(x for x in (given, family) if x) or None
     staged.objects.append(
@@ -592,10 +604,15 @@ def _person_object(person: Any, refs: _RefAllocator, staged: StagedModel) -> Opt
     return ref
 
 
-def _org_object(org: Any, refs: _RefAllocator, staged: StagedModel) -> Optional[str]:
+def _org_object(
+    org: Any, refs: _RefAllocator, staged: StagedModel, seen: set[str]
+) -> Optional[str]:
     if org is None:
         return None
     ref = refs.ref(org)
+    if ref in seen:
+        return ref
+    seen.add(ref)
     staged.objects.append(
         ObjectRow(object_ref=ref, object_type="organization", name=attr(org, "Name"))
     )

@@ -40,11 +40,14 @@ export const fetchByClassificationPrefix = unstable_cache(
   async (prefix: string): Promise<string[]> => {
     const supabase = getSupabaseAdmin();
 
-    // Step 1: find matching classification reference IDs
+    // Step 1: find matching classification reference IDs. Escapuj LIKE wildcardy
+    // (`%`, `_`, `\`) v používateľskom prefixe — inak by fungovali ako žolíky
+    // a vrátili nečakané zhody (napr. prefix "D_01" ≠ "D_01" literál).
+    const escaped = prefix.replace(/[\\%_]/g, (c) => `\\${c}`);
     const { data: refRows, error: refErr } = await supabase
       .from("classification_references")
       .select("id")
-      .like("identification", `${prefix}%`);
+      .like("identification", `${escaped}%`);
     if (refErr) throw new Error(refErr.message);
     const refIds = (refRows ?? []).map((r) => r.id as string);
     if (refIds.length === 0) return [];
