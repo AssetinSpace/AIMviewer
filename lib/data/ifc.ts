@@ -10,7 +10,7 @@ const AIM_CACHE = { revalidate: 60, tags: ["aim"] };
 export type GuidMap = Record<string, string>;
 
 /** Verejná URL IFC súboru.
- *  Priorita: NEXT_PUBLIC_IFC_URL env var → Supabase Storage bucket `ifc/` → /model.ifc. */
+ *  Priorita: NEXT_PUBLIC_IFC_URL env var → default Supabase Storage bucket `ifc/ASR.ifc`. */
 export function getIfcUrl(): string {
   return (
     process.env.NEXT_PUBLIC_IFC_URL ??

@@ -43,6 +43,8 @@ export function IFCViewer({
   const [status, setStatus] = useState<"loading" | "error" | "ready">("loading");
   const [errorMsg, setErrorMsg] = useState("");
   const [progress, setProgress] = useState("");
+  // Ručné znovunačítanie (tlačidlo „Skúsiť znova") — inkrement re-spustí hlavný effect.
+  const [reloadKey, setReloadKey] = useState(0);
   const [storeys, setStoreys] = useState<StoreyInfo[]>([]);
   const [activeStoreyEid, setActiveStoreyEid] = useState<number | null>(null);
 
@@ -69,7 +71,9 @@ export function IFCViewer({
     const container = containerRef.current;
     if (!container) return;
 
-    // Reset stavu pri zmene modelu
+    // Reset stavu pri zmene modelu / znovunačítaní
+    setStatus("loading");
+    setErrorMsg("");
     setStoreys([]);
     setActiveStoreyEid(null);
     applyStoreyFilterRef.current = null;
@@ -137,13 +141,28 @@ export function IFCViewer({
         };
         if (cancelled) return;
 
-        await initWasm("/ifc-lite_bg.wasm");
+        // wasm-bindgen streaming loader prehodí prechodné zlyhania stiahnutia
+        // .wasm (cold CDN edge, mid-deploy race, flaky proxy) — v Safari sa to
+        // prejaví ako „Load failed". Jeden retry to zvyčajne vyrieši.
+        try {
+          await withRetry(() => initWasm("/ifc-lite_bg.wasm"));
+        } catch (err) {
+          throw new Error(`Inicializácia 3D enginu zlyhala (WASM): ${errMsg(err)}`);
+        }
         if (cancelled) return;
 
         // ── Fetch IFC ───────────────────────────────────────────────
         setProgress("Sťahujem IFC model…");
-        const resp = await fetch(ifcUrl);
-        if (!resp.ok) throw new Error(`IFC ${resp.status}: ${resp.statusText}`);
+        let resp: Response;
+        try {
+          resp = await withRetry(() => fetch(ifcUrl));
+        } catch (err) {
+          // Sieťové/CORS zlyhanie fetchu (Safari „Load failed") — nemá HTTP status.
+          throw new Error(`Načítanie IFC súboru zlyhalo — ${errMsg(err)}\n${ifcUrl}`);
+        }
+        if (!resp.ok) {
+          throw new Error(`IFC ${resp.status} ${resp.statusText}\n${ifcUrl}`);
+        }
         const ifcText = await resp.text();
         if (cancelled) return;
 
@@ -430,7 +449,7 @@ export function IFCViewer({
       }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ifcUrl]);
+  }, [ifcUrl, reloadKey]);
 
   return (
     <div className="relative h-full w-full overflow-hidden rounded-md ring-1 ring-border">
@@ -448,13 +467,21 @@ export function IFCViewer({
           <span className="text-sm font-semibold text-destructive">
             Chyba pri načítaní 3D modelu
           </span>
-          <span className="max-w-sm text-xs text-muted-foreground">{errorMsg}</span>
-          <span className="text-xs text-muted-foreground">
-            Skontrolujte, či je súbor{" "}
-            <code className="rounded bg-muted px-1">public/model.ifc</code> prítomný,
-            alebo nastavte{" "}
+          <span className="max-w-sm whitespace-pre-line break-words text-xs text-muted-foreground">
+            {errorMsg}
+          </span>
+          <span className="max-w-sm text-xs text-muted-foreground">
+            Model sa načítava zo Supabase Storage (bucket{" "}
+            <code className="rounded bg-muted px-1">ifc/</code>). Skontrolujte, či
+            súbor na uvedenej URL existuje a je verejný, prípadne nastavte{" "}
             <code className="rounded bg-muted px-1">NEXT_PUBLIC_IFC_URL</code>.
           </span>
+          <button
+            onClick={() => setReloadKey((k) => k + 1)}
+            className="mt-1 rounded bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+          >
+            Skúsiť znova
+          </button>
         </div>
       )}
 
@@ -501,6 +528,40 @@ export function IFCViewer({
 }
 
 // ── Pomocné funkcie ─────────────────────────────────────────────────────────
+
+function errMsg(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
+/** Prechodné sieťové/transportné zlyhanie (Safari „Load failed", cold CDN edge,
+ *  mid-deploy race) hodné jedného retry — nie skutočná chyba (404, corrupt wasm). */
+function isTransientLoadError(err: unknown): boolean {
+  return /load failed|failed to fetch|networkerror|network error|http status code is not ok|load cancelled/i.test(
+    errMsg(err)
+  );
+}
+
+/** Spusti `fn`; pri prechodnom zlyhaní počkaj a skús ešte raz. Trvalé chyby
+ *  (404, poškodený modul) propagujú okamžite, aby sa reálne bugy nemaskovali. */
+async function withRetry<T>(
+  fn: () => Promise<T>,
+  { retries = 1, delayMs = 400 }: { retries?: number; delayMs?: number } = {}
+): Promise<T> {
+  let lastErr: unknown;
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      lastErr = err;
+      if (attempt < retries && isTransientLoadError(err)) {
+        await new Promise((r) => setTimeout(r, delayMs));
+        continue;
+      }
+      throw err;
+    }
+  }
+  throw lastErr;
+}
 
 function getEidFromObject(obj: THREE.Object3D): number | undefined {
   let cur: THREE.Object3D | null = obj;
