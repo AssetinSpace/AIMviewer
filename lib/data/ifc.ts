@@ -3,8 +3,7 @@ import "server-only";
 import { unstable_cache } from "next/cache";
 
 import { getSupabaseAdmin } from "@/lib/supabase/server";
-
-const AIM_CACHE = { revalidate: 60, tags: ["aim"] };
+import { AIM_CACHE } from "@/lib/data/constants";
 
 /** ifc_guid → objects.id (aktívne záznamy, valid_until IS NULL). */
 export type GuidMap = Record<string, string>;

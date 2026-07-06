@@ -114,13 +114,11 @@ class CoverageReport:
 
     # occurrence (asset) úroveň
     assets_total: int = 0                                   # prvky v SNIM-aplikovateľných triedach
-    assets_other_classes: int = 0                           # prvky mimo applies_to (mimo menovateľa)
     assets_snim: int = 0                                    # plný inštančný SNIM kód
     assets_fallback: dict[str, int] = field(default_factory=dict)   # dôvod → počet
     # asset_type úroveň
     types_total: int = 0
     types_snim: int = 0
-    types_fallback: int = 0
     types_merged: int = 0                                   # IfcTypeObject zlúčené do zdieľaného kódu
     # diagnostika
     by_category: dict[str, int] = field(default_factory=dict)        # TSP/label → počet asset kódov
