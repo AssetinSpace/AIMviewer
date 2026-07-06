@@ -65,8 +65,11 @@
   grafovo zodpovedateľný. **F1 (backend rúra) HOTOVÁ:** provider-agnostická vrstva (`lib/llm/*`)
   — tool-calling loop, adaptéry `anthropic` + `openai-compat` (model cez env, D-050),
   4 grafové nástroje (`lib/llm/tools.ts` + `lib/data/systems.ts`), endpoint `app/api/ask`.
-  `tsc`+`lint`+build čisté; adaptéry a loop pokryté runtime testami. Ostáva F2 (D-049 jadro
-  naviazané na kontext prvku) → F3 (UI chat panel) → F4 (polish + guardraily).
+  `tsc`+`lint`+build čisté; adaptéry a loop pokryté runtime testami. **F2+F3 (UI + kontext)
+  HOTOVÉ:** chat panel `components/ask-panel.tsx` v každom viewer route (plávajúci), kontext
+  „tohto prvku" z URL (`/node|/type/<id>` → `contextObjectId`), klikateľné citácie (karta
+  `/node/<id>` + 3D `/ifc?focus=<guid>`). Ostáva **F4** (polish + streaming + prompted-JSON
+  fallback) a **end-to-end validácia** proti živej DB + reálnemu modelu (čaká na env kľúč).
 
 **Máme:** Supabase Cloud (projekt `acwoupricatirhlfkhvk`) + GitHub repo (`AssetinSpace/AIMviewer`) + Vercel deploy (auto-deploy z `main`). **Chýba zatiaľ:** vlastná doména (príde v S4).
 
