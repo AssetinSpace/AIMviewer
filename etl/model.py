@@ -54,8 +54,9 @@ class ObjectRow:
 @dataclass
 class Edge:
     """Hrana objekt→objekt, IFC-kanonická (D-048): edge_type ∈ aggregates/contained/
-    defined_by_type/member_of/has_document/responsible_for → tabuľky rel_* v db.py.
-    `role` len kde to tabuľka má."""
+    defined_by_type/member_of/has_document/responsible_for/assigns_to_group.
+    D-051: `edge_type` → `rel_type` mapuje `manifest.EDGE_TYPE_TO_REL_TYPE`;
+    zapisuje sa do generickej `relationships` (db.py). `role` je nullable."""
 
     edge_type: str
     from_ref: str

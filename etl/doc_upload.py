@@ -213,12 +213,13 @@ def _write_document(cur, row: ManifestRow, location: str, storage_type: str) -> 
     )
 
     # 4) rel_associates_document(target → dokument, role z TypSouboru)
+    # D-051: generická `relationships` (rel_type), nie kanonické view.
     eid = ids.edge_id(row.target_ref, row.container_name, "has_document")
     cur.execute(
         """
-        insert into rel_associates_document
-          (id, from_id, to_id, role, valid_from, valid_until, source)
-        values (%s, %s, %s, %s, now(), null, %s)
+        insert into relationships
+          (id, rel_type, from_id, to_id, role, valid_from, valid_until, source)
+        values (%s, 'rel_associates_document', %s, %s, %s, now(), null, %s)
         on conflict (id) do update set
           role = excluded.role, source = excluded.source
         """,

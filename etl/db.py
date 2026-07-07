@@ -11,19 +11,13 @@ import psycopg
 from psycopg.types.json import Json
 
 from . import ids
+from .manifest import EDGE_TYPE_TO_REL_TYPE
 from .model import StagedModel
 
-# edge_type → (tabuľka, či má stĺpec `role`)
-_EDGE_TABLES = {
-    # spatial split (D-048): aggregates = dekompozícia štruktúry, contained = prvok v štruktúre
-    "aggregates": ("rel_aggregates", False),
-    "contained": ("rel_contained_in_spatial_structure", False),
-    "defined_by_type": ("rel_defines_by_type", False),
-    "member_of": ("rel_member_of", True),
-    "has_document": ("rel_associates_document", True),
-    "responsible_for": ("rel_assigns_to_actor", True),
-    "assigns_to_group": ("rel_assigns_to_group", False),   # členstvo v systéme (D-047)
-}
+# D-051: hrany už nemajú per-vzťah tabuľku — všetky idú do generickej `relationships`
+# (diskriminátor `rel_type`). Interný ETL `edge_type` → kanonický `rel_type` drží
+# manifest (`etl/manifest.py`, jeden zdroj pravdy). Zapisujeme BASE tabuľku, nie
+# kanonické views (tie sú len na čítanie).
 
 
 def fetch_existing_floors(url: str) -> list[tuple[str, object, object]]:
@@ -237,47 +231,42 @@ def _resolve_cross_file_refs(cur, model: StagedModel, obj_ids: dict[str, str]) -
 def _load_edges(cur, model: StagedModel, obj_ids: dict[str, str]) -> None:
     _resolve_cross_file_refs(cur, model, obj_ids)
     for e in model.edges:
-        table, has_role = _EDGE_TABLES[e.edge_type]
+        rel_type = EDGE_TYPE_TO_REL_TYPE[e.edge_type]
+        # `edge_id` (deterministické UUIDv5 z edge_type, D-031) sa NEmení → re-run
+        # idempotentný cez `ON CONFLICT (id)`. `role` je nullable pre všetky typy.
         eid = ids.edge_id(e.from_ref, e.to_ref, e.edge_type)
         from_id, to_id = obj_ids[e.from_ref], obj_ids[e.to_ref]
-        if has_role:
-            cur.execute(
-                f"""
-                insert into {table}
-                  (id, from_id, to_id, role, valid_from, valid_until, source)
-                values (%s, %s, %s, %s, coalesce(%s, now()), %s, %s)
-                on conflict (id) do update set
-                  role = excluded.role, valid_until = excluded.valid_until,
-                  source = excluded.source
-                """,
-                (eid, from_id, to_id, e.role, e.valid_from, e.valid_until, e.source),
-            )
-        else:
-            cur.execute(
-                f"""
-                insert into {table}
-                  (id, from_id, to_id, valid_from, valid_until, source)
-                values (%s, %s, %s, coalesce(%s, now()), %s, %s)
-                on conflict (id) do update set
-                  valid_until = excluded.valid_until, source = excluded.source
-                """,
-                (eid, from_id, to_id, e.valid_from, e.valid_until, e.source),
-            )
+        cur.execute(
+            """
+            insert into relationships
+              (id, rel_type, from_id, to_id, role, valid_from, valid_until, source)
+            values (%s, %s, %s, %s, %s, coalesce(%s, now()), %s, %s)
+            on conflict (id) do update set
+              rel_type = excluded.rel_type, role = excluded.role,
+              valid_until = excluded.valid_until, source = excluded.source
+            """,
+            (eid, rel_type, from_id, to_id, e.role, e.valid_from, e.valid_until, e.source),
+        )
 
 
 def _load_class_links(
     cur, model: StagedModel, obj_ids: dict[str, str], ref_ids: dict[tuple[str, str], str]
 ) -> None:
+    # rel_associates_classification je výnimka: to_id → classification_references
+    # (nie objects). V generickej `relationships` je to len iný `rel_type`
+    # (`to_is_classification` v manifeste); trigger to zohľadní.
+    rel_type = EDGE_TYPE_TO_REL_TYPE["has_classification"]
     for c in model.class_links:
         ref_id = ref_ids[(c.system_name, c.identification)]
         cid = ids.edge_id(c.from_ref, f"{c.system_name}:{c.identification}", "has_classification")
         cur.execute(
             """
-            insert into rel_associates_classification
-              (id, from_id, to_id, valid_from, valid_until, source)
-            values (%s, %s, %s, coalesce(%s, now()), %s, %s)
+            insert into relationships
+              (id, rel_type, from_id, to_id, valid_from, valid_until, source)
+            values (%s, %s, %s, %s, coalesce(%s, now()), %s, %s)
             on conflict (id) do update set
+              rel_type = excluded.rel_type,
               valid_until = excluded.valid_until, source = excluded.source
             """,
-            (cid, obj_ids[c.from_ref], ref_id, c.valid_from, c.valid_until, c.source),
+            (cid, rel_type, obj_ids[c.from_ref], ref_id, c.valid_from, c.valid_until, c.source),
         )

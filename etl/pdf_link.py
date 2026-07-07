@@ -341,14 +341,15 @@ def _write_links(cur, doc_id: str, regions: list[dict]) -> None:
 def _link(cur, from_id: str, doc_id: str, dry: bool) -> None:
     if dry:
         return
-    # rel_associates_document(from=prvok, to=výkres) — zachováva smer D-014 (objekt → dokument)
+    # rel_associates_document(from=prvok, to=výkres) — zachováva smer D-014 (objekt → dokument).
+    # D-051: zapisujeme do generickej `relationships` (rel_type), nie do kanonického view.
     # psycopg vracia UUID stĺpce ako uuid.UUID → edge_id pracuje so stringami
     eid = ids.edge_id(str(from_id), str(doc_id), "has_document")
     cur.execute(
         """
-        insert into rel_associates_document
-          (id, from_id, to_id, role, valid_from, valid_until, source)
-        values (%s, %s, %s, %s, now(), null, %s)
+        insert into relationships
+          (id, rel_type, from_id, to_id, role, valid_from, valid_until, source)
+        values (%s, 'rel_associates_document', %s, %s, %s, now(), null, %s)
         on conflict (id) do update set role = excluded.role, source = excluded.source
         """,
         (eid, from_id, doc_id, LINK_ROLE, LINK_SOURCE),
