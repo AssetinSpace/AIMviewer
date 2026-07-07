@@ -2,7 +2,7 @@
 
 > Scope: **priestorová hierarchia · assets · dokumenty · zodpovednosti · type–occurrence · aktori (B)**
 > Model: centrálna `objects` + tenké typové prípony + čisté FK hrany.
-> Konvencie: `CLAUDE.md` + `DECISIONS.md` (D-009–D-025).
+> Konvencie: `AGENTS.md` + `DECISIONS.md` (D-009–D-025).
 >
 > **Stav:** §2 implementovaná ako iniciálna migrácia
 > `supabase/migrations/20260616120000_init_aim_schema.sql` (D-025).

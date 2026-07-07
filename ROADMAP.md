@@ -3,68 +3,49 @@
 > Sprintový plán prvého use case **AIM Viewer** (D-003).
 > Princíp: **každý sprint končí niečím demovateľným**, poradie ide podľa
 > narastajúcej „previazanosti" dát — to je celé posolstvo demo (D-003).
-> Konvencie a rozhodnutia: `CLAUDE.md` + `DECISIONS.md` (D-026 = Viewer stack).
+> Konvencie: `AGENTS.md` · rozhodnutia: `DECISIONS.md` (D-026 = Viewer stack).
 
 ---
 
-## Stav (2026-06-28)
+## Stav (2026-07-07)
 
-> 🔍 **Konsolidačná / review fáza prebieha — vetvy zjednotené do `main`.** S0–S3 + E1–E4
-> hotové. Počas review passu sa (a) dotiahol **sprint DV** (interaktívna prehliadačka
-> výkresov, D-042 fázy A–D + D-043) a (b) **3D IFC viewer (S5, D-044)** sa zjednotil
-> z paralelných vetiev a doviedol až na **úroveň 3 — query bridging** (floor filter,
-> obojsmerný DB↔3D filter, Escape deselect). Zlúčené aj code-review optimalizácie
-> (error boundaries + DB indexy). **E5 (ICDD export) ostáva odložené.** Cieľ nezmenený:
-> stabilný, vyladený demovateľný stav.
->
-> **Zjednotenie 2026-06-28:** `main` = 3D baseline (Phase 1+2) + `query-bridging-phase-3`
-> (Phase 3) + `code-review-optimization`; superseded `ifclite-library-review` zahodená
-> (prenesený len konfigurovateľný back-label). Pridaný kandidát **D-045** (pasportizácia).
+> **Jediné miesto s aktuálnym stavom projektu.** Rationale k jednotlivým bodom je
+> v `DECISIONS.md` (D-0xx), schéma v `SCHEMA.md`. História zmien = spodok tohto súboru.
 
-- ✅ Schéma + iniciálna migrácia (`20260616120000_init_aim_schema.sql`, D-025)
-- ✅ Seed dáta (`supabase/seed.sql`) — plná previazanosť: hierarchia, type–occurrence, aktori, dokumenty, klasifikácie, GUID história
-- ✅ S0 — Next.js skeleton + Vercel deploy + Supabase connection (D-026)
-- ✅ S1 — Priestorová hierarchia: strom + route per uzol (D-027)
-- ✅ S2 — Asset karta: dedičnosť + provenance, klasifikácie, type route (D-028)
-- ✅ S3 — Dokumenty + zodpovednosti + GUID história, generický object route (D-029)
-- 🟢 **Teraz:** S4 — polish & launch (reálne dáta **naloadené** z ETL; ostáva doména + polish)
-- 🟢 ETL pipeline (Python + ifcopenshell, D-031) — **E2 hotový**: reálny load z `ASR.ifc` do Supabase (926 uzlov, 5 podlaží), Viewer beží na reálnej budove namiesto seedu
-- 🟡 Dokumenty + coding scheme (D-032/D-033) — **rozhodnuté**, rozpísané do E-sprintov (E1–E6); **E1–E4 hotové** (E4 = PDF výkres auto-linking, D-041, 193 element-väzieb + Viewer sekcie)
-- ⏸️ **E5 (ICDD export) — odložené** do uzavretia review pass (viď poznámka v Stave)
-- ✅ **DV — Interaktívna prehliadačka výkresov** (klikateľné SNIM kódy, obojsmerne) —
-  **HOTOVÉ** (D-042 fázy A–D + doladenia, D-043 skladby). Headline demo feature na
-  odprezentovanie previazanosti (D-003). **197 element-väzieb / 414 link-regiónov.**
-- ✅ **S5 — IFC 3D viewer** (D-044): **fáza 1+2+3 hotové a zjednotené v `main`** — IFClite
-  WASM klient-side, obojsmerná selekcia 3D↔dáta cez IFC GUID, **query bridging** (floor
-  filter, DB↔3D filter bar, Escape deselect). Schéma DB sa nemení.
-- 📋 **D-045 — Pasportizácia + dynamika** (kandidát) — brainstorm, čaká na reálnu zákazku
-- ✅ **D-046 — IFC alignment stratégia** (rozhodnuté 2026-07-02): IFC4.3 slovník teraz
-  (súborový svet: IFC/ICDD/COBie), architektúra pripravená na IFC5/IFCX (naša DB =
-  konceptuálne „vrstva" nad dizajnovými modelmi). IFC-first naming pravidlo; extenzie
-  deklarované v SCHEMA.md §5. Follow-up kandidáti: GUID matching pipeline (dve verzie
-  IFC → „wow" GUID histórie, D-044), IDS/LOIN validácia cez IFClite (D-045),
-  `documents.status` enum zarovnanie. Schéma sa nemení.
-- 🎯 **D-047 — Demo north-star: LLM nad grafom** (rozhodnuté 2026-07-02): ťažisko dema =
-  prirodzený jazyk nad naším grafom + **trust loop** (dohľadateľné odpovede). Headline
-  dotaz „uzatvárací ventil na `IfcDistributionSystem` + miestnosť" = **grafový dotaz**
-  (IFC4.3: `IfcValveType.ISOLATING`, `IfcRelAssignsToGroup`, containment→space), ETL bez
-  geometrie. LLM = **vlastné rozhranie** (D-005), NIE IFClite LLM (sandbox nad IFC súborom);
-  IFClite = oči, nie mozog. **S-LLM → kritická cesta**, GUID verziovanie podporné. ETL
-  rozšírenie na distribučné systémy/ventily (aditívne). Schéma sa nemení.
-- ✅ **D-049 — VZT federácia + distribučné systémy** (hotové 2026-07-05): `Office centrum
-  Brno - VZT.ifc` federovaný do existujúcej ASR štruktúry (napojenie na existujúce podlažia
-  cez normalizovaný názov `1NP_VZT`→`1NP`, bez duplicitných spatial koreňov). **9 systémov**
-  (`object_type='system'`, IfcDistributionSystem) + **1029 `rel_assigns_to_group`** väzieb;
-  MEP prvky importované (air terminals/jednotky s podlažím, potrubie/tvarovky „group-only" —
-  len člen systému). ETL: `--federate` režim (`etl/transform.py`+`db.py`+`main.py`).
-  Viewer: „Súčasť systému" na karte prvku + systémový uzol „Prvky systému". VZT je čisté
-  vetranie (0 ventilov/miestností) → **headline dotaz s ventilom čaká na vodný ÚK/ZTI model**.
-- 🟢 **S-LLM — LLM interface** (D-047, **kritická cesta**): text-to-query nad grafom,
-  vlastné rozhranie (Claude, D-005), guardraily + povinná citácia zdroja (trust loop).
-  **ETL základ pripravený** (D-049: systémy + členstvo v grafe) — dotaz „systém → prvky/
-  jednotka + podlažie" je teraz grafovo zodpovedateľný.
+**Dátové jadro + oba demo „wow" momenty sú hotové. Otvorený je jeden veľký kus —
+S-LLM (LLM nad grafom), oficiálna kritická cesta a north-star dema (D-047).**
 
-**Máme:** Supabase Cloud (projekt `acwoupricatirhlfkhvk`) + GitHub repo (`AssetinSpace/AIMviewer`) + Vercel deploy (auto-deploy z `main`). **Chýba zatiaľ:** vlastná doména (príde v S4).
+| Blok | Stav | Poznámka |
+|---|---|---|
+| **S0–S3** Viewer (skeleton → karta → dokumenty) | ✅ | D-026–D-029 |
+| **E1–E4** ETL + dokumenty + PDF auto-linking | ✅ | D-031–D-041; ~903 uzlov, 198 element-väzieb |
+| **DV** Interaktívna prehliadačka výkresov | ✅ | D-042/D-043; klikateľné SNIM kódy obojsmerne |
+| **S5** IFC 3D viewer (fázy 1–3) | ✅ | D-044; IFClite WASM, obojsmerná selekcia cez GUID, query bridging |
+| **D-046** IFC alignment stratégia | ✅ | IFC4.3 teraz, pripravené na IFC5/IFCX |
+| **D-048** IFC-kanonická vrstva hrán | ✅ | `rel_*` presne podľa `IfcRel*` |
+| **D-049** VZT federácia + distribučné systémy | ✅ | 9 systémov, 1029 `rel_assigns_to_group`, MEP prvky na existujúce podlažia |
+| **S4** Polish & launch | 🟢 beží | reálne dáta naloadené; ostáva doména + polish |
+| **S5-fed** 3D multi-model federácia (ARCH+VZT) | 🛠️ rozpracované | render VZT+ASR v jednej scéne — **necommitnuté, čaká na D-050** (viď „Rozpracované") |
+| **S-LLM** LLM interface nad grafom | 🟢 **kritická cesta** | D-047; ETL základ hotový (D-049), kód ešte nezačatý |
+| **E5** ICDD export | ⏸️ odložené | D-015/D-032 |
+| **D-045** Pasportizácia + dynamika | 📋 kandidát | čaká na reálnu zákazku |
+
+### Rozpracované (necommitnuté)
+**3D multi-model federácia** — 5 modif. súborov ([lib/data/ifc.ts](lib/data/ifc.ts),
+[components/ifc-viewer.tsx](components/ifc-viewer.tsx), `ifc-workspace.tsx`,
+`app/(viewer)/ifc/page.tsx`, [etl/ifc_upload.py](etl/ifc_upload.py)): `getIfcModels()`
+vracia pole (ARCH+VZT), viewer rendruje oba do jednej scény, identita naprieč modelmi drží
+IFC GUID (expressId sa medzi súbormi prekrýva), podlažie sa normalizuje (`1NP_VZT`→`1NP`).
+**Treba:** zapísať rozhodnutie **D-050** (3D vrstva federácie D-049) a commitnúť.
+
+### Ďalší krok
+**S-LLM** je kritická cesta — headline dotaz „systém → prvky/jednotka + podlažie" je už
+grafovo zodpovedateľný (D-049). Sprint-rozpis + rozhodnutie o architektúre LLM interface
+(model, whitelist views, guardraily, trust-loop citácia) je ďalší veľký kus — viď sekciu
+„Parkované / paralelné → S-LLM".
+
+**Infra:** Supabase Cloud (`acwoupricatirhlfkhvk`) + GitHub (`AssetinSpace/AIMviewer`) +
+Vercel (auto-deploy z `main`). **Chýba:** vlastná doména (S4).
 
 ---
 
@@ -300,4 +281,14 @@ naming convention finálny tvar) sú v DECISIONS §7.
   nie dáta v DB.
 
 ---
-*Posledná aktualizácia: 2026-07-02 — **Online 3D model vymenený.** Do Supabase Storage `ifc/ASR.ifc` (upsert cez `etl.ifc_upload --file "podklady/Office centrum Brno.ifc"`) nahraný **vyčistený re-export ASR** (IFC4X3_ADD2, **5 podlaží**, projekt „Office centrum Brno / OCB", reklasifikované — výsledok asr-ifc-cleanup). Object key aj `getIfcUrl` default (`lib/data/ifc.ts`) nezmenené → živý viewer renderuje nový model okamžite, bez zmeny frontendu/env. Rovnaké `IfcProject` GUID `2Xj8NwiwHD_hFSIx764rKm` ako pôvodný ASR. **DB reload HOTOVÝ (2026-07-02):** `etl.main --reset` na nový model → **objects 1012** (999 IFC + 13 dok), aktívne GUIDy 999, **3D↔DB bridge 999/999** (predtým 60 nových prvkov nerozlíšených — to bolo „nejde to"); `doc_upload` obnovil 13 dokumentov (`docs.csv` ref budovy opravený `POLYFUNKčNÝ OBJEKT`→`Polyfunkčný objekt`). **SNIM object_ref + E4 (vyriešené 2026-07-02):** čistenie zapieklo plný SNIM kód do IFC `Name` prvkov (dvere `DD02.05.04`, okno `LP01.44`, stena `SN07`), nie do „Assembly Code". Adaptovaný `etl/scheme.py` — tri `CodePart`-y čítajú segmenty z `Name` cez `extract` regex (výstup identický: typ `TSP·PSP[.UOT]`, inštancia `+.INST`); doplnená kategória `SL` (stĺpy) a `IfcWindow` do `LP`. Coverage: **149 inštančných + 81 typových** SNIM kódov. `pdf_link` obnovený: **198 element-väzieb + 418 regiónov** (predtým 197/414). Objects 903 (694 asset, 100 asset_type po zlúčení cez SNIM, 13 dok). **3D↔DB bridge zdravý** — steny/dvere/okná/stĺpy/strechy/podhľady/fasáda/VZT/nábytok/schody/zábradlia 100 % rozlíšia; nerozlíšené len D-034 sub-komponenty (IfcMember/IfcPlate mullióny+panely, vrstvy strechy). Systém klasifikácie sa v Revite nepremenoval (stále `Uniformat`) — kozmetické. Predtým 2026-06-28 — **Zjednotenie vetiev do `main`.** S5 (3D viewer, D-044) dotiahnuté na **fázu 3 — query bridging** (floor filter cez STEP containment, obojsmerný DB↔3D filter bar `/api/filter` + `/api/space-siblings`, Escape deselect) zlúčením `query-bridging-phase-3`; zlúčené aj `code-review-optimization` (error boundaries `app/**/error.tsx`, migrácia `20260628120000_missing_indexes.sql`, dedup refactory). Superseded `ifclite-library-review` zahodená (prenesený len konfigurovateľný back-label panela). **Sprint DV** (D-042 A–D + D-043) potvrdený ako hotový (**197 väzieb / 414 regiónov**). Pridaný kandidát **D-045** (pasportizácia + dynamika; prečíslované z kolízie D-044 na passport vetve). Predtým 2026-06-22 — Pridaný **S5 — IFC 3D viewer** (**D-044**, paralelná vetva): IFClite WASM/Three.js, obojsmerná selekcia 3D↔dáta cez IFC GUID cez `ifc_guid_history`; tri fázy (embedded panel → obojsmerná selekcia → query bridging); neblokuje S4 ani DV; Postgres sa geometrie nedotýka. Superceduje kandidáta D-037. Aktualizovaná zmienka „Mimo scope" (geometria v DB = trvalo mimo scope; 3D rendering = S5 aplikačná vrstva). Predtým 2026-06-20 — E4 (PDF výkres auto-linking) hotový (**D-041**): `etl/pdf_link.py` deteguje SNIM kódy z výkresov (PyMuPDF), matchuje v troch dôverových vrstvách (`full`/`proximity`/`bare`) — odfiltrované false-pos `OV01.00.00`/`ZV01.02` bez straty dverí, prefix-match holých typových kódov; **193 element-väzieb** zapísaných (`source='pdf_link (E4)'`, idempotentné, E3 nedotknuté). Viewer: sekcie „Zobrazený vo výkrese" (asset/asset_type) a „Prvky vo výkrese" (podlažie/budova) — `relations.ts` + `drawing-list.tsx`/`drawing-elements.tsx`. Predtým E3: 13 PDF (CDE naming, D-036). **Ďalej: konsolidačná / review fáza** — postupné kontrolované dopilovanie hotového (S0–S3 + E1–E4) podľa feedbacku; **E5 (ICDD export) odložené** do uzavretia review pass. Naplánovaný sprint **DV — Interaktívna prehliadačka výkresov** (**D-042**, klikateľné SNIM kódy obojsmerne) ako demo feature na odprezentovanie previazanosti — kostra rozhodnutá, detaily sa doladia počas sprintu (fázy A dáta → B MVP → C in-app → D obojsmernosť).*
+## Changelog
+
+> Kompaktný reverse-chrono log. Detail ku každému bodu je v `DECISIONS.md` (D-0xx);
+> aktuálny stav je hore v sekcii „Stav".
+
+- **2026-07-07** — Konsolidácia podporných dokumentov: `AGENTS.md` = zdroj pravdy konvencií (multi-tool), `CLAUDE.md`/Copilot/Cursor len pointery; stav zjednotený do sekcie „Stav", changelog pätičky skrátené. Rozpracovaná 3D multi-model federácia (→ D-050).
+- **2026-07-05** — D-049 VZT federácia hotová (9 systémov, 1029 `rel_assigns_to_group`, MEP prvky); D-048 IFC-kanonické hrany naprieč schémou/ETL/app.
+- **2026-07-02** — Online 3D model vymenený za vyčistený ASR re-export (Office centrum Brno, IFC4X3_ADD2); DB reload (objects 903, 3D↔DB bridge zdravý); SNIM `object_ref` z IFC `Name`; E4 obnovené (198 väzieb / 418 regiónov). Pridané D-046 (IFC alignment) + D-047 (LLM north-star).
+- **2026-06-28** — Zjednotenie vetiev do `main`: S5 3D viewer na fázu 3 (query bridging), code-review optimalizácie (error boundaries, DB indexy). Pridaný D-045 (kandidát).
+- **2026-06-22** — Sprint DV hotový (D-042/D-043, 197 väzieb / 414 regiónov). Pridaný S5 — 3D viewer (D-044).
+- **2026-06-20** — E4 PDF výkres auto-linking (D-041, 193 väzieb). E3 dokumenty (D-036, 13 PDF). D-040 priestory (`IfcSpace.LongName`).

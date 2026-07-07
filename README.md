@@ -5,7 +5,7 @@ Viewer správne previazaných dát o stavbe počas životného cyklu.
 
 Stack (D-026): **Next.js (App Router) + TypeScript + Tailwind + shadcn/ui**,
 dáta **výhradne server-side** cez Supabase `service_role` (RLS odložené, D-025),
-hosting **Vercel** (D-006). Konvencie: [`CLAUDE.md`](CLAUDE.md),
+hosting **Vercel** (D-006). Konvencie: [`AGENTS.md`](AGENTS.md),
 rozhodnutia: [`DECISIONS.md`](DECISIONS.md), plán: [`ROADMAP.md`](ROADMAP.md).
 
 ## Štruktúra repa

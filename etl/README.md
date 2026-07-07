@@ -2,7 +2,7 @@
 
 Python pipeline, ktorá načíta IFC model a naplní Supabase schému (`objects` +
 `rel_*` + klasifikácie + GUID história) podľa `../SCHEMA.md` a konvencií v
-`../CLAUDE.md`. Architektúra a rozhodnutia: **D-031** v `../DECISIONS.md`.
+`../AGENTS.md`. Architektúra a rozhodnutia: **D-031** v `../DECISIONS.md`.
 
 > **Stav (E2):** mapovanie doladené na model diplomky (`ASR.ifc`) — rozsah importu
 > (D-034), konsolidácia podlaží (D-035), 18 SNIM kategórií, psety/klasifikácie/GUID.
