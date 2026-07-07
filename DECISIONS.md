@@ -1331,6 +1331,28 @@ prehliadačky výkresov/dokumentov (`/drawing/[id]`, `drawing-viewer.tsx` a spol
 od D-051 — **kandidát na skorý quick-win**. Konkrétne bolesti (zoom/pan, mobil, layout
 panela, výkon) sa zbierajú na začiatku sprintu.
 
+**Implementované — kadencia 1 (interakcia vieweru, `drawing-viewer.tsx`):** Bolesti pôvodného
+vieweru (identifikované z kódu): zoom len tlačidlami, žiadny pinch/pan, fixná `BASE_WIDTH`
+(bez fit-to-width), neresponzívny na mobile. Rework (needeštruktívny — zachovaná overlay
+math, `focus` deep-link, `onSelect` bočný panel, Ctrl/⌘-klik nová karta, skladby D-043,
+`devicePixelRatio` ostrosť):
+- **Koliesko myši = zoom** zacielený na kurzor (zoom-to-pointer): natívny non-passive `wheel`
+  listener (`preventDefault` scrollu stránky) + kotva (fraction v `wrapperRef`) obnovená po
+  rerastri v `useLayoutEffect` → bod pod kurzorom ostáva na mieste.
+- **Pinch = zoom, prst/ťah = pan** cez pointer eventy (`touch-action: none`), rAF-throttle
+  rerastra; pan gesto potlačí následný klik na región (`didPan` threshold, `onClickCapture`).
+- **Fit-to-width** default (zoom=1 = šírka viewportu, `ResizeObserver`, mobile-first);
+  percento v toolbare resetuje na fit.
+- **Fullscreen** („veľká obrazovka") cez Fullscreen API na root wrapperi (`Maximize2`/
+  `Minimize2`), plátno `flex-1 h-screen`, sync cez `fullscreenchange` (aj Esc).
+- Ostrosť zachovaná **rerastrom** pri každom zoome (nie CSS-scale) do `devicePixelRatio` 2×
+  (strop `MAX_RENDER_PX`).
+- **Overené:** `tsc --noEmit` čistý, `next build` skompiluje (Turbopack), bez nových lint
+  chýb (ostáva len baseline `set-state-in-effect` na focus-efekte, prítomný aj pred zmenou).
+  Live drive v prehliadači nebolo v tejto session možné (bez Supabase creds + reálneho PDF).
+- **Otvorené (ďalšie kadencie):** double-tap-to-zoom, výkon veľkých viacstranových PDF,
+  layout bočného panela pri úzkych šírkach — podľa reálnej spätnej väzby z prevádzky.
+
 ### D-055 — 3D / IFClite feature port
 **Rozhodnutie (smer):** Postupne prebrať ďalšie **vhodné IFClite moduly** do 3D vrstvy
 (rozširuje D-044, deliaca čiara „čítanie/zobrazovanie/validácia IFC = prebrať z IFClite",

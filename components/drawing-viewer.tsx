@@ -1,8 +1,22 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { Document, Page, pdfjs } from "react-pdf";
-import { ChevronLeft, ChevronRight, ZoomIn, ZoomOut } from "lucide-react";
+import {
+  ChevronLeft,
+  ChevronRight,
+  Maximize2,
+  Minimize2,
+  ZoomIn,
+  ZoomOut,
+} from "lucide-react";
 
 import type { DrawingRegion, SelectedElement } from "@/lib/data/drawing";
 
@@ -16,29 +30,42 @@ pdfjs.GlobalWorkerOptions.workerSrc = new URL(
   import.meta.url
 ).toString();
 
-const BASE_WIDTH = 1000; // px šírka strany pri zoom = 1
-const ZOOM_STEP = 0.25;
-const ZOOM_MIN = 0.5;
-const ZOOM_MAX = 5;
+const PAD = 16; // px vnútorný padding plátna (`p-4`) — vstupuje do kotvenia zoomu
+const ZOOM_STEP = 0.25; // krok tlačidiel +/−
+const ZOOM_MIN = 0.5; // 1 = „fit to width" viewportu
+const ZOOM_MAX = 8;
+const FALLBACK_FIT_WIDTH = 800; // kým sa nezmeria viewport (SSR-less mount)
 // Pri vstupe s `focus` priblíž, nech je drobný kód čitateľný a zvýraznenie viditeľné.
 const FOCUS_ZOOM = 2.5;
 // Strop renderovaného rastra (px na šírku). Vyšší `devicePixelRatio` = ostrejšie tenké
 // čiary/text; strop chráni pred obrími canvasmi pri vysokom zoome (limit prehliadača).
 const MAX_RENDER_PX = 6000;
+const PAN_THRESHOLD = 6; // px posunu, od ktorého je gesto pan (nie klik na región)
 
 type Dims = { width: number; height: number };
+type Point = { x: number; y: number };
+
+function dist(a: Point, b: Point) {
+  return Math.hypot(a.x - b.x, a.y - b.y);
+}
 
 /**
- * In-app prehliadačka výkresu (D-042 C+D): render zdrojového PDF (react-pdf / pdf.js) +
- * prekrytie priehľadných klikateľných boxov z `_drawing_links`. Klik na box **nevyskočí
- * na novú stránku** — vyberie prvok (`onSelect`), detail sa zobrazí v bočnom paneli;
- * Ctrl/⌘-klik otvorí celý detail v novej karte. Zoom + stránkovanie + hover highlight.
+ * In-app prehliadačka výkresu (D-042 C+D, rework D-054): render zdrojového PDF
+ * (react-pdf / pdf.js) + prekrytie priehľadných klikateľných boxov z `_drawing_links`.
+ *
+ * Ovládanie (D-054): **koliesko myši = zoom** zacielený na kurzor (zoom-to-pointer);
+ * **ťahanie = posun** (pan); na dotyku **pinch = zoom, prst = pan**; tlačidlo
+ * **fullscreen** roztiahne výkres na celú obrazovku (čitateľnosť na veľkom monitore).
+ * Predvolený zoom = **fit-to-width** viewportu (mobile-first). Ostrosť: strana sa
+ * rerastruje pri každom zoome (nie CSS-scale) až do `devicePixelRatio` 2× (strop
+ * `MAX_RENDER_PX`), takže tenké čiary a text ostávajú čitateľné aj pri priblížení.
+ *
+ * Prekliky ostávajú (D-042 D): klik na box **nevyskočí** na novú stránku — vyberie
+ * prvok (`onSelect`), detail v bočnom paneli; Ctrl/⌘-klik otvorí detail v novej karte;
+ * skladby (D-043) navigujú na Výpis. Pan gesto klik potlačí (`didPan` threshold).
  *
  * Obojsmernosť (D): `focus` = `objects.id` → skok na stranu, priblíženie, scroll na box
  * a krátky pulz. `selectedId` (riadený zvonku) určuje trvalo zvýraznený prvok.
- *
- * Ostrosť: strana sa renderuje pri `devicePixelRatio` až 2× (strop `MAX_RENDER_PX`),
- * takže tenké čiary a drobný text ostávajú čitateľné aj pri priblížení.
  */
 export function DrawingViewer({
   url,
@@ -63,18 +90,142 @@ export function DrawingViewer({
   const [numPages, setNumPages] = useState(0);
   const [page, setPage] = useState(() => focusRegion?.page ?? initialPage ?? 1);
   const [zoom, setZoom] = useState(() => (focusRegion ? FOCUS_ZOOM : 1));
+  const [fitWidth, setFitWidth] = useState(FALLBACK_FIT_WIDTH);
   const [dims, setDims] = useState<Dims | null>(null);
   const [pulsing, setPulsing] = useState(Boolean(focusRegion));
+  const [isFullscreen, setIsFullscreen] = useState(false);
 
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+  const wrapperRef = useRef<HTMLDivElement | null>(null);
   const focusBoxRef = useRef<HTMLAnchorElement | null>(null);
   const focusedOnce = useRef(false);
 
-  const width = Math.round(BASE_WIDTH * zoom);
+  // Live zoom/fit v ref-e pre natívne (non-passive) wheel/pointer listenery a rAF —
+  // synchronizované v efekte (ref sa nesmie zapisovať počas renderu).
+  const zoomRef = useRef(zoom);
+  const fitWidthRef = useRef(fitWidth);
+  useEffect(() => {
+    zoomRef.current = zoom;
+  }, [zoom]);
+  useEffect(() => {
+    fitWidthRef.current = fitWidth;
+  }, [fitWidth]);
+
+  // Gestá: aktívne pointery, štart panu/pinchu, „práve som pásol" (potlačí klik),
+  // odložená kotva zoomu (aplikuje sa po rerastri v layout efekte).
+  const pointers = useRef<Map<number, Point>>(new Map());
+  const panStart = useRef<{ x: number; y: number; left: number; top: number } | null>(
+    null
+  );
+  const pinchStart = useRef<{ d: number; zoom: number } | null>(null);
+  const didPan = useRef(false);
+  const pendingAnchor = useRef<{ fx: number; fy: number; cx: number; cy: number } | null>(
+    null
+  );
+  const rafId = useRef<number | null>(null);
+  const pendingZoom = useRef<{ z: number; cx: number; cy: number } | null>(null);
+
+  const width = Math.round(fitWidth * zoom);
   const devicePixelRatio = Math.min(2, MAX_RENDER_PX / width);
   const pageLinks = useMemo(
     () => links.filter((l) => l.page === page),
     [links, page]
   );
+
+  // Šírka „fit" = šírka viewportu mínus padding; sleduje resize aj prepnutie fullscreen.
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const measure = () => {
+      const w = el.clientWidth - PAD * 2;
+      if (w > 0) setFitWidth(w);
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  /** Absolútny zoom kotvený na bod vo viewporte (client súradnice) — bod ostane pod kurzorom. */
+  const zoomTo = useCallback((next: number, cx: number, cy: number) => {
+    const clamped = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, next));
+    // Bez viditeľnej zmeny šírky (rounding / clamp) kotvu nenastavuj — inak by ostala visieť.
+    if (
+      Math.round(fitWidthRef.current * clamped) ===
+      Math.round(fitWidthRef.current * zoomRef.current)
+    ) {
+      return;
+    }
+    const wrap = wrapperRef.current;
+    if (wrap) {
+      const r = wrap.getBoundingClientRect();
+      if (r.width > 0 && r.height > 0) {
+        pendingAnchor.current = {
+          fx: (cx - r.left) / r.width,
+          fy: (cy - r.top) / r.height,
+          cx,
+          cy,
+        };
+      }
+    }
+    setZoom(clamped);
+  }, []);
+
+  // rAF-throttle pre plynulý wheel/pinch (mnoho eventov za frame → 1 rerastr).
+  const scheduleZoom = useCallback(
+    (z: number, cx: number, cy: number) => {
+      pendingZoom.current = { z, cx, cy };
+      if (rafId.current != null) return;
+      rafId.current = requestAnimationFrame(() => {
+        rafId.current = null;
+        const p = pendingZoom.current;
+        pendingZoom.current = null;
+        if (p) zoomTo(p.z, p.cx, p.cy);
+      });
+    },
+    [zoomTo]
+  );
+
+  // Po rerastri (zmena `width`/`dims`) obnov scroll tak, aby kotvený bod ostal pod kurzorom.
+  useLayoutEffect(() => {
+    const a = pendingAnchor.current;
+    const c = scrollRef.current;
+    if (!a || !c || !dims) return;
+    const cr = c.getBoundingClientRect();
+    c.scrollLeft = cr.left + PAD + a.fx * dims.width - a.cx;
+    c.scrollTop = cr.top + PAD + a.fy * dims.height - a.cy;
+    pendingAnchor.current = null;
+  }, [dims, width]);
+
+  // Natívny wheel listener (non-passive) — inak nemôžeme `preventDefault` scroll stránky.
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      const factor = Math.exp(-e.deltaY * 0.0015);
+      scheduleZoom(zoomRef.current * factor, e.clientX, e.clientY);
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, [scheduleZoom]);
+
+  // Fullscreen stav (aj keď užívateľ vyskočí cez Esc / systémovo).
+  useEffect(() => {
+    const onChange = () =>
+      setIsFullscreen(document.fullscreenElement === rootRef.current);
+    document.addEventListener("fullscreenchange", onChange);
+    return () => document.removeEventListener("fullscreenchange", onChange);
+  }, []);
+
+  function toggleFullscreen() {
+    if (document.fullscreenElement) {
+      void document.exitFullscreen();
+    } else {
+      void rootRef.current?.requestFullscreen?.();
+    }
+  }
 
   // Zmena focusu (soft-navigácia s iným `?focus=`) → skoč na jeho stranu a znovu zacieľ.
   useEffect(() => {
@@ -108,13 +259,111 @@ export function DrawingViewer({
     setPage(next);
   }
 
-  function changeZoom(delta: number) {
-    setZoom((z) => Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, Math.round((z + delta) * 100) / 100)));
+  /** Zoom tlačidlom — kotva = stred viewportu. */
+  function zoomButton(delta: number) {
+    const el = scrollRef.current;
+    const r = el?.getBoundingClientRect();
+    const cx = r ? r.left + r.width / 2 : 0;
+    const cy = r ? r.top + r.height / 2 : 0;
+    zoomTo(zoom + delta, cx, cy);
+  }
+
+  /** Reset na fit-to-width + scroll na začiatok. */
+  function resetZoom() {
+    pendingAnchor.current = null;
+    setZoom(1);
+    requestAnimationFrame(() => {
+      const el = scrollRef.current;
+      if (el) {
+        el.scrollLeft = 0;
+        el.scrollTop = 0;
+      }
+    });
+  }
+
+  // ---- Pan / pinch cez pointer eventy (touch-action: none na plátne) ----
+  function onPointerDown(e: React.PointerEvent<HTMLDivElement>) {
+    const el = scrollRef.current;
+    if (!el) return;
+    el.setPointerCapture(e.pointerId);
+    pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (pointers.current.size === 1) {
+      didPan.current = false;
+      panStart.current = {
+        x: e.clientX,
+        y: e.clientY,
+        left: el.scrollLeft,
+        top: el.scrollTop,
+      };
+    } else if (pointers.current.size === 2) {
+      const [p1, p2] = [...pointers.current.values()];
+      pinchStart.current = { d: dist(p1, p2), zoom: zoomRef.current };
+      panStart.current = null;
+      didPan.current = true; // pinch nikdy nie je klik
+    }
+  }
+
+  function onPointerMove(e: React.PointerEvent<HTMLDivElement>) {
+    if (!pointers.current.has(e.pointerId)) return;
+    pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    const el = scrollRef.current;
+    if (!el) return;
+
+    if (pointers.current.size >= 2 && pinchStart.current) {
+      const [p1, p2] = [...pointers.current.values()];
+      const d = dist(p1, p2);
+      if (pinchStart.current.d > 0) {
+        const mid = { x: (p1.x + p2.x) / 2, y: (p1.y + p2.y) / 2 };
+        scheduleZoom(
+          (pinchStart.current.zoom * d) / pinchStart.current.d,
+          mid.x,
+          mid.y
+        );
+      }
+      return;
+    }
+
+    if (panStart.current) {
+      const dx = e.clientX - panStart.current.x;
+      const dy = e.clientY - panStart.current.y;
+      if (Math.abs(dx) + Math.abs(dy) > PAN_THRESHOLD) didPan.current = true;
+      el.scrollLeft = panStart.current.left - dx;
+      el.scrollTop = panStart.current.top - dy;
+    }
+  }
+
+  function endPointer(e: React.PointerEvent<HTMLDivElement>) {
+    pointers.current.delete(e.pointerId);
+    if (pointers.current.size < 2) pinchStart.current = null;
+    const el = scrollRef.current;
+    if (pointers.current.size === 1 && el) {
+      // Prechod z pinchu späť na pan so zvyšným prstom.
+      const p = [...pointers.current.values()][0];
+      panStart.current = { x: p.x, y: p.y, left: el.scrollLeft, top: el.scrollTop };
+    } else if (pointers.current.size === 0) {
+      panStart.current = null;
+    }
+  }
+
+  // Pan gesto potlačí následný klik na región (capture fáza pred `onSelect`/navigáciou).
+  function onClickCapture(e: React.MouseEvent<HTMLDivElement>) {
+    if (didPan.current) {
+      e.preventDefault();
+      e.stopPropagation();
+      didPan.current = false;
+    }
   }
 
   return (
-    <div className="space-y-3">
-      {/* Toolbar: stránkovanie + zoom */}
+    <div
+      ref={rootRef}
+      className={
+        isFullscreen
+          ? "flex h-screen flex-col gap-3 bg-background p-3"
+          : "space-y-3"
+      }
+    >
+      {/* Toolbar: stránkovanie + zoom + fullscreen */}
       <div className="flex flex-wrap items-center gap-2">
         <div className="inline-flex items-center gap-1 rounded-md ring-1 ring-border">
           <button
@@ -143,19 +392,25 @@ export function DrawingViewer({
         <div className="inline-flex items-center gap-1 rounded-md ring-1 ring-border">
           <button
             type="button"
-            onClick={() => changeZoom(-ZOOM_STEP)}
+            onClick={() => zoomButton(-ZOOM_STEP)}
             disabled={zoom <= ZOOM_MIN}
             className="inline-flex size-8 items-center justify-center rounded-l-md hover:bg-secondary disabled:opacity-40"
             aria-label="Oddialiť"
           >
             <ZoomOut className="size-4" />
           </button>
-          <span className="min-w-12 text-center text-sm tabular-nums">
-            {Math.round(zoom * 100)}%
-          </span>
           <button
             type="button"
-            onClick={() => changeZoom(ZOOM_STEP)}
+            onClick={resetZoom}
+            className="min-w-12 text-center text-sm tabular-nums hover:bg-secondary"
+            title="Prispôsobiť šírke"
+            aria-label="Prispôsobiť šírke"
+          >
+            {Math.round(zoom * 100)}%
+          </button>
+          <button
+            type="button"
+            onClick={() => zoomButton(ZOOM_STEP)}
             disabled={zoom >= ZOOM_MAX}
             className="inline-flex size-8 items-center justify-center rounded-r-md hover:bg-secondary disabled:opacity-40"
             aria-label="Priblížiť"
@@ -164,15 +419,43 @@ export function DrawingViewer({
           </button>
         </div>
 
+        <button
+          type="button"
+          onClick={toggleFullscreen}
+          className="inline-flex size-8 items-center justify-center rounded-md ring-1 ring-border hover:bg-secondary"
+          title={isFullscreen ? "Zavrieť celú obrazovku" : "Celá obrazovka"}
+          aria-label={isFullscreen ? "Zavrieť celú obrazovku" : "Celá obrazovka"}
+        >
+          {isFullscreen ? (
+            <Minimize2 className="size-4" />
+          ) : (
+            <Maximize2 className="size-4" />
+          )}
+        </button>
+
         {links.length > 0 && (
           <span className="text-xs text-muted-foreground">
             {pageLinks.length} klikateľných prvkov na strane
           </span>
         )}
+        <span className="ml-auto hidden text-xs text-muted-foreground sm:inline">
+          koliesko = zoom · ťahaj = posun
+        </span>
       </div>
 
-      {/* Plátno výkresu + overlay */}
-      <div className="max-h-[78vh] overflow-auto rounded-md ring-1 ring-border bg-muted/30 p-4">
+      {/* Plátno výkresu + overlay — vlastný pan/zoom (touch-action: none). */}
+      <div
+        ref={scrollRef}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={endPointer}
+        onPointerCancel={endPointer}
+        onClickCapture={onClickCapture}
+        style={{ touchAction: "none" }}
+        className={`overflow-auto rounded-md ring-1 ring-border bg-muted/30 p-4 ${
+          isFullscreen ? "min-h-0 flex-1 cursor-grab" : "max-h-[78vh] cursor-grab"
+        }`}
+      >
         <Document
           file={url}
           onLoadSuccess={({ numPages }) => setNumPages(numPages)}
@@ -186,7 +469,7 @@ export function DrawingViewer({
           }
           className="inline-block"
         >
-          <div className="relative inline-block leading-none">
+          <div ref={wrapperRef} className="relative inline-block select-none leading-none">
             <Page
               pageNumber={page}
               width={width}
@@ -293,6 +576,7 @@ function RegionBox({
       ref={boxRef}
       href={href}
       onClick={handleClick}
+      draggable={false}
       title={title}
       style={style}
       className={className}
