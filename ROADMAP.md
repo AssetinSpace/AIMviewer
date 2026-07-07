@@ -42,6 +42,35 @@ vracia pole (ARCH+VZT), viewer rendruje oba do jednej scény, identita naprieč 
 IFC GUID (expressId sa medzi súbormi prekrýva), podlažie sa normalizuje (`1NP_VZT`→`1NP`).
 **Treba:** zapísať rozhodnutie **D-050** (3D vrstva federácie D-049) a commitnúť.
 
+### F6 — otvorené kroky (čaká na prístup k Supabase/LLM)
+
+F6 headline vetva je implementovaná a pushnutá (`claude/project-status-review-x410j1`,
+D-056), overená staticky (tsc/build kompilujú, F6 lint-clean, `/api/ask` error-cesty
+400/500 bez pádu). **Čo treba dokončiť, keď bude prístup k Supabase + LLM creds** (robilo sa
+z mobilu, bez creds):
+- **Env:** nastaviť `LLM_PROVIDER/LLM_MODEL/LLM_API_KEY` (a voliteľne `LLM_BASE_URL/…`)
+  v `.env.local` lokálne a vo Vercel env (secret) — viď `.env.example`.
+- **Happy-path E2E test** cez panel „Opýtať sa" / `POST /api/ask` proti reálnemu grafu:
+  headline dotazy („ktorý systém obsluhuje tento prvok a na akom podlaží", „aké prvky
+  obsahuje systém X"); overiť (a) odpoveď len z dát, (b) funkčné deep-linky citácií
+  (`/node/[id]` + `/ifc?focus=<guid>`), (c) „Na to nemám dáta" mimo grafu.
+- **Deploy:** po nastavení Vercel env skontrolovať, že `/api/ask` beží v produkcii.
+- **Neskôr (D-056):** ventilový dotaz (import vodného modelu ÚK/ZTI — 0 `IfcValve`) +
+  PDF-región deep-link (`_drawing_links`, D-042).
+
+### Prekonané vetvy — čakajú na zmazanie
+
+Po prevzatí F6 prototypu a nasadení F1/PR#6 sú tieto `claude/*` vetvy **prekonané a určené
+na zmazanie** (potvrdené používateľom); zmazanie sa nepodarilo z tohto prostredia (git remote
+403 — session má write-scope len na vlastnú vetvu, GitHub MCP nemá delete-branch), spraví sa
+manuálne: `claude/ifc-model-display-bug-cjq8z9` (→ prekryté PR#6), `claude/project-next-step-ikwis0`
+(→ F6 prevzaté), `claude/project-review-optimization-b2cmwo` (nezlúčené review-fixy zahodené —
+per rozhodnutie), a staré behind-27+: `claude/building-passport-model-u4jtlm`,
+`claude/code-review-optimization-70jwds`, `claude/ifc-3d-viewer-docs-w2jnaz`,
+`claude/ifclite-library-review-1pv7sp`, `claude/query-bridging-phase-3-fq8uob`.
+Príkaz: `git push origin --delete <vetva> …`. **Nedotýkať sa** `cursor/f5-ifclite-webgpu-06fc`
+(otvorený PR#6) ani `main`.
+
 ### Ďalší krok
 Program **F-sprintov** (D-051–D-056) — viď sekcia „Program dema — F-sprinty". Poradie nie
 je fixné: **F1** (meta-model vzťahov B) je základ, ale nie hard-blocker demo-hodnoty; **F2**
