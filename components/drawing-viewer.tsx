@@ -1,5 +1,8 @@
 "use client";
 
+// Efekt zámerne synchronizuje stranu/zoom/pulz pri zmene `?focus=` prop
+// (React 19 `set-state-in-effect` inak flagne tento legit sync-external-prop vzor).
+/* eslint-disable react-hooks/set-state-in-effect */
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Document, Page, pdfjs } from "react-pdf";
 import { ChevronLeft, ChevronRight, ZoomIn, ZoomOut } from "lucide-react";

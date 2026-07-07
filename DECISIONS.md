@@ -861,8 +861,8 @@ Orchestrovať kontajner ≠ spracovať geometriu ako dáta.
 
 **Technológia (IFClite):**
 - Rust+WASM core, `@ifc-lite/wasm` npm/CDN (**pre-built WASM — nevyžaduje Rust
-  toolchain**, vibecoding-friendly, D-004); WebGL/Three.js rendering template (WebGPU
-  voliteľne neskôr); ~260 KB gzip.
+  toolchain**, vibecoding-friendly, D-004); **WebGPU renderer (`@ifc-lite/renderer`)**
+  ako cieľový render (revízia guardrailu nižšie, dodatok 2026-07-07, D-055); ~260 KB gzip.
 - Podporuje IFC2X3/IFC4/IFC4X3/IFC5 (IFCX); MPL-2.0 (použitie/úprava/redistribúcia OK).
 - Modulárne (30+ TS balíkov, 5 Rust crates) — berie sa len potrebné.
 - Parsing a rendering oddelené: IFClite vie len podať meshe do existujúceho scene graphu.
@@ -905,8 +905,11 @@ nie ako oddelené záložky.
   → GUIDs sedí triviálne; triviálnosť je zámer, nie náhoda. GUID história ako „wow" ukázať
   až s dvoma verziami IFC a otestovaným párovaním cez `ifc_guid_history`.
 - **Maturita závislosti:** IFClite je mladý projekt (1.x, jeden hlavný autor); pin verziu
-  (nie `latest`), preferovať `threejs` (WebGL) template pred WebGPU pre naprieč-
-  prehliadačovú kompatibilitu.
+  (nie `latest`). **Renderer = WebGPU `@ifc-lite/renderer`** (revidované 2026-07-07, D-055):
+  pôvodná preferencia `threejs` (WebGL) pre naprieč-prehliadačovú kompatibilitu je
+  **zrušená** — akceptujeme WebGPU; **Safari/iOS < 18 nie je cieľová platforma** (Chrome/
+  Edge 113+, Firefox 127+, Safari 18+). Dôvod: follow-IFClite — chceme sa aktualizovať
+  spolu s vývojom IFClite (ich prvotriedny render aj feature set je WebGPU).
 
 **Dôsledok:**
 - Logicky **S5 — paralelná vetva**, nezačína kým nie je S4 polish uzavretý, ale
@@ -1184,10 +1187,22 @@ dema (D-003) aj text-to-query (D-047). Name+elevačný match je pre tento pár m
 (rovnaký Revit projekt) deterministický; ako všeobecný princíp ho drží konfigurovateľná
 policy. Port-konektivita (`IfcRelConnectsPorts`) je odložené rozšírenie (D-047).
 
-### D-050 — 3D multi-model federácia (ARCH+VZT v jednej scéne) — *rezervované*
-**Status:** rezervované číslo pre rozhodnutie k **rozpracovanej 3D multi-model federácii**
-(render VZT+ASR v jednej scéne, ROADMAP „Rozpracované"). Je necommitnuté; rozhodnutie sa
-zapíše pri commite tej vetvy. Číslo držané tu, aby `D-051+` nekolidovalo.
+### D-050 — 3D multi-model federácia (N modelov v jednej WebGPU scéne)
+**Kontext:** Dátová federácia disciplinárnych modelov je hotová (D-049: ARCH+VZT do jedného
+grafu cez normalizovaný názov podlažia, 0 zhoda GUID medzi Revit exportmi). 3D vrstva
+zobrazovala doteraz len jeden model (ASR).
+
+**Rozhodnutie:** 3D scéna federuje **N modelov naraz** (dnes ARCH+VZT, návrh N-ary — súborov
+môže byť ľubovoľne veľa a pridávané ľubovoľne) cez IFClite **`federationRegistry`**: každý
+model dostane **id-offset** (`expressId + idOffset = globalId`, unikátny naprieč modelmi),
+per-model **visibility** je O(1) GPU-level. Pick vracia `globalId` → `fromGlobalId` →
+`{modelId, expressId}` → IFC GUID → naša DB (`ifc_guid_history`, D-010). **Follow-IFClite:**
+federáciu nerobíme vlastným kódom, používame `federationRegistry` z `@ifc-lite/renderer`.
+
+**Dôsledok:** Schéma sa **nemení** (geometria ephemerálna, D-044). GUID most funguje aj pri
+0 zhode GUID medzi modelmi (offsety riešia kolíziu `expressId`, identita do DB drží GUID per
+model). **Self-upload používateľom nie je v scope** (modely pridáva prevádzkovateľ skriptom/
+configom; návrh je však N-ary). Realizované v F5 (D-055).
 
 ---
 
@@ -1331,12 +1346,26 @@ prehliadačky výkresov/dokumentov (`/drawing/[id]`, `drawing-viewer.tsx` a spol
 od D-051 — **kandidát na skorý quick-win**. Konkrétne bolesti (zoom/pan, mobil, layout
 panela, výkon) sa zbierajú na začiatku sprintu.
 
-### D-055 — 3D / IFClite feature port
+### D-055 — 3D / IFClite feature port (WebGPU renderer + native navigátor + federácia + Query)
 **Rozhodnutie (smer):** Postupne prebrať ďalšie **vhodné IFClite moduly** do 3D vrstvy
 (rozširuje D-044, deliaca čiara „čítanie/zobrazovanie/validácia IFC = prebrať z IFClite",
-D-046 §5). Kandidáti: 2D výkresy z modelu (`drawing-2d`), meranie, rezové roviny, IDS
-validátor, `IfcQuery`/DuckDB. Nezávislé od D-051. Priority sa určia na začiatku sprintu
-(pin verzie, izolovaný modul, tenká vlastná interface vrstva — riziko maturity trvá).
+D-046 §5). Nezávislé od D-051.
+
+**Konkretizácia F5 (2026-07-07):** Prvý sprint prechádza z tenkej `exportGlb`+Three.js cesty
+na **plnú IFClite platformu na WebGPU**:
+- **Renderer:** `@ifc-lite/renderer` (WebGPU) — revízia guardrailu D-044 (WebGL zrušený;
+  Safari/iOS < 18 nie je cieľ). Parsing `@ifc-lite/parser` (`IfcDataStore`), geometria
+  `@ifc-lite/geometry`, spatial index `@ifc-lite/spatial`.
+- **Federácia:** N modelov (D-050) cez `federationRegistry`, per-model visibility.
+- **Navigátor/strom:** SPATIAL/CLASS/TYPE/MATERIAL + stacked/solo/exploded, plnené
+  **výhradne z IFClite dát** (`spatialHierarchy`, `IfcQuery`, `RelationshipGraph`).
+  **Follow-IFClite princíp:** nerecyklovať naše dátové vrstvy (napr. `fetchSpatialTree`),
+  stavať nad IFClite API, aby update IFClite = náš update; vlastný kód len v odôvodnených
+  prípadoch. DB ostáva **autorita dát** (D-028), ale nie zdroj stromu — väzba na DB je pri
+  selekcii (GUID → karta `/node/[id]`; prvok mimo DB → IFC properties).
+- **Query:** aktivovať `@ifc-lite/query` (`IfcQuery` + `sql()` DuckDB-WASM) — základ pre F6.
+- **Mimo F5:** IDS (F2/D-052), BCF, 2D `drawing-2d`, meranie, self-upload UI, mutations/create.
+  Ostávajú ako neskoršie porty (kandidáti).
 
 ### D-056 — LLM rozhranie nad grafom
 **Rozhodnutie (smer):** Konkretizácia D-047. **API-pluggable model** (vieme pripojiť
@@ -1438,6 +1467,12 @@ polí pasport↔Odoo, metóda zamerania (3D scan/Matterport/ručne — zatiaľ n
 > Kompaktný reverse-chrono log pridaných/zmenených rozhodnutí. Plný kontext = príslušný
 > D-záznam vyššie.
 
+- **2026-07-07** — **F5 štart + revízia rendereru (D-055, D-050, dodatok D-044):** 3D vrstva
+  prechádza na **WebGPU `@ifc-lite/renderer`** — guardrail „WebGL kvôli kompatibilite" zrušený,
+  Safari/iOS < 18 nie je cieľ. **D-050** povýšené z rezervovaného na rozhodnutie (3D federácia
+  N modelov cez `federationRegistry`). **D-055** konkretizované: parser+geometry+spatial+query,
+  IFClite-native navigátor (follow-IFClite: nerecyklovať `fetchSpatialTree`), N-ary modely bez
+  self-upload UI.
 - **2026-07-07** — **F1 nasadené na Supabase prod (D-051):** migrácia `relationships_metamodel`
   na `acwoupricatirhlfkhvk`; cleanup D-048 compat views; migračná história sync (8 migrácií =
   `supabase/migrations/`); 4461 hrán, PostgREST reload.
