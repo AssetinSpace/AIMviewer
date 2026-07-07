@@ -15,6 +15,43 @@ export interface LoadedModel {
 /** Preset pohľadu kamery (WebGPU renderer). */
 export type ViewPreset = "top" | "bottom" | "front" | "back" | "left" | "right";
 
+/** Uzol IFClite-native stromu (SPATIAL tab). `expr`/`exprs` sú GLOBÁLNE (federačné) id. */
+export interface NavTreeNode {
+  key: string;
+  label: string;
+  /** Selektovateľné globálne expressId (spatial uzol / prvok). */
+  expr?: number;
+  /** Všetky globálne expressId v podstrome — pre highlight. */
+  exprs: number[];
+  children: NavTreeNode[];
+}
+
+/** Skupina prvkov (TYPE / MATERIAL / CLASS tab). `exprs` = globálne id. */
+export interface NavGroup {
+  label: string;
+  count: number;
+  exprs: number[];
+}
+
+/** Navigátor dáta jedného modelu — plnené VÝHRADNE z IFClite (follow-IFClite, D-055). */
+export interface NavigatorModel {
+  id: string;
+  name: string;
+  spatial: NavTreeNode[];
+  types: NavGroup[];
+  materials: NavGroup[];
+  classifications: NavGroup[];
+}
+
+/** Detail prvku z naparsovaného IFC (keď GUID nie je v DB — fallback panel). */
+export interface IfcElementInfo {
+  guid: string | null;
+  name: string | null;
+  objectType: string | null;
+  modelName: string;
+  psets: Array<{ name: string; props: Array<{ name: string; value: string }> }>;
+}
+
 /** Contract between IFCWorkspace and the WebGPU scene inside IFCViewer.
  *  Populated by IFCViewer after model load; null before load and after unmount. */
 export interface ViewerApi {
@@ -34,6 +71,10 @@ export interface ViewerApi {
   setView: (preset: ViewPreset) => void;
   /** Reset camera to fit all visible geometry. */
   resetView: () => void;
+  /** Highlight a set of elements by GLOBAL expressId (navigátor → 3D; rest fades). */
+  highlightExprs: (globalExprs: ReadonlyArray<number>) => void;
+  /** Select + focus a single element by GLOBAL expressId (navigátor → 3D + karta/IFC props). */
+  selectExpr: (globalExpr: number) => void;
   /** Raw IFC STEP buffer of the primary model — for `@ifc-lite/query`. Null before load. */
   getIfcBuffer: () => Uint8Array | null;
 }

@@ -4,12 +4,27 @@ import { useEffect, useRef, useState } from "react";
 import initWasm from "@ifc-lite/wasm";
 import { GeometryProcessor } from "@ifc-lite/geometry";
 import { Renderer, federationRegistry } from "@ifc-lite/renderer";
+import {
+  IfcParser,
+  extractEntityAttributesOnDemand,
+  extractPropertiesOnDemand,
+  extractClassificationsOnDemand,
+  buildMaterialUsageIndex,
+  type IfcDataStore,
+} from "@ifc-lite/parser";
 import type { MeshData } from "@ifc-lite/geometry";
 import type { SectionPlane } from "@ifc-lite/renderer";
 
 import type { SelectedElement } from "@/lib/data/drawing";
 import type { GuidMap, IfcModel } from "@/lib/data/ifc";
-import type { LoadedModel, ViewerApi } from "@/lib/viewer-api";
+import type {
+  IfcElementInfo,
+  LoadedModel,
+  NavGroup,
+  NavigatorModel,
+  NavTreeNode,
+  ViewerApi,
+} from "@/lib/viewer-api";
 
 interface AABB {
   min: [number, number, number];
@@ -26,6 +41,10 @@ interface Props {
   onPickedElement?: (objectId: string, guid: string) => void;
   /** Zoznam načítaných modelov (pre panel/navigátor v orchestrácii). */
   onModelsLoaded?: (models: LoadedModel[]) => void;
+  /** IFClite-native navigátor dáta (SPATIAL/TYPE/MATERIAL/CLASS). */
+  onNavigator?: (models: NavigatorModel[]) => void;
+  /** Detail prvku mimo DB (naparsované IFC) — `null` zavrie panel. */
+  onIfcElement?: (info: IfcElementInfo | null) => void;
 }
 
 export function IFCViewer({
@@ -36,6 +55,8 @@ export function IFCViewer({
   onSelect,
   onPickedElement,
   onModelsLoaded,
+  onNavigator,
+  onIfcElement,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -77,6 +98,11 @@ export function IFCViewer({
     for (const [g, o] of Object.entries(guidMap)) objectIdToGuid.set(o, g);
     let primaryBuffer: Uint8Array | null = null;
     let sceneBounds: AABB | null = null;
+    // Parsované IFClite store per model (navigátor + IFC-props fallback, follow-IFClite).
+    const stores = new Map<
+      string,
+      { store: IfcDataStore; offset: number; typeByLocal: Map<number, string> }
+    >();
 
     // ── Pomocné (čítajú `renderer`/mapy až pri volaní) ───────────────────
     function reloadVisible(): void {
@@ -114,20 +140,60 @@ export function IFCViewer({
         );
     }
 
+    function emitIfcElement(ge: number): void {
+      const lookup = federationRegistry.fromGlobalId(ge);
+      if (!lookup) {
+        onIfcElement?.(null);
+        return;
+      }
+      const rec = stores.get(lookup.modelId);
+      if (!rec) {
+        onIfcElement?.(null);
+        return;
+      }
+      try {
+        const attrs = extractEntityAttributesOnDemand(rec.store, lookup.expressId);
+        const psetsRaw = extractPropertiesOnDemand(rec.store, lookup.expressId);
+        const psets = psetsRaw.map((p) => ({
+          name: p.name,
+          props: p.properties.map((pr) => ({
+            name: pr.name,
+            value: pr.value == null ? "" : String(pr.value),
+          })),
+        }));
+        onIfcElement?.({
+          guid: attrs.globalId || null,
+          name: attrs.name || null,
+          objectType: rec.typeByLocal.get(lookup.expressId) || attrs.objectType || null,
+          modelName: models.find((mm) => mm.id === lookup.modelId)?.name ?? lookup.modelId,
+          psets,
+        });
+      } catch {
+        onIfcElement?.(null);
+      }
+    }
+
+    function selectByGlobalExpr(ge: number): void {
+      selectedIds.clear();
+      selectedIds.add(ge);
+      frameExpr(ge);
+      const guid = globalExprToGuid.get(ge);
+      const objectId = guid ? guidMap[guid] : undefined;
+      if (objectId && guid) {
+        onIfcElement?.(null);
+        onSelect?.({ id: objectId, route: "node", label: guid });
+        onPickedElement?.(objectId, guid);
+      } else {
+        emitIfcElement(ge);
+      }
+    }
+
     async function doPick(clientX: number, clientY: number): Promise<void> {
       if (!renderer) return;
       const rect = canvas!.getBoundingClientRect();
       const res = await renderer.pick(clientX - rect.left, clientY - rect.top);
       if (cancelled || !res) return;
-      selectedIds.clear();
-      selectedIds.add(res.expressId);
-      const guid = globalExprToGuid.get(res.expressId);
-      if (!guid) return;
-      const objectId = guidMap[guid];
-      if (objectId) {
-        onSelect?.({ id: objectId, route: "node", label: guid });
-        onPickedElement?.(objectId, guid);
-      }
+      selectByGlobalExpr(res.expressId);
     }
 
     function applyResize(): void {
@@ -207,6 +273,21 @@ export function IFCViewer({
             guidToGlobalExpr.set(g, ge);
           }
           for (const me of offsetMeshes) accumulateBounds(boundsByExpr, me);
+
+          // Parsovanie pre navigátor (follow-IFClite). Defenzívne — zlyhanie
+          // parsu nezhodí render.
+          try {
+            setProgress(`Analyzujem ${m.name}…`);
+            const store = await new IfcParser().parseColumnar(buf.buffer as ArrayBuffer);
+            if (cancelled) return;
+            const typeByLocal = new Map<number, string>();
+            for (const [t, ids] of store.entityIndex.byType) {
+              for (const id of ids) typeByLocal.set(id, t);
+            }
+            stores.set(m.id, { store, offset, typeByLocal });
+          } catch {
+            /* navigátor pre tento model nedostupný */
+          }
         }
 
         setProgress("Skladám scénu…");
@@ -233,6 +314,16 @@ export function IFCViewer({
         if (!cancelled) {
           setLoadedModels(list);
           onModelsLoaded?.(list);
+        }
+
+        // ── Navigátor (IFClite-native, follow-IFClite) ─────────────────
+        if (onNavigator) {
+          const navModels: NavigatorModel[] = [];
+          for (const m of models) {
+            const rec = stores.get(m.id);
+            if (rec) navModels.push(buildNavigator(m.id, m.name, rec.store, rec.offset, rec.typeByLocal));
+          }
+          if (!cancelled && navModels.length) onNavigator(navModels);
         }
 
         // ── ViewerApi ──────────────────────────────────────────────────
@@ -274,6 +365,10 @@ export function IFCViewer({
             }
           },
           resetView: () => renderer?.fitToView(),
+          highlightExprs: (exprs) => {
+            filterSet = exprs.length ? new Set(exprs) : null;
+          },
+          selectExpr: (ge) => selectByGlobalExpr(ge),
           getIfcBuffer: () => primaryBuffer,
         };
         if (apiRef) apiRef.current = api;
@@ -440,6 +535,124 @@ export function IFCViewer({
 }
 
 // ── Pomocné funkcie ─────────────────────────────────────────────────────────
+
+interface SpatialNodeLike {
+  expressId: number;
+  name?: string;
+  longName?: string;
+  children: SpatialNodeLike[];
+  elements: number[];
+}
+
+function walkSpatial(
+  node: SpatialNodeLike,
+  offset: number,
+  typeByLocal: Map<number, string>,
+  modelId: string
+): NavTreeNode {
+  const childNodes = node.children.map((c) => walkSpatial(c, offset, typeByLocal, modelId));
+  const groupChildren: NavTreeNode[] = [];
+  if (node.elements.length) {
+    const byType = new Map<string, number[]>();
+    for (const e of node.elements) {
+      const t = typeByLocal.get(e) ?? "IfcElement";
+      const arr = byType.get(t) ?? [];
+      arr.push(e + offset);
+      byType.set(t, arr);
+    }
+    for (const [t, exprs] of [...byType.entries()].sort((a, b) => b[1].length - a[1].length)) {
+      groupChildren.push({
+        key: `${modelId}:${node.expressId}:${t}`,
+        label: `${t} (${exprs.length})`,
+        exprs,
+        children: [],
+      });
+    }
+  }
+  const subtreeExprs = [
+    ...node.elements.map((e) => e + offset),
+    ...childNodes.flatMap((c) => c.exprs),
+  ];
+  const label = node.longName
+    ? `${node.name ?? ""} ${node.longName}`.trim()
+    : node.name || "(uzol)";
+  return {
+    key: `${modelId}:${node.expressId}`,
+    label,
+    expr: node.expressId + offset,
+    exprs: subtreeExprs,
+    children: [...childNodes, ...groupChildren],
+  };
+}
+
+function collectSpatialElements(root: SpatialNodeLike | undefined): number[] {
+  const out: number[] = [];
+  if (!root) return out;
+  const stack: SpatialNodeLike[] = [root];
+  while (stack.length) {
+    const n = stack.pop()!;
+    for (const e of n.elements) out.push(e);
+    for (const c of n.children) stack.push(c);
+  }
+  return out;
+}
+
+function buildNavigator(
+  id: string,
+  name: string,
+  store: IfcDataStore,
+  offset: number,
+  typeByLocal: Map<number, string>
+): NavigatorModel {
+  const hier = store.spatialHierarchy;
+  const spatial: NavTreeNode[] = hier?.project
+    ? [walkSpatial(hier.project as unknown as SpatialNodeLike, offset, typeByLocal, id)]
+    : [];
+
+  const types: NavGroup[] = [];
+  for (const [t, ids] of store.entityIndex.byType) {
+    types.push({ label: t, count: ids.length, exprs: ids.map((x) => x + offset) });
+  }
+  types.sort((a, b) => b.count - a.count);
+
+  const materials: NavGroup[] = [];
+  try {
+    for (const usage of buildMaterialUsageIndex(store).values()) {
+      materials.push({
+        label: usage.name || "(bez názvu)",
+        count: usage.entries.length,
+        exprs: usage.entries.map((e) => e.entityId + offset),
+      });
+    }
+    materials.sort((a, b) => b.count - a.count);
+  } catch {
+    /* materiály nedostupné */
+  }
+
+  const classifications: NavGroup[] = [];
+  try {
+    const byCode = new Map<string, number[]>();
+    for (const eid of collectSpatialElements(hier?.project as unknown as SpatialNodeLike | undefined)) {
+      for (const info of extractClassificationsOnDemand(store, eid)) {
+        const code = info.identification || info.name || info.system;
+        if (!code) continue;
+        const label =
+          info.identification && info.name ? `${info.identification} — ${info.name}` : code;
+        const arr = byCode.get(label) ?? [];
+        arr.push(eid + offset);
+        byCode.set(label, arr);
+      }
+    }
+    for (const [label, exprs] of byCode) {
+      classifications.push({ label, count: exprs.length, exprs });
+    }
+    classifications.sort((a, b) => b.count - a.count);
+  } catch {
+    /* klasifikácie nedostupné */
+  }
+
+  return { id, name, spatial, types, materials, classifications };
+}
 
 function accumulateBounds(map: Map<number, AABB>, mesh: MeshData): void {
   const p = mesh.positions;
