@@ -28,7 +28,7 @@ grafom. Detail v sekcii „Program dema — F-sprinty".**
 | **D-049** VZT federácia + distribučné systémy | ✅ | 9 systémov, 1029 `rel_assigns_to_group`, MEP prvky na existujúce podlažia |
 | **S4** Polish & launch | 🟢 beží | reálne dáta naloadené; ostáva doména + polish |
 | **F1** Meta-model vzťahov B | ✅ nasadené | D-051; generická `relationships` + manifest + kanonické views + trigger; migrácia `20260707150000` na Supabase prod (`acwoupricatirhlfkhvk`), 4461 hrán, história 8 migrácií sync s repom |
-| **F5** 3D/IFClite port (WebGPU + federácia N modelov) | 🛠️ implementované, čaká runtime test | D-055/D-050; WebGPU `@ifc-lite/renderer` + parser/geometry/spatial, federácia ARCH+VZT (`federationRegistry`), IFClite-native navigátor (SPATIAL/TYPE/MATERIAL/CLASS), toolbar (rezy/pohľady), aktivovaný Query (`IfcQuery`+DuckDB). `tsc`/`lint`/build-compile ✅. **Čaká:** nahrať `VZT.ifc` do bucketu + manuálny WebGPU test. Nahrádza pôvodnú S5-fed Three.js federáciu. |
+| **F5** 3D/IFClite port (WebGPU + federácia N modelov) | 🛠️ implementované, čaká runtime test | D-055/D-050; WebGPU `@ifc-lite/renderer` + parser/geometry/spatial, federácia ARCH+VZT (`federationRegistry`), IFClite-native navigátor (SPATIAL/TYPE/MATERIAL/CLASS), toolbar (rezy/pohľady), aktivovaný Query (`IfcQuery`+DuckDB). `tsc`/`lint`/build-compile ✅. ASR.ifc + VZT.ifc **už v Supabase `ifc/` buckete** (21 MB / 10 MB). **Čaká:** manuálny WebGPU test. Nahrádza pôvodnú S5-fed Three.js federáciu. |
 | **F2–F4, F6** Program dema | 📋 plánované | D-052–D-054, D-056; viď sekcia „Program dema — F-sprinty" |
 | **S-LLM → F6** LLM interface nad grafom | 🟢 **kritická cesta** | D-047/D-056; ETL základ hotový (D-049), kód ešte nezačatý |
 | **E5** ICDD export | ⏸️ odložené | D-015/D-032 |
