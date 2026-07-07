@@ -51,6 +51,7 @@ export default function IFCWorkspace({
   const [siblingLoading, setSiblingLoading] = useState(false);
   const [sectionOn, setSectionOn] = useState(false);
   const [sectionPos, setSectionPos] = useState(0.5);
+  const [queryText, setQueryText] = useState("");
 
   // ── Direction A: DB → 3D ──────────────────────────────────────────────────
 
@@ -101,6 +102,15 @@ export default function IFCWorkspace({
     viewerApiRef.current?.setSectionPlane(
       on ? { axis: "down", position: pos, enabled: true } : null
     );
+  }
+
+  // ── IFClite Query → 3D (aktivované @ifc-lite/query) ────────────────────────
+
+  function runTypeQuery() {
+    const types = queryText.split(/[\s,]+/).filter(Boolean);
+    if (types.length === 0) return;
+    const exprs = viewerApiRef.current?.queryByType(types) ?? [];
+    handleTreeHighlight(exprs);
   }
 
   return (
@@ -166,6 +176,24 @@ export default function IFCWorkspace({
               aria-label="Poloha rezu"
             />
           )}
+          {/* IFC dotaz (@ifc-lite/query) → highlight v 3D */}
+          <div className="ml-auto flex items-center gap-1">
+            <input
+              value={queryText}
+              onChange={(e) => setQueryText(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") runTypeQuery();
+              }}
+              placeholder="IFC dotaz: IfcDoor…"
+              className="w-40 rounded border border-border bg-background px-2 py-1"
+            />
+            <button
+              onClick={runTypeQuery}
+              className="rounded border border-border px-2 py-1 hover:bg-muted"
+            >
+              Dotaz
+            </button>
+          </div>
         </div>
 
         {(activeFilterLabel || siblingLoading) && (

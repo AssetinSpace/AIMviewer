@@ -15,6 +15,7 @@ import {
 import type { MeshData } from "@ifc-lite/geometry";
 import type { SectionPlane } from "@ifc-lite/renderer";
 
+import { buildIfcQueryHandle, type IfcQueryHandle } from "@/hooks/use-ifc-query";
 import type { SelectedElement } from "@/lib/data/drawing";
 import type { GuidMap, IfcModel } from "@/lib/data/ifc";
 import type {
@@ -103,6 +104,8 @@ export function IFCViewer({
       string,
       { store: IfcDataStore; offset: number; typeByLocal: Map<number, string> }
     >();
+    let queryHandle: IfcQueryHandle | null = null; // @ifc-lite/query nad primárnym modelom
+    let queryOffset = 0;
 
     // ── Pomocné (čítajú `renderer`/mapy až pri volaní) ───────────────────
     function reloadVisible(): void {
@@ -326,6 +329,17 @@ export function IFCViewer({
           if (!cancelled && navModels.length) onNavigator(navModels);
         }
 
+        // ── @ifc-lite/query nad primárnym modelom (základ pre F6) ──────
+        const primaryRec = models[0] ? stores.get(models[0].id) : undefined;
+        if (primaryRec) {
+          try {
+            queryHandle = buildIfcQueryHandle(primaryRec.store);
+            queryOffset = primaryRec.offset;
+          } catch {
+            queryHandle = null;
+          }
+        }
+
         // ── ViewerApi ──────────────────────────────────────────────────
         const api: ViewerApi = {
           highlightFilter: (oids, ex) => {
@@ -369,6 +383,12 @@ export function IFCViewer({
             filterSet = exprs.length ? new Set(exprs) : null;
           },
           selectExpr: (ge) => selectByGlobalExpr(ge),
+          queryByType: (types) =>
+            queryHandle ? queryHandle.ofType(...types).map((id) => id + queryOffset) : [],
+          runSql: (query) =>
+            queryHandle
+              ? queryHandle.sql(query)
+              : Promise.reject(new Error("Query nedostupné")),
           getIfcBuffer: () => primaryBuffer,
         };
         if (apiRef) apiRef.current = api;

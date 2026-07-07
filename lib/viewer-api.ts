@@ -1,4 +1,5 @@
 import type { SectionPlane } from "@ifc-lite/renderer";
+import type { SQLResult } from "@ifc-lite/query";
 
 /** Jeden načítaný model v scéne (pre panel Modely / navigátor). */
 export interface LoadedModel {
@@ -75,6 +76,10 @@ export interface ViewerApi {
   highlightExprs: (globalExprs: ReadonlyArray<number>) => void;
   /** Select + focus a single element by GLOBAL expressId (navigátor → 3D + karta/IFC props). */
   selectExpr: (globalExpr: number) => void;
+  /** `@ifc-lite/query` nad primárnym modelom: prvky daných IFC tried → GLOBÁLNE expressId. */
+  queryByType: (ifcTypes: string[]) => number[];
+  /** SQL nad primárnym modelom (DuckDB-WASM, lazy) — základ pre F6. */
+  runSql: (query: string) => Promise<SQLResult>;
   /** Raw IFC STEP buffer of the primary model — for `@ifc-lite/query`. Null before load. */
   getIfcBuffer: () => Uint8Array | null;
 }
