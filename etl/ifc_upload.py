@@ -151,11 +151,11 @@ def main(argv: list[str] | None = None) -> None:
     print(f"Nahrávam {OBJECT_KEY} ({size_mb:.1f} MB)...")
     public_url = upload_ifc(base, key, content)
 
-    print(f"\n✓ Hotovo!")
+    print("\n✓ Hotovo!")
     print(f"\nPublic URL:\n  {public_url}")
-    print(f"\nNastav v Verceli (Environment Variables):")
+    print("\nNastav vo Verceli (Environment Variables):")
     print(f"  NEXT_PUBLIC_IFC_URL={public_url}")
-    print(f"\nAlebo do .env.local pre lokálny dev:")
+    print("\nAlebo do .env.local pre lokálny dev:")
     print(f"  NEXT_PUBLIC_IFC_URL={public_url}")
 
 

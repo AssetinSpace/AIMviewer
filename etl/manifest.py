@@ -28,7 +28,7 @@ Spustenie:
 from __future__ import annotations
 
 import argparse
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Optional
 
 # Cieľová IFC schéma (D-046: IFC4.3 slovník teraz). Federované modely sú IFC4X3_ADD2,
