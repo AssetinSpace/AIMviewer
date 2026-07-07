@@ -11,7 +11,10 @@
   },
   "dependencies": {
     "@ifc-lite/geometry": "^2.9.2",
+    "@ifc-lite/parser": "^3.8.0",
     "@ifc-lite/query": "^1.14.10",
+    "@ifc-lite/renderer": "^1.35.0",
+    "@ifc-lite/spatial": "^1.14.10",
     "@ifc-lite/wasm": "^2.12.0",
     "@supabase/supabase-js": "^2.108.2",
     "@types/three": "^0.184.1",
