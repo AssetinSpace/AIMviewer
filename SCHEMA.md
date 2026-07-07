@@ -152,6 +152,22 @@ Hrany sú **IFC-kanonické** (D-048): každá = konkrétny `IfcRelationship` pod
 Fyzicky binárne `from→to` + naše meta stĺpce (NIE objektifikované N-árne IFC entity —
 sme index nad IFC sémantikou, nie STEP v Postgrese, D-046/D-048). Smer = `subjekt→objekt`.
 
+> **Planned (D-051) — cieľový stav B, zatiaľ NEimplementované.** Per-vzťah tabuľky nižšie
+> budú **supersedované** jednou generickou tabuľkou `relationships` (diskriminátor `rel_type`,
+> symetricky k `objects.object_type`) + **kanonické views** per `rel_type` (LLM dotazuje len
+> views) + **manifest** generovaný z IFC schémy (`ifcopenshell`), uložený aj ako referenčná
+> tabuľka: na každý `rel_type` nesie smer (IFC `Relating` strana), povolené `object_type` na
+> oboch stranách, namespace flag (`rel_*` vs `aim_*`), export cestu (`rel_*`→`IfcRel`,
+> `aim_*`→ICDD/IFCX) a per-`rel_type` constraints (unique-active-parent). Integrita cez
+> manifest (validačný trigger/view namiesto polymorfného FK). Cieľový tvar: jedna tabuľka +
+> index na `rel_type` (`LIST` partícia odložená — nesie constraint „PK musí obsahovať partičný
+> kľúč", kolízia s `ON CONFLICT (id)` D-031). N-árnosť = **otvorená vidlica** (binárne `from→to`
+> vs objektifikovaná member-tabuľka; leaning binárne). Migrácia (sprint F1) musí ošetriť:
+> **compat-views** rovnakého názvu ako dnešné `rel_*` (bezvýpadkový cutover, vzor D-048),
+> **recreate odvodených views** (`v_asset_effective`/`v_asset_classifications`/`v_floors`/
+> `v_actors`), **update `supabase/seed.sql`**, zachovanie **D-031 idempotencie**. Reálne DDL
+> sa píše až s migráciou pri F1 (staré migrácie sa nemažú). Nižšie = **súčasný stav** (platí do F1).
+
 ```sql
 -- Spatial dekompozícia (D-013, D-048). IFC: IfcRelAggregates (IfcRelDecomposes)
 -- Site→Building→Floor→Space. from = časť (child), to = celok (parent)
@@ -429,4 +445,4 @@ celej migrácie, deep-merge dedičnosť v `v_asset_effective`, partial-unique
 `updated_at` trigger. Pri prvom `supabase db reset` s Dockerom musí prejsť rovnako.
 
 ---
-*v0.4 — §2 implementovaná (migrácia 20260616120000). Seed hotový (`supabase/seed.sql`). Viewer S0–S3 nasadený na Verceli. Schéma sa od iniciálnej migrácie nemenila — všetky nové features (Viewer S1–S3: hierarchia, asset karta, dokumenty/zodpovednosti/GUID + generický object route, D-027–D-029) sú čisto na aplikačnej vrstve. Ďalšia migrácia príde s S4 (ETL reálne dáta) alebo aditívnymi features (RLS, actor model C).*
+*v0.4 — §2 implementovaná (migrácia 20260616120000). Seed hotový (`supabase/seed.sql`). Viewer S0–S3 nasadený na Verceli. Schéma sa od iniciálnej migrácie nemenila — všetky nové features (Viewer S1–S3: hierarchia, asset karta, dokumenty/zodpovednosti/GUID + generický object route, D-027–D-029) sú čisto na aplikačnej vrstve. Ďalšia migrácia príde s S4 (ETL reálne dáta) alebo aditívnymi features (RLS, actor model C). Plánovaná väčšia migrácia: **meta-model vzťahov B** (D-051, sprint F1 — §2.5 planned note).*

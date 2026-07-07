@@ -45,6 +45,15 @@ Pravidlá pri písaní (agent aj človek):
    `.github/copilot-instructions.md`, `.cursor/rules/aim-platform.mdc`. Codex/Gemini čítajú
    `AGENTS.md` natívne.
 7. **Konvencie sa menia iba tu v `AGENTS.md`**, nie v pointeroch.
+8. **Re-check pred sprintom:** pred plánovaním/implementáciou každého sprintu skontroluj
+   aktuálny stav (ROADMAP „Stav", git, DB) a čo sa zmenilo; podľa toho prehodnoť poradie/
+   rozsah sprintov a kroky, až potom píš detail `D-0xx` a kód.
+9. **Zosúladenie dokumentov po sprinte/commite (multi-tool):** po dokončení sprintu a po
+   commite vždy zosúlaď podporné dokumenty — `ROADMAP.md` („Stav"/changelog), `DECISIONS.md`
+   (`D-0xx`), `SCHEMA.md` (ak sa dotklo DB) a **tenké nástrojové pointery** (`CLAUDE.md`,
+   `.github/copilot-instructions.md`, `.cursor/rules/aim-platform.mdc`, príp. `GEMINI.md`) —
+   aby ľubovoľný iný nástroj spustený nad repom mal aktuálny, konzistentný kontext (zdroj
+   pravdy ostáva `AGENTS.md`, pointery bez duplikovaného obsahu).
 
 Nižšie je normatívny súhrn konvencií. **Presné DDL, stĺpce a pohľady sú v `SCHEMA.md`** —
 tu sú len pravidlá, ktorých sa treba držať.
@@ -74,8 +83,12 @@ Primárny use case: AIM Viewer — ukážka správne previazaných dát.
 ### Uzly — centrálna tabuľka `objects` (D-018)
 - Všetky uzly sú riadky v `objects`, rozlíšené `object_type`:
   site, building, floor, space, asset, asset_type, document, person, organization,
-  system (IfcDistributionSystem, D-047/D-049)
+  system (IfcDistributionSystem, D-047/D-049); ďalšie IFC entity (napr. `zone` = IfcZone,
+  procesy/tasky) sú **aditívne hodnoty** (D-051)
 - `object_type` validuje ETL/app (NIE CHECK — pridanie typu je aditívne)
+- **Cieľ: pokryť celú IFC ontológiu** (entity aj vzťahy) — entity už dnes generické cez
+  otvorený `object_type`; vzťahy cez generický meta-model (D-051). Nie je to prestavba, ale
+  aditívne dopĺňanie hodnôt/`rel_type`. IFC = sémantika/ontológia, nie STEP súbor (D-046).
 - IFC atribúty sú **stĺpce** (`ifc_guid`, `ifc_type`, `predefined_type`, `name`,
   `object_ref UNIQUE`…), NIE do `properties`. `properties JSONB` = property sety +
   rezervované `_kľúče` (viď nižšie). Presné stĺpce → `SCHEMA.md §2.1`.
@@ -89,7 +102,17 @@ Primárny use case: AIM Viewer — ukážka správne previazaných dát.
 - **Custom psety** → `properties[<názov>]`, akýkoľvek iný názov (bez povinného prefixu)
 - **Rezervované `_kľúče`** (`_contact`, `_org`…) = meta/zachytené dáta, NIE psety; psety nikdy nezačínajú `_`
 
-### Hrany (vzťahové tabuľky) — IFC-kanonické (D-048)
+### Hrany (vzťahové tabuľky) — IFC-kanonické (D-048 → cieľ D-051)
+> **Cieľový stav (D-051, revízia D-048):** vrstva hrán sa prestaví z per-vzťah tabuliek na
+> **jednu generickú `relationships`** (diskriminátor `rel_type`, symetricky k `objects`) +
+> **kanonické views** per typ + **manifest** (generovaný z IFC schémy `ifcopenshell`).
+> Dôvod: IFC vlastný meta-model = `objects` (IfcObjectDefinition) + `relationships`
+> (IfcRelationship, objektifikovaný) + `properties` (IfcPropertyDefinition); B škáluje na
+> celé IFC bez migrácie za každý vzťah. **IFC-kanonická identita, smer `subjekt→objekt` aj
+> `aim_` namespace ostávajú** — presúvajú sa do manifestu ako dáta. **LLM dotazuje len
+> kanonické views** (nie base tabuľku) → text-to-SQL ergonómia zachovaná. Zmena príde
+> migráciou v sprinte F1 (compat-views pre bezvýpadkový cutover); nižšie je **súčasný stav**
+> (platí do F1).
 - Každá hrana = konkrétny IFC `IfcRelationship` podtyp, **pomenovaná podľa neho**,
   s granularitou akú rozlišuje IFC:
   `rel_aggregates` (IfcRelAggregates), `rel_contained_in_spatial_structure`

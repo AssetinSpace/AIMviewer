@@ -12,8 +12,10 @@
 > **Jediné miesto s aktuálnym stavom projektu.** Rationale k jednotlivým bodom je
 > v `DECISIONS.md` (D-0xx), schéma v `SCHEMA.md`. História zmien = spodok tohto súboru.
 
-**Dátové jadro + oba demo „wow" momenty sú hotové. Otvorený je jeden veľký kus —
-S-LLM (LLM nad grafom), oficiálna kritická cesta a north-star dema (D-047).**
+**Dátové jadro + oba demo „wow" momenty sú hotové. Plánovacie kolo 2026-07-07 (nové inputy
+k demu) otvorilo program F-sprintov (D-051–D-056): meta-model vzťahov B, geometrický
+containment + IDS, live upload/verifikácia, PDF rework, 3D/IFClite port a LLM rozhranie nad
+grafom. Detail v sekcii „Program dema — F-sprinty".**
 
 | Blok | Stav | Poznámka |
 |---|---|---|
@@ -26,7 +28,8 @@ S-LLM (LLM nad grafom), oficiálna kritická cesta a north-star dema (D-047).**
 | **D-049** VZT federácia + distribučné systémy | ✅ | 9 systémov, 1029 `rel_assigns_to_group`, MEP prvky na existujúce podlažia |
 | **S4** Polish & launch | 🟢 beží | reálne dáta naloadené; ostáva doména + polish |
 | **S5-fed** 3D multi-model federácia (ARCH+VZT) | 🛠️ rozpracované | render VZT+ASR v jednej scéne — **necommitnuté, čaká na D-050** (viď „Rozpracované") |
-| **S-LLM** LLM interface nad grafom | 🟢 **kritická cesta** | D-047; ETL základ hotový (D-049), kód ešte nezačatý |
+| **F1–F6** Program dema | 📋 plánované | D-051–D-056; viď sekcia „Program dema — F-sprinty" |
+| **S-LLM → F6** LLM interface nad grafom | 🟢 **kritická cesta** | D-047/D-056; ETL základ hotový (D-049), kód ešte nezačatý |
 | **E5** ICDD export | ⏸️ odložené | D-015/D-032 |
 | **D-045** Pasportizácia + dynamika | 📋 kandidát | čaká na reálnu zákazku |
 
@@ -39,10 +42,12 @@ IFC GUID (expressId sa medzi súbormi prekrýva), podlažie sa normalizuje (`1NP
 **Treba:** zapísať rozhodnutie **D-050** (3D vrstva federácie D-049) a commitnúť.
 
 ### Ďalší krok
-**S-LLM** je kritická cesta — headline dotaz „systém → prvky/jednotka + podlažie" je už
-grafovo zodpovedateľný (D-049). Sprint-rozpis + rozhodnutie o architektúre LLM interface
-(model, whitelist views, guardraily, trust-loop citácia) je ďalší veľký kus — viď sekciu
-„Parkované / paralelné → S-LLM".
+Program **F-sprintov** (D-051–D-056) — viď sekcia „Program dema — F-sprinty". Poradie nie
+je fixné: **F1** (meta-model vzťahov B) je základ, ale nie hard-blocker demo-hodnoty; **F2**
+(geom containment), **F4** (PDF rework) a **F5** (3D/IFClite) sú nezávislé (F4/F5 kandidáti
+na skorý quick-win); **F6** (LLM, kritická cesta, headline dotaz už grafovo zodpovedateľný
+z D-049) z B ťaží, ale beží aj na dnešnom grafe. **Pred štartom každého sprintu = re-check
+stavu** (kadencia, `AGENTS.md`); poradie sa potvrdí vtedy.
 
 **Infra:** Supabase Cloud (`acwoupricatirhlfkhvk`) + GitHub (`AssetinSpace/AIMviewer`) +
 Vercel (auto-deploy z `main`). **Chýba:** vlastná doména (S4).
@@ -125,6 +130,24 @@ Vercel (auto-deploy z `main`). **Chýba:** vlastná doména (S4).
   zodpovednosťami, výkresom; klik v strome → zvýraznená v 3D. Schéma DB sa **nemení**.
 
 ---
+
+## Program dema — F-sprinty (D-051+)
+
+> Program z plánovacieho kola 2026-07-07 (nové inputy k demu). Rovnaký princíp ako S/E:
+> **každý sprint končí niečím demovateľným**. Rozhodnutia: D-051–D-056. **Závislosti sú
+> voľné** — F1 je základ, nie hard-blocker; F2/F4/F5 nezávislé; F6 z B ťaží, nevyžaduje ho.
+> **Pred štartom každého sprintu sa spraví re-check stavu** (kadencia, `AGENTS.md`), poradie
+> sa podľa toho potvrdí/prehodnotí.
+
+| Sprint | Cieľ (demovateľný výstup) | Rozhodnutie | Závislosť |
+|---|---|---|---|
+| **F1 — Meta-model vzťahov B** | Manifest z `ifcopenshell` → jedna `relationships` tabuľka + `rel_type` index + kanonické views + validácia; bezvýpadkový cutover cez compat-views (názvy dnešných `rel_*`), postupná migrácia ETL/app, recreate odvodených views, update seedu, zachovaná D-031 idempotencia. Viewer/ETL beží nezmenene navonok. | D-051 | základ; striktne nutný až pred množením nových typov vzťahov |
+| **F2 — Geom containment + IDS** | ETL geom krok (`ifcopenshell.geom`/`geom.tree`, solid-in-solid) → element→space hrana (`source='geom'`, needeštruktívne); natívny `ifctester` IDS#1 (→storey) a IDS#2 (→space); viewer číta dual-source (in-file + syntetický). | D-052 | nezávislé od F1 |
+| **F3 — Upload + verifikácia** | SharePoint-like upload ľubovoľného súboru + kontrola CDE mennej konvencie (`doc_scheme.py`) + IDS/SNIM požiadavky (zdroj D-033/D-034). Nice-to-have. | D-053 | ťaží z IDS (F2) |
+| **F4 — PDF prehliadačka rework** | Prestavaná prehliadačka výkresov/dokumentov (UX/výkon) — `/drawing/[id]` a spol. | D-054 | nezávislé; skorý quick-win |
+| **F5 — 3D/IFClite feature port** | Ďalšie preberateľné IFClite moduly (2D výkresy, meranie, rezy, IDS validátor, IfcQuery). | D-055 | nezávislé; skorý quick-win |
+| **F6 — LLM rozhranie** | API-pluggable model, tool-calling nad whitelist views, trust-loop deep-links (3D + región vo výkrese). Headline: „ukáž prvok v 3D + na ktorých výkresoch a kde". | D-056 | ťaží z F1/F2/D-049; beží aj na dnešnom grafe |
+| **Dáta — import vodného modelu (ÚK/ZTI)** | Federačný ETL import (vzor D-049) — odomkne ventilový use-case „najbližší uzatvárací ventil" vo F6. | D-056 | prerekvizita ventilového dotazu |
 
 ## Parkované / paralelné
 
@@ -286,6 +309,7 @@ naming convention finálny tvar) sú v DECISIONS §7.
 > Kompaktný reverse-chrono log. Detail ku každému bodu je v `DECISIONS.md` (D-0xx);
 > aktuálny stav je hore v sekcii „Stav".
 
+- **2026-07-07** — Plánovacie kolo (nové inputy k demu): pridaný program **F-sprintov** (D-051–D-056) — meta-model vzťahov B (revízia D-048), geom containment + IDS, upload/verifikácia, PDF rework, 3D/IFClite port, LLM rozhranie. Zavedené kadencie: re-check pred sprintom + zosúladenie dokumentov po sprinte/commite (multi-tool).
 - **2026-07-07** — Konsolidácia podporných dokumentov: `AGENTS.md` = zdroj pravdy konvencií (multi-tool), `CLAUDE.md`/Copilot/Cursor len pointery; stav zjednotený do sekcie „Stav", changelog pätičky skrátené. Rozpracovaná 3D multi-model federácia (→ D-050).
 - **2026-07-05** — D-049 VZT federácia hotová (9 systémov, 1029 `rel_assigns_to_group`, MEP prvky); D-048 IFC-kanonické hrany naprieč schémou/ETL/app.
 - **2026-07-02** — Online 3D model vymenený za vyčistený ASR re-export (Office centrum Brno, IFC4X3_ADD2); DB reload (objects 903, 3D↔DB bridge zdravý); SNIM `object_ref` z IFC `Name`; E4 obnovené (198 väzieb / 418 regiónov). Pridané D-046 (IFC alignment) + D-047 (LLM north-star).
