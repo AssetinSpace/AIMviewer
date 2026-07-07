@@ -99,7 +99,10 @@ export function DrawingViewer({
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const wrapperRef = useRef<HTMLDivElement | null>(null);
   const focusBoxRef = useRef<HTMLAnchorElement | null>(null);
-  const focusedOnce = useRef(false);
+  // Generácia focusu: každá zmena `focus` ju inkrementuje (render-time adjust nižšie);
+  // scroll efekt si pamätá, ktorú generáciu už odscrolloval (nahrádza bool „focusedOnce").
+  const [focusNonce, setFocusNonce] = useState(0);
+  const scrolledNonce = useRef(-1);
 
   // Live zoom/fit v ref-e pre natívne (non-passive) wheel/pointer listenery a rAF —
   // synchronizované v efekte (ref sa nesmie zapisovať počas renderu).
@@ -228,19 +231,28 @@ export function DrawingViewer({
   }
 
   // Zmena focusu (soft-navigácia s iným `?focus=`) → skoč na jeho stranu a znovu zacieľ.
-  useEffect(() => {
-    focusedOnce.current = false;
+  // Úprava stavu priamo počas renderu (React vzor „adjusting state when props change")
+  // namiesto efektu — bez kaskádového re-renderu cez commit.
+  const [prevFocus, setPrevFocus] = useState(focus);
+  if (focus !== prevFocus) {
+    setPrevFocus(focus);
+    setFocusNonce((n) => n + 1);
     if (focusRegion) {
       setPage(focusRegion.page);
       setZoom(FOCUS_ZOOM);
       setPulsing(true);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [focus]);
+  }
 
-  // Po vyrenderovaní strany s focus prvkom: odscrolluj naň a krátko rozpulzuj (raz).
+  // Po vyrenderovaní strany s focus prvkom: odscrolluj naň a krátko rozpulzuj (raz
+  // na každú generáciu focusu).
   useEffect(() => {
-    if (!focusRegion || !dims || focusRegion.page !== page || focusedOnce.current) {
+    if (
+      !focusRegion ||
+      !dims ||
+      focusRegion.page !== page ||
+      scrolledNonce.current === focusNonce
+    ) {
       return;
     }
     focusBoxRef.current?.scrollIntoView({
@@ -248,10 +260,10 @@ export function DrawingViewer({
       inline: "center",
       behavior: "smooth",
     });
-    focusedOnce.current = true;
+    scrolledNonce.current = focusNonce;
     const t = setTimeout(() => setPulsing(false), 2400);
     return () => clearTimeout(t);
-  }, [focusRegion, dims, page]);
+  }, [focusRegion, dims, page, focusNonce]);
 
   function goPage(next: number) {
     if (next < 1 || (numPages && next > numPages)) return;

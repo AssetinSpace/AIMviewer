@@ -56,28 +56,35 @@ export function ElementInfoPanel({
   /** Text tlačidla späť. V 3D prehliadači panel len zatvára (nie je „dokument"). */
   backLabel?: string;
 }) {
-  const [data, setData] = useState<NodeSummary | null>(null);
-  const [state, setState] = useState<"loading" | "error" | "ok">("loading");
+  // Výsledok fetchov keyovaný podľa id — loading/error/ok sa odvodí porovnaním
+  // s aktuálnym `selected.id`, takže efekt nemusí synchrónne resetovať stav.
+  const [result, setResult] = useState<{
+    id: string;
+    data: NodeSummary | null;
+  } | null>(null);
 
   useEffect(() => {
     let cancelled = false;
-    setState("loading");
-    setData(null);
     fetch(`/api/element/${selected.id}`)
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
       .then((d: NodeSummary) => {
-        if (!cancelled) {
-          setData(d);
-          setState("ok");
-        }
+        if (!cancelled) setResult({ id: selected.id, data: d });
       })
       .catch(() => {
-        if (!cancelled) setState("error");
+        if (!cancelled) setResult({ id: selected.id, data: null });
       });
     return () => {
       cancelled = true;
     };
   }, [selected.id]);
+
+  const current = result?.id === selected.id ? result : null;
+  const data = current?.data ?? null;
+  const state: "loading" | "error" | "ok" = !current
+    ? "loading"
+    : data
+      ? "ok"
+      : "error";
 
   return (
     <div className="sticky top-4 rounded-md ring-1 ring-border bg-background p-4">

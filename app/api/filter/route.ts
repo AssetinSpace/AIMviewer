@@ -29,9 +29,7 @@ export async function GET(req: NextRequest) {
       { headers: { "Cache-Control": "public, max-age=30" } }
     );
   } catch (err) {
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : "Server error" },
-      { status: 500 }
-    );
+    console.error("[api/filter]", err);
+    return NextResponse.json({ error: "server error" }, { status: 500 });
   }
 }
