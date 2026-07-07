@@ -1,5 +1,8 @@
 "use client";
 
+// Efekt zámerne resetuje loading/data pri zmene `selected.id` pred fetchom
+// (React 19 `set-state-in-effect` inak flagne tento legit sync-external-prop vzor).
+/* eslint-disable react-hooks/set-state-in-effect */
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { ArrowLeft, ArrowUpRight, FileText } from "lucide-react";
