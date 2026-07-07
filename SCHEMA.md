@@ -420,6 +420,7 @@ celej migrácie, deep-merge dedičnosť v `v_asset_effective`, partial-unique
 (D-051, sprint F1, migrácia `20260707150000_relationships_metamodel.sql`):** per-vzťah
 tabuľky `rel_*` supersedované generickou `relationships` + manifest `relationship_types` +
 kanonické views rovnakého názvu + validačný trigger (§2.5/§2.6). Čítacia vrstva a seed bežia
-nezmenene navonok; ETL zapisuje base tabuľku. Seed hotový (`supabase/seed.sql`). Viewer
-S0–S5 nasadený na Verceli. Ďalšie migrácie prídu s F2 (geom containment) alebo aditívnymi
-features (RLS, actor model C).*
+nezmenene navonok; ETL zapisuje base tabuľku. **Nasadené na Supabase prod** (`acwoupricatirhlfkhvk`,
+2026-07-07): 4461 hrán, migračná história sync so 8 súbormi v `supabase/migrations/`. Seed
+hotový (`supabase/seed.sql`). Viewer S0–S5 nasadený na Verceli. Ďalšie migrácie prídu s F2
+(geom containment) alebo aditívnymi features (RLS, actor model C).*

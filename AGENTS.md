@@ -116,7 +116,7 @@ Primárny use case: AIM Viewer — ukážka správne previazaných dát.
 > ide na base `relationships`** (views nie sú insertovateľné). **Integrita** = validačný trigger
 > z manifestu (nie polymorfný FK); `to_id` polymorfné (objects/`classification_references`).
 > Partície odložené (kolízia „PK musí obsahovať partičný kľúč" × `ON CONFLICT (id)`).
-> Presné DDL → `SCHEMA.md §2.5/§2.6`; zoznam `rel_type` nižšie.
+> **Nasadené na Supabase prod** (2026-07-07, `acwoupricatirhlfkhvk`). Presné DDL → `SCHEMA.md §2.5/§2.6`; zoznam `rel_type` nižšie.
 - Každý `rel_type` = konkrétny IFC `IfcRelationship` podtyp, **pomenovaný podľa neho**,
   s granularitou akú rozlišuje IFC:
   `rel_aggregates` (IfcRelAggregates), `rel_contained_in_spatial_structure`
