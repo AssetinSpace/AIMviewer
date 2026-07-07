@@ -70,7 +70,8 @@ Primárny use case: AIM Viewer — ukážka správne previazaných dát.
 - **Vercel** — hosting (vlastná doména cez Websupport)
 - **Python + ifcopenshell** — IFC parser / ETL pipeline (`etl/`)
 - **rdflib** — RDF/ICDD export
-- **IFClite (WASM) + Three.js** — klient-side 3D render (geometria nikdy nie je v DB)
+- **IFClite (WASM) + WebGPU renderer** (`@ifc-lite/renderer`) — klient-side 3D render
+  (geometria nikdy nie je v DB; WebGPU, Safari/iOS < 18 nie je cieľ, D-055)
 
 ## Kľúčové dokumenty — vždy čítaj pred prácou
 - `DECISIONS.md` — všetky architektonické rozhodnutia s kontextom (D-0xx)

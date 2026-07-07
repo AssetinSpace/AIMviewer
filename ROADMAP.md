@@ -27,20 +27,22 @@ grafom. Detail v sekcii „Program dema — F-sprinty".**
 | **D-048** IFC-kanonická vrstva hrán | ✅ | `rel_*` presne podľa `IfcRel*` |
 | **D-049** VZT federácia + distribučné systémy | ✅ | 9 systémov, 1029 `rel_assigns_to_group`, MEP prvky na existujúce podlažia |
 | **S4** Polish & launch | 🟢 beží | reálne dáta naloadené; ostáva doména + polish |
-| **S5-fed** 3D multi-model federácia (ARCH+VZT) | 🛠️ rozpracované | render VZT+ASR v jednej scéne — **necommitnuté, čaká na D-050** (viď „Rozpracované") |
 | **F1** Meta-model vzťahov B | ✅ nasadené | D-051; generická `relationships` + manifest + kanonické views + trigger; migrácia `20260707150000` na Supabase prod (`acwoupricatirhlfkhvk`), 4461 hrán, história 8 migrácií sync s repom |
-| **F2–F6** Program dema | 📋 plánované | D-052–D-056; viď sekcia „Program dema — F-sprinty" |
+| **F5** 3D/IFClite port (WebGPU + federácia N modelov) | 🛠️ rozpracované | D-055/D-050; prechod na WebGPU `@ifc-lite/renderer`, federácia ARCH+VZT, IFClite-native navigátor, Query. **Nahrádza pôvodnú necommitnutú S5-fed Three.js federáciu.** |
+| **F2–F4, F6** Program dema | 📋 plánované | D-052–D-054, D-056; viď sekcia „Program dema — F-sprinty" |
 | **S-LLM → F6** LLM interface nad grafom | 🟢 **kritická cesta** | D-047/D-056; ETL základ hotový (D-049), kód ešte nezačatý |
 | **E5** ICDD export | ⏸️ odložené | D-015/D-032 |
 | **D-045** Pasportizácia + dynamika | 📋 kandidát | čaká na reálnu zákazku |
 
-### Rozpracované (necommitnuté)
-**3D multi-model federácia** — 5 modif. súborov ([lib/data/ifc.ts](lib/data/ifc.ts),
+### Rozpracované (F5, D-055/D-050)
+**3D/IFClite port na WebGPU + federácia N modelov** — beží na vetve `cursor/f5-ifclite-webgpu`.
+Nahrádza pôvodnú necommitnutú Three.js multi-model federáciu čistým IFClite prístupom:
+`@ifc-lite/renderer` (WebGPU) + `federationRegistry` (id-offsety riešia kolíziu `expressId`
+medzi modelmi), `getIfcModels()` vracia pole N modelov, IFClite-native navigátor
+(follow-IFClite — nerecyklovať `fetchSpatialTree`), rezy, aktivovaný Query. Rozhodnutie
+**D-050** zapísané. Dotknuté: [lib/data/ifc.ts](lib/data/ifc.ts),
 [components/ifc-viewer.tsx](components/ifc-viewer.tsx), `ifc-workspace.tsx`,
-`app/(viewer)/ifc/page.tsx`, [etl/ifc_upload.py](etl/ifc_upload.py)): `getIfcModels()`
-vracia pole (ARCH+VZT), viewer rendruje oba do jednej scény, identita naprieč modelmi drží
-IFC GUID (expressId sa medzi súbormi prekrýva), podlažie sa normalizuje (`1NP_VZT`→`1NP`).
-**Treba:** zapísať rozhodnutie **D-050** (3D vrstva federácie D-049) a commitnúť.
+`app/(viewer)/ifc/page.tsx`, [etl/ifc_upload.py](etl/ifc_upload.py), `package.json`.
 
 ### Ďalší krok
 Program **F-sprintov** (D-051–D-056) — viď sekcia „Program dema — F-sprinty". Poradie nie
@@ -114,9 +116,10 @@ Vercel (auto-deploy z `main`). **Chýba:** vlastná doména (S4).
 > renderovanému IFC. E2 ETL naloadoval ASR.ifc → triviálne splnené; ten istý súbor na
 > render aj ako zdroj GUIDov v DB (D-044, zámer). Route `/ifc` (`app/(viewer)/ifc/page.tsx`),
 > render `components/ifc-viewer.tsx`, orchestrácia `ifc-workspace.tsx`, GUID mapa `lib/data/ifc.ts`.
-- **Fáza 1 — Embedded 3D panel ✅:** IFClite (`@ifc-lite/wasm`, WebGL/Three.js template)
-  vložený do Viewera; zobrazuje ASR.ifc klient-side (`exportGlb` → GLTFLoader). Izolovaný
-  modul (`ssr: false`) — jeho pád nezhodí dátový viewer. WASM self-hostovaný z `public/`.
+- **Fáza 1 — Embedded 3D panel ✅:** IFClite (`@ifc-lite/wasm`, pôvodne WebGL/Three.js template;
+  **F5/D-055 → WebGPU `@ifc-lite/renderer`**) vložený do Viewera; zobrazuje ASR.ifc klient-side
+  (`exportGlb` → GLTFLoader). Izolovaný modul (`ssr: false`) — jeho pád nezhodí dátový viewer.
+  WASM self-hostovaný z `public/`.
 - **Fáza 2 — Obojsmerná selekcia ✅** *(cieľový demo moment):* klik/raycast na element v 3D →
   asset karta (`/node/[id]`) v bočnom paneli + highlight; `?focus=<guid>` z karty/stromu →
   zvýraznenie + zoom v 3D. Spojka = IFC GUID (`exprToGuid` z STEP textu ↔ `guidMap` z
@@ -126,7 +129,8 @@ Vercel (auto-deploy z `main`). **Chýba:** vlastná doména (S4).
   priestorový kontext picknutého prvku (`/api/space-siblings`), Escape = zruš výber. Autorita
   dotazu zostáva v DB (`v_asset_effective`, D-028).
 - **Guardraily:** Postgres sa geometrie nedotýka (žiadny mesh/cache v DB); pin verzia
-  IFClite (nie `latest`); Three.js WebGL template (nie WebGPU).
+  IFClite (nie `latest`); **WebGPU renderer `@ifc-lite/renderer`** (revízia 2026-07-07, D-055 —
+  pôvodný Three.js/WebGL guardrail zrušený; Safari/iOS < 18 nie je cieľ).
 - Akceptačné ✅ (fáza 2): klik na konkrétne dvere v 3D → asset karta s provenance,
   zodpovednosťami, výkresom; klik v strome → zvýraznená v 3D. Schéma DB sa **nemení**.
 
@@ -146,7 +150,7 @@ Vercel (auto-deploy z `main`). **Chýba:** vlastná doména (S4).
 | **F2 — Geom containment + IDS** | ETL geom krok (`ifcopenshell.geom`/`geom.tree`, solid-in-solid) → element→space hrana (`source='geom'`, needeštruktívne); natívny `ifctester` IDS#1 (→storey) a IDS#2 (→space); viewer číta dual-source (in-file + syntetický). | D-052 | nezávislé od F1 |
 | **F3 — Upload + verifikácia** | SharePoint-like upload ľubovoľného súboru + kontrola CDE mennej konvencie (`doc_scheme.py`) + IDS/SNIM požiadavky (zdroj D-033/D-034). Nice-to-have. | D-053 | ťaží z IDS (F2) |
 | **F4 — PDF prehliadačka rework** | Prestavaná prehliadačka výkresov/dokumentov (UX/výkon) — `/drawing/[id]` a spol. | D-054 | nezávislé; skorý quick-win |
-| **F5 — 3D/IFClite feature port** | Ďalšie preberateľné IFClite moduly (2D výkresy, meranie, rezy, IDS validátor, IfcQuery). | D-055 | nezávislé; skorý quick-win |
+| **F5 — 3D/IFClite feature port** 🛠️ rozpracované | Prechod na **WebGPU `@ifc-lite/renderer`** + parser/geometry/spatial; **federácia N modelov** (ARCH+VZT, D-050) s per-model visibility; **IFClite-native navigátor** (SPATIAL/CLASS/TYPE/MATERIAL, follow-IFClite — nerecyklovať `fetchSpatialTree`); rezy + toolbar; aktivovaný **Query** (`IfcQuery`+DuckDB). Mimo: IDS/BCF/2D/self-upload. | D-055, D-050 | nezávislé od F1 |
 | **F6 — LLM rozhranie** | API-pluggable model, tool-calling nad whitelist views, trust-loop deep-links (3D + región vo výkrese). Headline: „ukáž prvok v 3D + na ktorých výkresoch a kde". | D-056 | ťaží z F1/F2/D-049; beží aj na dnešnom grafe |
 | **Dáta — import vodného modelu (ÚK/ZTI)** | Federačný ETL import (vzor D-049) — odomkne ventilový use-case „najbližší uzatvárací ventil" vo F6. | D-056 | prerekvizita ventilového dotazu |
 
@@ -310,6 +314,7 @@ naming convention finálny tvar) sú v DECISIONS §7.
 > Kompaktný reverse-chrono log. Detail ku každému bodu je v `DECISIONS.md` (D-0xx);
 > aktuálny stav je hore v sekcii „Stav".
 
+- **2026-07-07** — **F5 štart (D-055, D-050, dodatok D-044):** 3D vrstva prechádza na **WebGPU** `@ifc-lite/renderer` (guardrail WebGL zrušený; Safari/iOS < 18 nie je cieľ). D-050 povýšené na rozhodnutie (3D federácia N modelov cez `federationRegistry`). Follow-IFClite: navigátor/strom z IFClite dát, nerecyklovať `fetchSpatialTree`. N-ary modely (bez self-upload UI). Vetva `cursor/f5-ifclite-webgpu`.
 - **2026-07-07** — **F1 nasadené na Supabase prod (D-051):** migrácia `relationships_metamodel` aplikovaná na `acwoupricatirhlfkhvk` (4461 hrán pred/po identické, PostgREST cache reloadnutá). Pred F1 odstránené zvyšné D-048 compat views (`rel_located_in`…); migračná história zosúladená so všetkými 8 súbormi v `supabase/migrations/` (synced, `db push` = no-op).
 - **2026-07-07** — **F1 hotový (D-051):** meta-model vzťahov B — generická `relationships` + manifest `relationship_types` (z `ifcopenshell`) + kanonické views (rovnaké názvy = bezvýpadkový cutover) + validačný trigger; migrácia `20260707150000`, ETL/seed repoint, D-031 idempotencia zachovaná (overené na čistej PG + idempotentný re-run).
 - **2026-07-07** — Plánovacie kolo (nové inputy k demu): pridaný program **F-sprintov** (D-051–D-056) — meta-model vzťahov B (revízia D-048), geom containment + IDS, upload/verifikácia, PDF rework, 3D/IFClite port, LLM rozhranie. Zavedené kadencie: re-check pred sprintom + zosúladenie dokumentov po sprinte/commite (multi-tool).
