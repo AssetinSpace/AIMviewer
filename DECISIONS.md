@@ -1349,6 +1349,27 @@ najbližší uzatvárací ventil" má **dátovú prerekvizitu = import vodného 
 D-049: 0 `IfcValve`) a spôsob určenia „najbližší" (topológia portov cez `IfcRelNests`/
 `IfcRelConnectsPorts` vs geometrická vzdialenosť) — **doriešime neskôr**.
 
+**Doplnenie (F6 implementácia, 2026-07-07) — headline vetva nasadená:**
+- **Provider-agnostická vrstva** `lib/llm/*`: neutrálne typy (`types.ts`), výber providera z env
+  (`provider.ts` — `LLM_PROVIDER/MODEL/API_KEY/BASE_URL/MAX_TOKENS/TEMPERATURE`, žiadny model-id
+  natvrdo), dva adaptéry cez priamy `fetch` bez SDK — **Anthropic Messages** (`providers/anthropic.ts`)
+  a **OpenAI-kompatibilný** Chat Completions (`providers/openai-compat.ts` — pokrýva OpenAI/OpenRouter/
+  Groq/Together/DeepSeek/vLLM/Ollama cez `LLM_BASE_URL`). Prepnutie modelu = zmena env, žiadny redeploy.
+- **Tool-calling loop** (`orchestrator.ts`, `MAX_STEPS=6`) nad **whitelistom 4 nástrojov** (`tools.ts`):
+  `resolve_object`, `find_element_systems`, `list_system_elements`, `get_object_summary`. Model
+  **neskladá SQL** — len vyberá nástroj + argumenty; každý nástroj je tenký read-only wrapper nad
+  `lib/data/systems.ts`, ktorý číta **len kanonické views** (`rel_assigns_to_group`,
+  `rel_contained_in_spatial_structure`, `rel_aggregates`) a `objects` — kompatibilné s F1 (D-051).
+  Guardraily: server-only (`service_role`, D-026), row-limity v data-vrstve, system-prompt „výhradne z dát".
+- **Trust loop** (`Citation`): každý tool-výsledok deterministicky skladá dohľadateľné zdroje —
+  karta `/node/[id]` + 3D deep-link `/ifc?focus=<ifc_guid>`; UI panel `components/ask-panel.tsx`
+  (plávajúci, kontext „tohto prvku" z URL `/node|/type/[id]`), endpoint `app/api/ask/route.ts`
+  (`force-dynamic`, LLM kľúč nikdy do prehliadača).
+- **Overené:** `tsc` + build kompilujú, F6 súbory lint-clean; error-cesty `/api/ask` (chýbajúca
+  otázka → 400, chýbajúci `LLM_MODEL/API_KEY` → 500 s jasnou hláškou bez pádu, neplatné JSON → 400).
+  DB nedotknutá (čisto read-only, žiadna migrácia). Prevzaté z prototypu (pôvodne mylne značené D-050),
+  relabelované na D-056. **Zvyšok D-056 (ventilový dotaz, PDF-región deep-link) ostáva „neskôr".**
+
 ---
 
 ## 8. Budúce rozhodnutia (D-037+)

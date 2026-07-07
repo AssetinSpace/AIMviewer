@@ -30,7 +30,7 @@ grafom. Detail v sekcii „Program dema — F-sprinty".**
 | **S5-fed** 3D multi-model federácia (ARCH+VZT) | 🛠️ rozpracované | render VZT+ASR v jednej scéne — **necommitnuté, čaká na D-050** (viď „Rozpracované") |
 | **F1** Meta-model vzťahov B | ✅ nasadené | D-051; generická `relationships` + manifest + kanonické views + trigger; migrácia `20260707150000` na Supabase prod (`acwoupricatirhlfkhvk`), 4461 hrán, história 8 migrácií sync s repom |
 | **F2–F6** Program dema | 📋 plánované | D-052–D-056; viď sekcia „Program dema — F-sprinty" |
-| **S-LLM → F6** LLM interface nad grafom | 🟢 **kritická cesta** | D-047/D-056; ETL základ hotový (D-049), kód ešte nezačatý |
+| **F6** LLM rozhranie nad grafom | ✅ headline vetva | D-047/D-056; provider-agnostická rúra (`lib/llm/*`, Anthropic + OpenAI-compat), tool-calling nad whitelist kanonickými views, trust-loop deep-linky (`/node/[id]` + `/ifc?focus=`), panel `ask-panel.tsx` + `/api/ask`. Ventilový dotaz + PDF-región deep-link = neskôr |
 | **E5** ICDD export | ⏸️ odložené | D-015/D-032 |
 | **D-045** Pasportizácia + dynamika | 📋 kandidát | čaká na reálnu zákazku |
 
@@ -147,7 +147,7 @@ Vercel (auto-deploy z `main`). **Chýba:** vlastná doména (S4).
 | **F3 — Upload + verifikácia** | SharePoint-like upload ľubovoľného súboru + kontrola CDE mennej konvencie (`doc_scheme.py`) + IDS/SNIM požiadavky (zdroj D-033/D-034). Nice-to-have. | D-053 | ťaží z IDS (F2) |
 | **F4 — PDF prehliadačka rework** | Prestavaná prehliadačka výkresov/dokumentov (UX/výkon) — `/drawing/[id]` a spol. | D-054 | nezávislé; skorý quick-win |
 | **F5 — 3D/IFClite feature port** | Ďalšie preberateľné IFClite moduly (2D výkresy, meranie, rezy, IDS validátor, IfcQuery). | D-055 | nezávislé; skorý quick-win |
-| **F6 — LLM rozhranie** | API-pluggable model, tool-calling nad whitelist views, trust-loop deep-links (3D + región vo výkrese). Headline: „ukáž prvok v 3D + na ktorých výkresoch a kde". | D-056 | ťaží z F1/F2/D-049; beží aj na dnešnom grafe |
+| **F6 — LLM rozhranie** ✅ headline | API-pluggable model (`lib/llm/*`: Anthropic + OpenAI-compat cez env, žiadny model-id natvrdo), tool-calling nad **whitelist 4 kanonických nástrojov** (`resolve_object`, `find_element_systems`, `list_system_elements`, `get_object_summary`), trust-loop deep-linky (`/node/[id]` + `/ifc?focus=<guid>`). Panel `ask-panel.tsx` + `/api/ask` (`force-dynamic`). Beží na dnešnom grafe (kanonické views, kompat s F1). **Neskôr:** ventilový dotaz (import vodného modelu) + PDF-región deep-link. | D-056 | ťaží z F1/F2/D-049; beží aj na dnešnom grafe |
 | **Dáta — import vodného modelu (ÚK/ZTI)** | Federačný ETL import (vzor D-049) — odomkne ventilový use-case „najbližší uzatvárací ventil" vo F6. | D-056 | prerekvizita ventilového dotazu |
 
 ## Parkované / paralelné
@@ -310,6 +310,7 @@ naming convention finálny tvar) sú v DECISIONS §7.
 > Kompaktný reverse-chrono log. Detail ku každému bodu je v `DECISIONS.md` (D-0xx);
 > aktuálny stav je hore v sekcii „Stav".
 
+- **2026-07-07** — **F6 headline vetva hotová (D-056/D-047):** LLM rozhranie nad grafom — provider-agnostická rúra (`lib/llm/*`: Anthropic + OpenAI-compat cez env, žiadny model-id natvrdo), tool-calling nad whitelist 4 kanonických nástrojov (`lib/data/systems.ts`, číta len kanonické views → kompat s F1), trust-loop citácie s deep-linkmi `/node/[id]` + `/ifc?focus=<guid>`, panel `ask-panel.tsx` + `/api/ask` (`force-dynamic`). Prevzaté z prototypu (relabel D-050→D-056), overené (tsc/build/lint + error-cesty `/api/ask`). Ventilový dotaz + PDF-región = neskôr. DB nedotknutá.
 - **2026-07-07** — **F1 nasadené na Supabase prod (D-051):** migrácia `relationships_metamodel` aplikovaná na `acwoupricatirhlfkhvk` (4461 hrán pred/po identické, PostgREST cache reloadnutá). Pred F1 odstránené zvyšné D-048 compat views (`rel_located_in`…); migračná história zosúladená so všetkými 8 súbormi v `supabase/migrations/` (synced, `db push` = no-op).
 - **2026-07-07** — **F1 hotový (D-051):** meta-model vzťahov B — generická `relationships` + manifest `relationship_types` (z `ifcopenshell`) + kanonické views (rovnaké názvy = bezvýpadkový cutover) + validačný trigger; migrácia `20260707150000`, ETL/seed repoint, D-031 idempotencia zachovaná (overené na čistej PG + idempotentný re-run).
 - **2026-07-07** — Plánovacie kolo (nové inputy k demu): pridaný program **F-sprintov** (D-051–D-056) — meta-model vzťahov B (revízia D-048), geom containment + IDS, upload/verifikácia, PDF rework, 3D/IFClite port, LLM rozhranie. Zavedené kadencie: re-check pred sprintom + zosúladenie dokumentov po sprinte/commite (multi-tool).
