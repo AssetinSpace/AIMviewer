@@ -28,7 +28,8 @@ grafom. Detail v sekcii „Program dema — F-sprinty".**
 | **D-049** VZT federácia + distribučné systémy | ✅ | 9 systémov, 1029 `rel_assigns_to_group`, MEP prvky na existujúce podlažia |
 | **S4** Polish & launch | 🟢 beží | reálne dáta naloadené; ostáva doména + polish |
 | **S5-fed** 3D multi-model federácia (ARCH+VZT) | 🛠️ rozpracované | render VZT+ASR v jednej scéne — **necommitnuté, čaká na D-050** (viď „Rozpracované") |
-| **F1–F6** Program dema | 📋 plánované | D-051–D-056; viď sekcia „Program dema — F-sprinty" |
+| **F1** Meta-model vzťahov B | ✅ | D-051; generická `relationships` + manifest + kanonické views + trigger (migrácia `20260707150000`) |
+| **F2–F6** Program dema | 📋 plánované | D-052–D-056; viď sekcia „Program dema — F-sprinty" |
 | **S-LLM → F6** LLM interface nad grafom | 🟢 **kritická cesta** | D-047/D-056; ETL základ hotový (D-049), kód ešte nezačatý |
 | **E5** ICDD export | ⏸️ odložené | D-015/D-032 |
 | **D-045** Pasportizácia + dynamika | 📋 kandidát | čaká na reálnu zákazku |
@@ -141,7 +142,7 @@ Vercel (auto-deploy z `main`). **Chýba:** vlastná doména (S4).
 
 | Sprint | Cieľ (demovateľný výstup) | Rozhodnutie | Závislosť |
 |---|---|---|---|
-| **F1 — Meta-model vzťahov B** | Manifest z `ifcopenshell` → jedna `relationships` tabuľka + `rel_type` index + kanonické views + validácia; bezvýpadkový cutover cez compat-views (názvy dnešných `rel_*`), postupná migrácia ETL/app, recreate odvodených views, update seedu, zachovaná D-031 idempotencia. Viewer/ETL beží nezmenene navonok. | D-051 | základ; striktne nutný až pred množením nových typov vzťahov |
+| **F1 — Meta-model vzťahov B** ✅ | Manifest z `ifcopenshell` (`relationship_types`) → jedna `relationships` tabuľka + `rel_type` index + kanonické views (rovnaké názvy = bezvýpadkový compat) + validačný trigger; backfill z 8 `rel_*` (guard identických počtov), recreate odvodených views, ETL/seed repoint na base, zachovaná D-031 idempotencia. Viewer/ETL beží nezmenene navonok. Migrácia `20260707150000`. | D-051 | základ; striktne nutný až pred množením nových typov vzťahov |
 | **F2 — Geom containment + IDS** | ETL geom krok (`ifcopenshell.geom`/`geom.tree`, solid-in-solid) → element→space hrana (`source='geom'`, needeštruktívne); natívny `ifctester` IDS#1 (→storey) a IDS#2 (→space); viewer číta dual-source (in-file + syntetický). | D-052 | nezávislé od F1 |
 | **F3 — Upload + verifikácia** | SharePoint-like upload ľubovoľného súboru + kontrola CDE mennej konvencie (`doc_scheme.py`) + IDS/SNIM požiadavky (zdroj D-033/D-034). Nice-to-have. | D-053 | ťaží z IDS (F2) |
 | **F4 — PDF prehliadačka rework** | Prestavaná prehliadačka výkresov/dokumentov (UX/výkon) — `/drawing/[id]` a spol. | D-054 | nezávislé; skorý quick-win |
@@ -309,6 +310,7 @@ naming convention finálny tvar) sú v DECISIONS §7.
 > Kompaktný reverse-chrono log. Detail ku každému bodu je v `DECISIONS.md` (D-0xx);
 > aktuálny stav je hore v sekcii „Stav".
 
+- **2026-07-07** — **F1 hotový (D-051):** meta-model vzťahov B — generická `relationships` + manifest `relationship_types` (z `ifcopenshell`) + kanonické views (rovnaké názvy = bezvýpadkový cutover) + validačný trigger; migrácia `20260707150000`, ETL/seed repoint, D-031 idempotencia zachovaná (overené na čistej PG + idempotentný re-run).
 - **2026-07-07** — Plánovacie kolo (nové inputy k demu): pridaný program **F-sprintov** (D-051–D-056) — meta-model vzťahov B (revízia D-048), geom containment + IDS, upload/verifikácia, PDF rework, 3D/IFClite port, LLM rozhranie. Zavedené kadencie: re-check pred sprintom + zosúladenie dokumentov po sprinte/commite (multi-tool).
 - **2026-07-07** — Konsolidácia podporných dokumentov: `AGENTS.md` = zdroj pravdy konvencií (multi-tool), `CLAUDE.md`/Copilot/Cursor len pointery; stav zjednotený do sekcie „Stav", changelog pätičky skrátené. Rozpracovaná 3D multi-model federácia (→ D-050).
 - **2026-07-05** — D-049 VZT federácia hotová (9 systémov, 1029 `rel_assigns_to_group`, MEP prvky); D-048 IFC-kanonické hrany naprieč schémou/ETL/app.

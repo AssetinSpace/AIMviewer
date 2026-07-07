@@ -146,122 +146,93 @@ create table ifc_guid_history (
 create unique index uniq_active_guid on ifc_guid_history (object_id) where valid_until is null;
 ```
 
-### 2.5 Hrany (D-009)
+### 2.5 Hrany — generický meta-model `relationships` (D-051, implementované vo F1)
 
-Hrany sú **IFC-kanonické** (D-048): každá = konkrétny `IfcRelationship` podtyp.
+Hrany sú **IFC-kanonické** (D-048) a od F1 žijú v **jednej generickej tabuľke
+`relationships`** s diskriminátorom `rel_type` (symetricky k `objects.object_type`).
 Fyzicky binárne `from→to` + naše meta stĺpce (NIE objektifikované N-árne IFC entity —
 sme index nad IFC sémantikou, nie STEP v Postgrese, D-046/D-048). Smer = `subjekt→objekt`.
+Vlastný IFC meta-model je trojtabuľkový: `objects` (IfcObjectDefinition) + `relationships`
+(IfcRelationship) + `properties` (IfcPropertyDefinition). Migrácia:
+`20260707150000_relationships_metamodel.sql` (revízia D-048; per-vzťah tabuľky supersedované).
 
-> **Planned (D-051) — cieľový stav B, zatiaľ NEimplementované.** Per-vzťah tabuľky nižšie
-> budú **supersedované** jednou generickou tabuľkou `relationships` (diskriminátor `rel_type`,
-> symetricky k `objects.object_type`) + **kanonické views** per `rel_type` (LLM dotazuje len
-> views) + **manifest** generovaný z IFC schémy (`ifcopenshell`), uložený aj ako referenčná
-> tabuľka: na každý `rel_type` nesie smer (IFC `Relating` strana), povolené `object_type` na
-> oboch stranách, namespace flag (`rel_*` vs `aim_*`), export cestu (`rel_*`→`IfcRel`,
-> `aim_*`→ICDD/IFCX) a per-`rel_type` constraints (unique-active-parent). Integrita cez
-> manifest (validačný trigger/view namiesto polymorfného FK). Cieľový tvar: jedna tabuľka +
-> index na `rel_type` (`LIST` partícia odložená — nesie constraint „PK musí obsahovať partičný
-> kľúč", kolízia s `ON CONFLICT (id)` D-031). N-árnosť = **otvorená vidlica** (binárne `from→to`
-> vs objektifikovaná member-tabuľka; leaning binárne). Migrácia (sprint F1) musí ošetriť:
-> **compat-views** rovnakého názvu ako dnešné `rel_*` (bezvýpadkový cutover, vzor D-048),
-> **recreate odvodených views** (`v_asset_effective`/`v_asset_classifications`/`v_floors`/
-> `v_actors`), **update `supabase/seed.sql`**, zachovanie **D-031 idempotencie**. Reálne DDL
-> sa píše až s migráciou pri F1 (staré migrácie sa nemažú). Nižšie = **súčasný stav** (platí do F1).
+**Manifest `relationship_types`** = jeden zdroj pravdy o `rel_type` (generovaný a overený
+proti IFC schéme cez `ifcopenshell`, `etl/manifest.py`). Poháňa validačný trigger, ETL
+routing (`db.py`) aj export. **Kanonické views** rovnakého názvu ako pôvodné `rel_*` slúžia
+zároveň ako bezvýpadkový compat layer — **čítacia vrstva (viewer/3D/filter) sa nemení**;
+**LLM dotazuje LEN views**, nie base tabuľku. **N-árnosť = binárne `from→to`** (N-árne = N
+riadkov; zachováva D-031 idempotenciu). **Partície odložené** (`LIST` podľa `rel_type` nesie
+„PK musí obsahovať partičný kľúč" → kolízia s `ON CONFLICT (id)`; dnes index na `rel_type` stačí).
 
 ```sql
--- Spatial dekompozícia (D-013, D-048). IFC: IfcRelAggregates (IfcRelDecomposes)
--- Site→Building→Floor→Space. from = časť (child), to = celok (parent)
-create table rel_aggregates (
-  id uuid primary key default gen_random_uuid(),
-  from_id uuid not null references objects(id) on delete cascade,    -- spatial child
-  to_id   uuid not null references objects(id) on delete restrict,   -- spatial parent
-  valid_from timestamptz not null default now(), valid_until timestamptz, source text
+-- Manifest vzťahov (D-051) — generovaný z IFC schémy (etl/manifest.py)
+create table relationship_types (
+  rel_type            text primary key,      -- diskriminátor v relationships
+  ifc_entity          text,                  -- IFC kotva (IfcRelAggregates…); null = čisto aim_
+  ifc_family          text,                  -- rodina (IfcRelDecomposes…); null pre resource
+  is_ifc_rel          boolean not null,      -- true → IfcRel*; false → resource (member_of) / aim_
+  relating_end        text not null,         -- 'from'|'to' — ktorý koniec je IFC Relating
+  from_object_types   text[] not null,       -- povolené object_type subjektu
+  to_object_types     text[] not null,       -- povolené object_type objektu (prázdne pri klasifikácii)
+  to_is_classification boolean not null default false,  -- výnimka: to_id → classification_references
+  namespace           text not null,         -- 'rel' (IFC-kanonické) | 'aim' (rozšírenie D-048)
+  export_path         text not null,         -- 'ifcrel' | 'resource' | 'icdd' | 'ifcx'
+  unique_active_from  boolean not null default false,   -- unique-active-parent
+  description         text,
+  check (relating_end in ('from','to')),
+  check (namespace in ('rel','aim')),
+  check (export_path in ('ifcrel','resource','icdd','ifcx'))
 );
+-- Dnešná sada (8 rel_type): rel_aggregates, rel_contained_in_spatial_structure,
+-- rel_defines_by_type, rel_associates_document, rel_associates_classification,
+-- rel_assigns_to_actor, rel_assigns_to_group, rel_member_of. Presné hodnoty = migrácia.
 
--- Prvok v spatial štruktúre (D-013, D-048). IFC: IfcRelContainedInSpatialStructure (IfcRelConnects)
--- from = fyzický prvok (asset), to = priestor/podlažie (IFC RelatingStructure)
-create table rel_contained_in_spatial_structure (
-  id uuid primary key default gen_random_uuid(),
-  from_id uuid not null references objects(id) on delete cascade,    -- asset
-  to_id   uuid not null references objects(id) on delete restrict,   -- space/floor
-  valid_from timestamptz not null default now(), valid_until timestamptz, source text
+-- Generická tabuľka hrán. to_id je POLYMORFNÉ (objects ALEBO classification_references)
+-- → zámerne bez FK; integrita cez validačný trigger z manifestu. from_id má FK+CASCADE.
+create table relationships (
+  id          uuid primary key default gen_random_uuid(),
+  rel_type    text not null references relationship_types(rel_type),
+  from_id     uuid not null references objects(id) on delete cascade,  -- subjekt
+  to_id       uuid not null,                                           -- objekt (objects/classification_references)
+  role        text,                                                    -- len kde to typ vzťahu nesie
+  valid_from  timestamptz not null default now(),
+  valid_until timestamptz,
+  source      text
 );
+create index on relationships (rel_type);
+create index on relationships (from_id);
+create index on relationships (to_id);
+create index on relationships (rel_type, from_id);
 
--- Type–occurrence (D-021). IFC: IfcRelDefinesByType (IfcRelDefines). 1:N
-create table rel_defines_by_type (
-  id uuid primary key default gen_random_uuid(),
-  from_id uuid not null references objects(id) on delete cascade,    -- occurrence
-  to_id   uuid not null references objects(id) on delete restrict,   -- type (IFC RelatingType)
-  valid_from timestamptz not null default now(), valid_until timestamptz, source text
-);
-
--- Osoba v organizácii (D-024). IFC: IfcPersonAndOrganization (RESOURCE, nie IfcRel — D-048)
-create table rel_member_of (
-  id uuid primary key default gen_random_uuid(),
-  from_id uuid not null references objects(id) on delete cascade,    -- person
-  to_id   uuid not null references objects(id) on delete restrict,   -- organization
-  role    text,              -- rola v rámci firmy (IfcPersonAndOrganization.Roles)
-  valid_from timestamptz not null default now(),   -- obdobie zamestnania
-  valid_until timestamptz, source text
-);
-
--- Dokument (D-014). IFC: IfcRelAssociatesDocument (IfcRelAssociates)
-create table rel_associates_document (
-  id uuid primary key default gen_random_uuid(),
-  from_id uuid not null references objects(id) on delete cascade,    -- objekt
-  to_id   uuid not null references objects(id) on delete restrict,   -- document (IFC RelatingDocument)
-  role text,                 -- 'manual','certificate','as-built'…
-  valid_from timestamptz not null default now(), valid_until timestamptz, source text
-);
-
--- Klasifikácia (D-011, D-023). IFC: IfcRelAssociatesClassification. Type aj occurrence
-create table rel_associates_classification (
-  id uuid primary key default gen_random_uuid(),
-  from_id uuid not null references objects(id) on delete cascade,    -- objekt
-  to_id   uuid not null references classification_references(id) on delete restrict,
-  valid_from timestamptz not null default now(), valid_until timestamptz, source text
-);
-
--- Zodpovednosti (D-020). IFC: IfcRelAssignsToActor + IfcActorRole (IfcRelAssigns)
--- from_id = person ALEBO organization (IFC RelatingActor). Smer = IFC.
-create table rel_assigns_to_actor (
-  id uuid primary key default gen_random_uuid(),
-  from_id uuid not null references objects(id) on delete restrict,   -- actor (person|organization)
-  to_id   uuid not null references objects(id) on delete cascade,    -- objekt
-  role text not null,        -- acting role: 'owner','operator','maintainer','manufacturer'…
-  valid_from timestamptz not null default now(), valid_until timestamptz, source text
-);
-
--- Členstvo v systéme (D-047, V PREVÁDZKE — VZT federácia D-049). IFC: IfcRelAssignsToGroup
--- (IfcRelAssigns). from = člen (IfcAirTerminal/IfcDuctSegment/…), to = system
--- (object_type='system', IfcDistributionSystem; predefined_type = IfcDistributionSystemEnum).
--- Federácia (D-049): disciplinárny model (VZT) sa napojí na existujúcu priestorovú štruktúru
--- cez normalizovaný názov podlažia (`1NP_VZT`→`1NP`), spatial korene 2. modelu sa neemitujú;
--- group-only MEP prvky (potrubie/tvarovky) nie sú v priestorovom strome, len členmi systému.
-create table rel_assigns_to_group (
-  id uuid primary key default gen_random_uuid(),
-  from_id uuid not null references objects(id) on delete cascade,    -- člen (element)
-  to_id   uuid not null references objects(id) on delete restrict,   -- system (IFC RelatingGroup)
-  valid_from timestamptz not null default now(), valid_until timestamptz, source text
-);
+-- Kanonické views = ROVNAKÉ názvy ako pôvodné rel_* (bezvýpadkový cutover, D-048).
+-- Zrkadlia pôvodné stĺpce; role len tam, kde ho vzťah nesie (assoc_document, assigns_to_actor, member_of).
+create view rel_aggregates as
+  select id, from_id, to_id, valid_from, valid_until, source
+  from relationships where rel_type = 'rel_aggregates';
+-- … analogicky rel_contained_in_spatial_structure / rel_defines_by_type /
+--   rel_associates_classification / rel_assigns_to_group (bez role) a
+--   rel_associates_document / rel_assigns_to_actor / rel_member_of (s role).
 ```
 
 ### 2.6 Indexy + integrita hrán
 
 ```sql
-create index on rel_aggregates (from_id);                       create index on rel_aggregates (to_id);
-create index on rel_contained_in_spatial_structure (from_id);   create index on rel_contained_in_spatial_structure (to_id);
-create index on rel_defines_by_type (from_id);                  create index on rel_defines_by_type (to_id);
-create index on rel_member_of (from_id);                        create index on rel_member_of (to_id);
-create index on rel_associates_document (from_id);              create index on rel_associates_document (to_id);
-create index on rel_associates_classification (from_id);
-create index on rel_assigns_to_actor (from_id);                 create index on rel_assigns_to_actor (to_id);
-create index on rel_assigns_to_group (from_id);                 create index on rel_assigns_to_group (to_id);
+-- unique-active-parent (D-021/D-048) = parciálne unique per rel_type literál
+create unique index uniq_active_aggregate on relationships (from_id)
+  where rel_type = 'rel_aggregates' and valid_until is null;
+create unique index uniq_active_contained on relationships (from_id)
+  where rel_type = 'rel_contained_in_spatial_structure' and valid_until is null;
+create unique index uniq_active_defines_by_type on relationships (from_id)
+  where rel_type = 'rel_defines_by_type' and valid_until is null;
 
--- Unikátny aktívny rodič: spatial child (aggregates) aj fyzický prvok (contained)
-create unique index uniq_active_aggregate on rel_aggregates                    (from_id) where valid_until is null;
-create unique index uniq_active_contained on rel_contained_in_spatial_structure(from_id) where valid_until is null;
-create unique index uniq_active_type      on rel_defines_by_type               (from_id) where valid_until is null;
+-- E4 auto-linking hot-path (D-041)
+create index idx_relationships_e4_from on relationships (from_id)
+  where rel_type = 'rel_associates_document' and source = 'pdf_link (E4)';
+
+-- Integrita bez polymorfného FK: BEFORE trigger číta manifest a overí rel_type,
+-- povolené object_type oboch strán a to endpoint (objects vs classification_references).
+create trigger trg_relationships_validate before insert or update on relationships
+  for each row execute function relationships_validate();
 ```
 
 ### 2.7 Pohľady (Viewer / LLM)
@@ -445,4 +416,10 @@ celej migrácie, deep-merge dedičnosť v `v_asset_effective`, partial-unique
 `updated_at` trigger. Pri prvom `supabase db reset` s Dockerom musí prejsť rovnako.
 
 ---
-*v0.4 — §2 implementovaná (migrácia 20260616120000). Seed hotový (`supabase/seed.sql`). Viewer S0–S3 nasadený na Verceli. Schéma sa od iniciálnej migrácie nemenila — všetky nové features (Viewer S1–S3: hierarchia, asset karta, dokumenty/zodpovednosti/GUID + generický object route, D-027–D-029) sú čisto na aplikačnej vrstve. Ďalšia migrácia príde s S4 (ETL reálne dáta) alebo aditívnymi features (RLS, actor model C). Plánovaná väčšia migrácia: **meta-model vzťahov B** (D-051, sprint F1 — §2.5 planned note).*
+*v0.5 — §2 implementovaná (migrácia 20260616120000). **Meta-model vzťahov B implementovaný
+(D-051, sprint F1, migrácia `20260707150000_relationships_metamodel.sql`):** per-vzťah
+tabuľky `rel_*` supersedované generickou `relationships` + manifest `relationship_types` +
+kanonické views rovnakého názvu + validačný trigger (§2.5/§2.6). Čítacia vrstva a seed bežia
+nezmenene navonok; ETL zapisuje base tabuľku. Seed hotový (`supabase/seed.sql`). Viewer
+S0–S5 nasadený na Verceli. Ďalšie migrácie prídu s F2 (geom containment) alebo aditívnymi
+features (RLS, actor model C).*

@@ -14,9 +14,10 @@ Python pipeline, ktorá načíta IFC model a naplní Supabase schému (`objects`
 |---|---|
 | `extract.py` | otvorenie IFC + nízkoúrovňové helpery (ifcopenshell) |
 | `scheme.py` | kódovacia schéma — field-source resolver + SNIM definícia (`object_ref`, D-033) |
+| `manifest.py` | manifest vzťahov (D-051) — `rel_type` spec overený proti IFC schéme; `EDGE_TYPE_TO_REL_TYPE` routing; SQL pre `relationship_types` |
 | `transform.py` | IFC → staged model (mapovanie podľa SCHEMA/§4) |
 | `model.py` | medziľahlé dataclassy (staged riadky) + `CoverageReport` |
-| `db.py` | idempotentný upsert do Postgresu v poradí FK |
+| `db.py` | idempotentný upsert do Postgresu v poradí FK; hrany → generická `relationships` (D-051) |
 | `ids.py` | deterministické UUID pre tabuľky bez prirodzeného unique |
 | `config.py` | načítanie `DATABASE_URL` |
 | `main.py` | CLI (`--file`, `--dry-run`) |
@@ -38,6 +39,15 @@ python -m etl.main --file etl/data/model.ifc --reset     # vyprázdni AIM dáta,
 ```
 
 > **Windows:** konzola je `cp1250` → spúšťaj s `PYTHONUTF8=1` (inak padne na diakritike).
+
+### Manifest vzťahov (D-051)
+Hrany od F1 žijú v generickej `relationships` (diskriminátor `rel_type`); zoznam typov +
+ich IFC sémantika žije v manifeste (`manifest.py`, overený proti IFC schéme). Regenerácia
+SQL pre migráciu / kontrola:
+```bash
+python -m etl.manifest --check   # validácia rel_type proti IFC schéme
+python -m etl.manifest --sql     # INSERT do relationship_types (do migrácie)
+```
 
 ### `--reset` (nahradenie seedu, E2)
 `--reset` pred loadom `TRUNCATE ... CASCADE` vyprázdni AIM dáta (riadky, nie schému) —

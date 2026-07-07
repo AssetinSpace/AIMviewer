@@ -102,18 +102,22 @@ Primárny use case: AIM Viewer — ukážka správne previazaných dát.
 - **Custom psety** → `properties[<názov>]`, akýkoľvek iný názov (bez povinného prefixu)
 - **Rezervované `_kľúče`** (`_contact`, `_org`…) = meta/zachytené dáta, NIE psety; psety nikdy nezačínajú `_`
 
-### Hrany (vzťahové tabuľky) — IFC-kanonické (D-048 → cieľ D-051)
-> **Cieľový stav (D-051, revízia D-048):** vrstva hrán sa prestaví z per-vzťah tabuliek na
-> **jednu generickú `relationships`** (diskriminátor `rel_type`, symetricky k `objects`) +
-> **kanonické views** per typ + **manifest** (generovaný z IFC schémy `ifcopenshell`).
-> Dôvod: IFC vlastný meta-model = `objects` (IfcObjectDefinition) + `relationships`
-> (IfcRelationship, objektifikovaný) + `properties` (IfcPropertyDefinition); B škáluje na
-> celé IFC bez migrácie za každý vzťah. **IFC-kanonická identita, smer `subjekt→objekt` aj
-> `aim_` namespace ostávajú** — presúvajú sa do manifestu ako dáta. **LLM dotazuje len
-> kanonické views** (nie base tabuľku) → text-to-SQL ergonómia zachovaná. Zmena príde
-> migráciou v sprinte F1 (compat-views pre bezvýpadkový cutover); nižšie je **súčasný stav**
-> (platí do F1).
-- Každá hrana = konkrétny IFC `IfcRelationship` podtyp, **pomenovaná podľa neho**,
+### Hrany — generický meta-model `relationships` (D-051, implementované F1; revízia D-048)
+> **Stav (D-051, F1):** vrstva hrán žije v **jednej generickej `relationships`** (diskriminátor
+> `rel_type`, symetricky k `objects`) + **kanonické views** per typ (rovnaké názvy ako pôvodné
+> `rel_*` = bezvýpadkový compat) + **manifest `relationship_types`** (generovaný z IFC schémy
+> `ifcopenshell`, `etl/manifest.py`). Dôvod: IFC vlastný meta-model = `objects`
+> (IfcObjectDefinition) + `relationships` (IfcRelationship, objektifikovaný) + `properties`
+> (IfcPropertyDefinition); B škáluje na celé IFC bez migrácie za každý vzťah. **IFC-kanonická
+> identita, smer `subjekt→objekt` aj `aim_` namespace ostávajú** — žijú v manifeste ako dáta
+> (smer, povolené `object_type`, namespace, export cesta, unique-active-parent). **N-árnosť =
+> binárne `from→to`** (N-árne = N riadkov; drží D-031 idempotenciu). **LLM/whitelist dotazuje
+> LEN kanonické views** (nie base tabuľku) → text-to-SQL ergonómia zachovaná; **zápis (ETL/seed)
+> ide na base `relationships`** (views nie sú insertovateľné). **Integrita** = validačný trigger
+> z manifestu (nie polymorfný FK); `to_id` polymorfné (objects/`classification_references`).
+> Partície odložené (kolízia „PK musí obsahovať partičný kľúč" × `ON CONFLICT (id)`).
+> Presné DDL → `SCHEMA.md §2.5/§2.6`; zoznam `rel_type` nižšie.
+- Každý `rel_type` = konkrétny IFC `IfcRelationship` podtyp, **pomenovaný podľa neho**,
   s granularitou akú rozlišuje IFC:
   `rel_aggregates` (IfcRelAggregates), `rel_contained_in_spatial_structure`
   (IfcRelContainedInSpatialStructure), `rel_defines_by_type` (IfcRelDefinesByType),
