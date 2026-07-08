@@ -24,6 +24,9 @@ rozhodnutia: [`DECISIONS.md`](DECISIONS.md), plán: [`ROADMAP.md`](ROADMAP.md).
    Supabase → *Project Settings → API*:
    - `SUPABASE_URL` = `https://acwoupricatirhlfkhvk.supabase.co`
    - `SUPABASE_SERVICE_ROLE_KEY` = service_role kľúč (tajný)
+   - `ANTHROPIC_API_KEY` = kľúč pre LLM asistenta `/ask` (F6, D-056) —
+     voliteľné; bez neho asistent vráti 503, zvyšok appky beží normálne
+   - `AIM_LLM_MODEL` = voliteľný override modelu (default `claude-opus-4-8`)
 
    > `.env.local` je gitignored — **nikdy** ho necommituj. `service_role`
    > kľúč sa číta len server-side a nikdy sa nedostane do prehliadača.
@@ -45,6 +48,7 @@ rozhodnutia: [`DECISIONS.md`](DECISIONS.md), plán: [`ROADMAP.md`](ROADMAP.md).
    Variables* alebo v import obrazovke):
    - `SUPABASE_URL` = `https://acwoupricatirhlfkhvk.supabase.co`
    - `SUPABASE_SERVICE_ROLE_KEY` = service_role kľúč
+   - `ANTHROPIC_API_KEY` = kľúč pre LLM asistenta `/ask` (voliteľné)
    - Scope: Production + Preview + Development. Kľúč je **secret** (nie je
      `NEXT_PUBLIC_*`, takže sa nedostane do client bundle).
 3. **Deploy** → appka beží na `*.vercel.app`. Push do `main` = auto-deploy.

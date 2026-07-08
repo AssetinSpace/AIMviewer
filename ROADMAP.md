@@ -30,8 +30,8 @@ grafom. Detail v sekcii „Program dema — F-sprinty".**
 | **S5-fed** 3D multi-model federácia (ARCH+VZT) | 🛠️ rozpracované | render VZT+ASR v jednej scéne — **necommitnuté, čaká na D-050** (viď „Rozpracované") |
 | **F1** Meta-model vzťahov B | ✅ nasadené | D-051; generická `relationships` + manifest + kanonické views + trigger; migrácia `20260707150000` na Supabase prod (`acwoupricatirhlfkhvk`), 4461 hrán, história 8 migrácií sync s repom |
 | **F4** PDF prehliadačka rework | 🛠️ rozpracované | D-054; interakcia vieweru prestavaná (`drawing-viewer.tsx`): koliesko=zoom-to-pointer, pinch+pan, fullscreen, fit-to-width; prekliky/overlay zachované. Ďalšie kadencie: layout panela, výkon veľkých PDF |
-| **F2, F3, F5, F6** Program dema | 📋 plánované | D-052/D-053/D-055/D-056; viď sekcia „Program dema — F-sprinty" |
-| **S-LLM → F6** LLM interface nad grafom | 🟢 **kritická cesta** | D-047/D-056; ETL základ hotový (D-049), kód ešte nezačatý |
+| **F2, F3, F5** Program dema | 📋 plánované | D-052/D-053/D-055; viď sekcia „Program dema — F-sprinty" |
+| **S-LLM → F6** LLM interface nad grafom | 🛠️ rozpracované (**kritická cesta**) | D-047/D-056; kadencia 1 hotová: route `/ask` + `POST /api/chat`, tool-calling nad whitelistom (`lib/llm/`), trust-loop citácie (karta/3D/výkres). Ďalšie: streaming, live overenie s API kľúčom, ventilový dotaz (čaká na vodný model) |
 | **E5** ICDD export | ⏸️ odložené | D-015/D-032 |
 | **D-045** Pasportizácia + dynamika | 📋 kandidát | čaká na reálnu zákazku |
 
@@ -149,7 +149,7 @@ Vercel (auto-deploy z `main`). **Chýba:** vlastná doména (S4).
 | **F3 — Upload + verifikácia** | SharePoint-like upload ľubovoľného súboru + kontrola CDE mennej konvencie (`doc_scheme.py`) + IDS/SNIM požiadavky (zdroj D-033/D-034). Nice-to-have. | D-053 | ťaží z IDS (F2) |
 | **F4 — PDF prehliadačka rework** 🛠️ | Prestavaná prehliadačka výkresov/dokumentov (UX/výkon) — `/drawing/[id]` a spol. **Kadencia 1 hotová:** interakcia vieweru (`drawing-viewer.tsx`) — koliesko=zoom-to-pointer, pinch+drag-pan, fullscreen, fit-to-width; prekliky/`focus`/overlay zachované. Ďalšie: layout bočného panela, výkon veľkých PDF, double-tap. | D-054 | nezávislé; skorý quick-win |
 | **F5 — 3D/IFClite feature port** | Ďalšie preberateľné IFClite moduly (2D výkresy, meranie, rezy, IDS validátor, IfcQuery). | D-055 | nezávislé; skorý quick-win |
-| **F6 — LLM rozhranie** | API-pluggable model, tool-calling nad whitelist views, trust-loop deep-links (3D + región vo výkrese). Headline: „ukáž prvok v 3D + na ktorých výkresoch a kde". | D-056 | ťaží z F1/F2/D-049; beží aj na dnešnom grafe |
+| **F6 — LLM rozhranie** 🛠️ | API-pluggable model, tool-calling nad whitelist views, trust-loop deep-links (3D + región vo výkrese). Headline: „ukáž prvok v 3D + na ktorých výkresoch a kde". **Kadencia 1 hotová:** `/ask` + `/api/chat`, 4 tools (`lib/llm/`), citácie zo skutočných dát. Ďalšie: streaming, live overenie, ventilový dotaz. | D-056 | ťaží z F1/F2/D-049; beží aj na dnešnom grafe |
 | **Dáta — import vodného modelu (ÚK/ZTI)** | Federačný ETL import (vzor D-049) — odomkne ventilový use-case „najbližší uzatvárací ventil" vo F6. | D-056 | prerekvizita ventilového dotazu |
 
 ## Parkované / paralelné
@@ -311,6 +311,19 @@ naming convention finálny tvar) sú v DECISIONS §7.
 
 > Kompaktný reverse-chrono log. Detail ku každému bodu je v `DECISIONS.md` (D-0xx);
 > aktuálny stav je hore v sekcii „Stav".
+
+- **2026-07-08** — **F6 kadencia 1 (D-056):** LLM rozhranie nad grafom — route `/ask`
+  (chat panel) + `POST /api/chat`; agentická slučka (Anthropic SDK, model z env
+  `AIM_LLM_MODEL`, default `claude-opus-4-8`) so 4 typovanými tools nad whitelistom
+  (`search_objects`, `get_object`, `list_related` cez kanonické `rel_*` views,
+  `get_element_drawings` s regiónmi z `_drawing_links`); guardraily D-005 (read-only,
+  row-limit 25, žiadne SQL od modelu); **trust-loop citácie zo skutočných tool výsledkov**
+  (deep-linky karta `/node`, 3D `/ifc?focus=guid`, výkres `/drawing?focus=&page=`).
+  Overené `tsc`/`lint`/build compile + error-path API (503 bez kľúča, 400 validácia);
+  live beh vyžaduje `ANTHROPIC_API_KEY` (`.env.example`/README doplnené).
+- **2026-07-08** — **D-050 zapísaný:** rozhodnutie k 3D multi-model federácii
+  (ARCH+VZT v jednej scéne, GUID identita, normalizácia podlaží) — kód ostáva
+  rozpracovaný lokálne, commitne sa na túto referenciu.
 
 - **2026-07-07** — **F4 kadencia 1 (D-054):** rework interakcie PDF prehliadačky (`drawing-viewer.tsx`) — koliesko myši = zoom-to-pointer, pinch + drag-pan (pointer eventy, `touch-action: none`), fullscreen (Fullscreen API), fit-to-width default (`ResizeObserver`); needeštruktívne — prekliky na detail prvku, `focus` deep-link, skladby D-043 a overlay math zachované. Overené `tsc`/`next build` (bundel), bez nových lint chýb.
 - **2026-07-07** — **F1 nasadené na Supabase prod (D-051):** migrácia `relationships_metamodel` aplikovaná na `acwoupricatirhlfkhvk` (4461 hrán pred/po identické, PostgREST cache reloadnutá). Pred F1 odstránené zvyšné D-048 compat views (`rel_located_in`…); migračná história zosúladená so všetkými 8 súbormi v `supabase/migrations/` (synced, `db push` = no-op).

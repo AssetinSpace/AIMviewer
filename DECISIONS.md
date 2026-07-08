@@ -1399,6 +1399,27 @@ najbližší uzatvárací ventil" má **dátovú prerekvizitu = import vodného 
 D-049: 0 `IfcValve`) a spôsob určenia „najbližší" (topológia portov cez `IfcRelNests`/
 `IfcRelConnectsPorts` vs geometrická vzdialenosť) — **doriešime neskôr**.
 
+**Doplnenie (F6 kadencia 1, 2026-07-08) — implementačný detail:**
+- **Model**: Anthropic SDK (`@anthropic-ai/sdk`), model z env `AIM_LLM_MODEL`
+  (default `claude-opus-4-8`), kľúč `ANTHROPIC_API_KEY` — oboje **server-only**
+  (línia D-026: nič sa nevystavuje do prehliadača). Adaptívne thinking, bez sampling
+  parametrov. „API-pluggable" = výmena modelu je zmena env varu; výmena providera je
+  izolovaná v `lib/llm/`.
+- **Rozhranie**: route handler `POST /api/chat` → agentická slučka (max 8 iterácií)
+  s **typovanými tools** — model NIKDY negeneruje SQL; každý tool je pevná parametrizovaná
+  query nad whitelistom (kanonické views `rel_*` cez mapu povolených `rel_type`,
+  `v_asset_effective`, `objects`, `documents`), read-only `service_role` klient,
+  **row-limit 25/tool**, len aktívne hrany (`valid_until IS NULL`).
+- **Tool set (v1)**: `search_objects` (meno/ref/typ), `get_object` (detail + effective
+  properties + aktívny GUID), `list_related` (hrany oboma smermi, whitelist `rel_type`),
+  `get_element_drawings` (výkresy + regióny z `_drawing_links` → strana/label).
+- **Trust loop (v1)**: API zbiera **zdroje zo skutočných tool výsledkov** (nie z tvrdení
+  modelu) a vracia ich štruktúrovane vedľa textu; UI ich renderuje ako klikateľné citácie —
+  karta `/node/[id]`, 3D `/ifc?focus=<guid>`, výkres `/drawing/[id]?focus=<id>&page=<n>`.
+  Model má v system prompte povinnosť odkazovať prvky cez `object_ref`.
+- **UI**: route `/ask` + klientský chat panel (`components/chat-panel.tsx`), vstup zo
+  sidebaru. Streaming odpovede a hlasový vstup = ďalšie kadencie.
+
 ---
 
 ## 8. Budúce rozhodnutia (D-037+)
