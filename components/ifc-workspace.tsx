@@ -62,6 +62,8 @@ export default function IFCWorkspace({
       if (data.spaceId && data.siblingObjectIds.length > 1) {
         viewerApiRef.current?.highlightSiblings(data.siblingObjectIds, objectId);
       }
+    } catch {
+      // Sieťová chyba — priestorový kontext je len doplnok, výber prvku funguje ďalej.
     } finally {
       setSiblingLoading(false);
     }

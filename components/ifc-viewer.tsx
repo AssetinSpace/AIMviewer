@@ -80,6 +80,7 @@ export function IFCViewer({
     let renderer: THREE.WebGLRenderer | null = null;
     let orbitControls: OrbitControls | null = null;
     let camera: THREE.PerspectiveCamera | null = null;
+    let sceneToDispose: THREE.Scene | null = null;
 
     const resizeObs = new ResizeObserver(() => {
       if (!renderer || !camera || !container) return;
@@ -94,6 +95,7 @@ export function IFCViewer({
       try {
         // ── Three.js scene ──────────────────────────────────────────
         const scene = new THREE.Scene();
+        sceneToDispose = scene;
         scene.background = new THREE.Color(0xf1f5f9);
 
         camera = new THREE.PerspectiveCamera(
@@ -422,6 +424,14 @@ export function IFCViewer({
       applyStoreyFilterRef.current = null;
       clearSelectionRef.current = null;
       if (apiRef) apiRef.current = null;
+      // GPU zdroje (geometrie/materiály) sa pri unmounte/zmene modelu musia uvoľniť
+      // explicitne — Three.js ich za nás negarbage-collectne.
+      sceneToDispose?.traverse((node) => {
+        if (!(node instanceof THREE.Mesh)) return;
+        node.geometry?.dispose();
+        const mats = Array.isArray(node.material) ? node.material : [node.material];
+        for (const m of mats) m?.dispose();
+      });
       if (renderer) {
         if (container.contains(renderer.domElement)) {
           container.removeChild(renderer.domElement);
