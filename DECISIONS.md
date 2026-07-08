@@ -1350,8 +1350,37 @@ math, `focus` deep-link, `onSelect` bočný panel, Ctrl/⌘-klik nová karta, sk
 - **Overené:** `tsc --noEmit` čistý, `next build` skompiluje (Turbopack), bez nových lint
   chýb (ostáva len baseline `set-state-in-effect` na focus-efekte, prítomný aj pred zmenou).
   Live drive v prehliadači nebolo v tejto session možné (bez Supabase creds + reálneho PDF).
-- **Otvorené (ďalšie kadencie):** double-tap-to-zoom, výkon veľkých viacstranových PDF,
-  layout bočného panela pri úzkych šírkach — podľa reálnej spätnej väzby z prevádzky.
+
+**Implementované — kadencia 2 (double-tap, výkon gest, mobilný layout panela):**
+- **Double-tap-to-zoom** (dotyk): dva tapy do `DOUBLE_TAP_MS`/`RADIUS` → zoom 2.5× kotvený
+  na miesto tapu; z priblíženého stavu → späť na fit-to-width. Druhý tap nie je klik na región.
+- **Výkon zoom gest** (`drawing-viewer.tsx`): počas bežiaceho kolieska/pinchu sa strana
+  NErastruje per frame — škáluje sa lacným CSS transformom wrappera okolo zmrazenej kotvy
+  gesta (`preview` ref, translate+scale); ostrý rerastr príde raz, po ustálení
+  (`GESTURE_COMMIT_MS` debounce kolieska / pustenie prstov). Veľké výkresy sa tak pinchujú
+  plynulo namiesto rastrovania pri každom evente.
+- **Mobilný layout panela** (`drawing-workspace.tsx`): na úzkych šírkach bol panel v toku
+  POD viewerom (klik na kód „nič neurobil" — detail pod foldom). Vybraný prvok sa teraz
+  zobrazuje ako plávajúci **bottom-sheet** (`fixed inset-x-3 bottom-3`, vlastný scroll, bez
+  backdropu — výkres ostáva interaktívny, tap na iný kód panel prepne); od `lg` sa to isté
+  DOM vracia do statického bočného stĺpca. Info o dokumente ostáva vo flow.
+- **Bugfixy z live verifikácie** (pre-existujúce z kadencie 1, vtedy bez live drive):
+  (1) `setPointerCapture` hneď v pointerdown presmeroval click na scroller → **klik myšou
+  na región bol na desktope mŕtvy** (dotyk fungoval — syntetizovaný click z tapu cieli
+  pôvodný target); capture teraz príde až po prekročení pan thresholdu / pri pinchi.
+  (2) Kotva zoomu sa aplikovala so **starým rastrom** (`dims` za `width` zaostáva o async
+  render) → `scrollLeft` sa clampol na starý rozsah a pri väčšom skoku kotva ustrelila;
+  scroll restore sa teraz aplikuje až keď `dims.width ≈ width` (po dobehnutí rastra).
+- **Overené live** (Playwright/Chromium, devtest harness bez Supabase — recept
+  v `.claude/skills/verify/SKILL.md`): mobil 390×844 s dotykom (tap → bottom-sheet,
+  „Späť na dokument", double-tap 100→250→100 %, CDP pinch: preview transform počas gesta,
+  commit 420 %) + desktop 1440×900 (wheel burst: CSS preview, rerastr po ustálení, kotva
+  drží fx 0.4808→0.4807; klik na región otvára panel; pan aj za okraj scrollera; pan
+  potláča klik; fullscreen toggle tam/späť; stránkovanie 1→2/3). `tsc` čistý, bez nových
+  lint chýb, `next build` compile ✓ (prerender `/` padá len na chýbajúcich DB creds).
+- **Otvorené (ďalšie kadencie):** výkon skutočne veľkých PDF pri prvom načítaní (celý súbor
+  sa sťahuje naraz), prípadný drag-handle/swipe-to-dismiss bottom-sheetu — podľa reálnej
+  spätnej väzby z prevádzky.
 
 ### D-055 — 3D / IFClite feature port
 **Rozhodnutie (smer):** Postupne prebrať ďalšie **vhodné IFClite moduly** do 3D vrstvy
