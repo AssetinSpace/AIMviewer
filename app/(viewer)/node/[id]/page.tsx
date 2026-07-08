@@ -17,7 +17,7 @@ import {
   fetchSystem,
 } from "@/lib/data/object";
 import { OBJECT_TYPE_LABEL, SYSTEM_TYPE_LABEL, roleLabel } from "@/lib/object-type";
-import { formatDate } from "@/lib/utils";
+import { formatDate, isUuid } from "@/lib/utils";
 import { PropertySets } from "@/components/property-sets";
 import { ClassificationList } from "@/components/classification-list";
 import { DocumentList } from "@/components/document-list";
@@ -642,6 +642,7 @@ export default async function NodePage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
+  if (!isUuid(id)) notFound();
 
   // Spatial uzly (site…asset) — bežná cesta, breadcrumb + strom.
   const spatial = await fetchNode(id);

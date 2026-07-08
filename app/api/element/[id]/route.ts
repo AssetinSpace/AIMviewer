@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { fetchNodeSummary } from "@/lib/data/object";
+import { isUuid } from "@/lib/utils";
 
 /**
  * Kompaktný súhrn prvku pre bočný info-panel prehliadačky výkresov (D-042 D).
@@ -8,16 +9,13 @@ import { fetchNodeSummary } from "@/lib/data/object";
  * výkresu. Server-side cez `service_role` (D-026), cachované (ISR).
  */
 
-const UUID_RE =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
 export async function GET(
   _req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
 
-  if (!UUID_RE.test(id)) {
+  if (!isUuid(id)) {
     return NextResponse.json({ error: "invalid id" }, { status: 400 });
   }
 

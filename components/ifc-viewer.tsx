@@ -17,6 +17,34 @@ const HIGHLIGHT_EMISSIVE = new THREE.Color(0x7c2d12);
 const FILTER_COLOR = new THREE.Color(0x60a5fa);    // blue-400 — filter / siblings
 const FILTER_EMISSIVE = new THREE.Color(0x1e3a8a);
 
+/** Zvýrazňovací materiál — flag `userData.highlight` ho odlíši od GLB originálov,
+ *  aby sa pri nahradení dal bezpečne dispose-núť (GPU zdroje by inak unikali
+ *  s každým filtrom/výberom/focusom). */
+function makeHighlightMaterial(
+  color: THREE.Color,
+  emissive: THREE.Color,
+  emissiveIntensity: number,
+  opacity?: number
+): THREE.MeshStandardMaterial {
+  const mat = new THREE.MeshStandardMaterial({
+    color,
+    emissive,
+    emissiveIntensity,
+    ...(opacity !== undefined ? { transparent: true, opacity } : {}),
+  });
+  mat.userData.highlight = true;
+  return mat;
+}
+
+/** Dispose materiálu len ak je náš highlight — originálov z GLB sa nedotýka.
+ *  Volá sa na aktuálne pripnutý materiál pri jeho nahradení/obnove; pripnutý
+ *  highlight nikdy nie je zároveň uloženým originálom v saved/filter mapách. */
+function disposeIfHighlight(mat: THREE.Material | THREE.Material[]): void {
+  for (const m of Array.isArray(mat) ? mat : [mat]) {
+    if (m?.userData?.highlight) m.dispose();
+  }
+}
+
 interface StoreyInfo {
   eid: number;
   name: string;
@@ -280,7 +308,10 @@ export function IFCViewer({
           objectIds: ReadonlyArray<string>,
           excludeOid?: string
         ): void {
-          filterMaterials.forEach((mat, mesh) => { mesh.material = mat; });
+          filterMaterials.forEach((mat, mesh) => {
+            disposeIfHighlight(mesh.material);
+            mesh.material = mat;
+          });
           filterMaterials.clear();
           if (objectIds.length === 0) return;
 
@@ -298,13 +329,12 @@ export function IFCViewer({
             const eid = getEidFromObject(node);
             if (eid === undefined || !targetEids.has(eid)) return;
             filterMaterials.set(node, node.material);
-            node.material = new THREE.MeshStandardMaterial({
-              color: FILTER_COLOR,
-              emissive: FILTER_EMISSIVE,
-              emissiveIntensity: 0.35,
-              transparent: true,
-              opacity: 0.92,
-            });
+            node.material = makeHighlightMaterial(
+              FILTER_COLOR,
+              FILTER_EMISSIVE,
+              0.35,
+              0.92
+            );
           });
         }
 
@@ -334,7 +364,10 @@ export function IFCViewer({
           let currentSelectedEid: number | undefined;
 
           function clearSelection() {
-            savedMaterials.forEach((mat, mesh) => { mesh.material = mat; });
+            savedMaterials.forEach((mat, mesh) => {
+              disposeIfHighlight(mesh.material);
+              mesh.material = mat;
+            });
             savedMaterials.clear();
             currentSelectedEid = undefined;
           }
@@ -359,11 +392,11 @@ export function IFCViewer({
               if (!(node instanceof THREE.Mesh)) return;
               if (getEidFromObject(node) !== eid) return;
               savedMaterials.set(node, node.material);
-              node.material = new THREE.MeshStandardMaterial({
-                color: HIGHLIGHT_COLOR,
-                emissive: HIGHLIGHT_EMISSIVE,
-                emissiveIntensity: 0.4,
-              });
+              node.material = makeHighlightMaterial(
+                HIGHLIGHT_COLOR,
+                HIGHLIGHT_EMISSIVE,
+                0.4
+              );
             });
             onSelect?.({ id: objectId, route: "node", label: guid });
             onPickedElement?.(objectId, guid);
@@ -533,11 +566,12 @@ function highlightEid(root: THREE.Group, eid: number): void {
   root.traverse((node) => {
     if (!(node instanceof THREE.Mesh)) return;
     if (getEidFromObject(node) !== eid) return;
-    node.material = new THREE.MeshStandardMaterial({
-      color: new THREE.Color(0xf97316),
-      emissive: new THREE.Color(0x7c2d12),
-      emissiveIntensity: 0.4,
-    });
+    disposeIfHighlight(node.material);
+    node.material = makeHighlightMaterial(
+      HIGHLIGHT_COLOR,
+      HIGHLIGHT_EMISSIVE,
+      0.4
+    );
   });
 }
 

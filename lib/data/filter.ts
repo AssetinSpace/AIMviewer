@@ -3,8 +3,7 @@ import "server-only";
 import { unstable_cache } from "next/cache";
 
 import { getSupabaseAdmin } from "@/lib/supabase/server";
-
-const AIM_CACHE = { revalidate: 60, tags: ["aim"] };
+import { AIM_CACHE } from "@/lib/data/constants";
 
 /** Returns object_ids of assets with the given IFC type. */
 export const fetchByIfcType = unstable_cache(
@@ -28,11 +27,13 @@ export const fetchByClassificationPrefix = unstable_cache(
   async (prefix: string): Promise<string[]> => {
     const supabase = getSupabaseAdmin();
 
-    // Step 1: find matching classification reference IDs
+    // Step 1: find matching classification reference IDs. Prefix je literál —
+    // LIKE wildcardy (%/_) z používateľského vstupu escapuj.
+    const literal = prefix.replace(/[\\%_]/g, (c) => `\\${c}`);
     const { data: refRows, error: refErr } = await supabase
       .from("classification_references")
       .select("id")
-      .like("identification", `${prefix}%`);
+      .like("identification", `${literal}%`);
     if (refErr) throw new Error(refErr.message);
     const refIds = (refRows ?? []).map((r) => r.id as string);
     if (refIds.length === 0) return [];
@@ -56,14 +57,16 @@ export async function fetchSpaceSiblings(
 ): Promise<{ spaceId: string | null; siblingObjectIds: string[] }> {
   const supabase = getSupabaseAdmin();
 
-  // Find parent of this object
+  // Find parent of this object. DB chyba = throw (route vráti 500 a zaloguje);
+  // len skutočná absencia rodiča/priestoru je legitímny prázdny výsledok.
   const { data: parentRows, error: parentErr } = await supabase
     .from("rel_contained_in_spatial_structure")
     .select("to_id")
     .eq("from_id", objectId)
     .is("valid_until", null)
     .limit(1);
-  if (parentErr || !parentRows?.length) return { spaceId: null, siblingObjectIds: [] };
+  if (parentErr) throw new Error(parentErr.message);
+  if (!parentRows?.length) return { spaceId: null, siblingObjectIds: [] };
 
   const spaceId = parentRows[0].to_id as string;
 
@@ -73,7 +76,8 @@ export async function fetchSpaceSiblings(
     .select("id, object_type")
     .eq("id", spaceId)
     .limit(1);
-  if (spaceErr || !spaceRow?.length || spaceRow[0].object_type !== "space") {
+  if (spaceErr) throw new Error(spaceErr.message);
+  if (!spaceRow?.length || spaceRow[0].object_type !== "space") {
     return { spaceId: null, siblingObjectIds: [] };
   }
 

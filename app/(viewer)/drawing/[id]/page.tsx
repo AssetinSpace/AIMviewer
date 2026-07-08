@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 
 import { fetchDrawing } from "@/lib/data/drawing";
 import { fetchDocument } from "@/lib/data/object";
+import { isUuid } from "@/lib/utils";
 import DrawingWorkspace from "@/components/drawing-workspace";
 import type { DocumentPanelData } from "@/components/document-info-panel";
 
@@ -23,6 +24,7 @@ export default async function DrawingPage({
   searchParams: Promise<{ focus?: string; page?: string }>;
 }) {
   const { id } = await params;
+  if (!isUuid(id)) notFound();
   const { focus, page } = await searchParams;
 
   // Výkres (PDF + klikateľné regióny) + dokument (metadáta + „pripojené k") naraz.

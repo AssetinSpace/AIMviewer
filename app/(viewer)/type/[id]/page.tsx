@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 
 import { fetchAssetType } from "@/lib/data/asset";
 import { fetchElementDrawings } from "@/lib/data/relations";
+import { isUuid } from "@/lib/utils";
 import { PropertySets } from "@/components/property-sets";
 import { ClassificationList } from "@/components/classification-list";
 import { DrawingList } from "@/components/drawing-list";
@@ -32,6 +33,7 @@ export default async function TypePage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
+  if (!isUuid(id)) notFound();
   const [type, drawings] = await Promise.all([
     fetchAssetType(id),
     fetchElementDrawings(id),

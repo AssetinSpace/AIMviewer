@@ -30,11 +30,22 @@ const NAV_TYPES = ["asset_type", "system", "person", "organization", "document"]
 
 export const fetchSidebarNav = unstable_cache(async (): Promise<SidebarNavData> => {
   const supabase = getSupabaseAdmin();
-  const { data, error } = await supabase
-    .from("objects")
-    .select("id, object_type, object_ref, name")
-    .in("object_type", NAV_TYPES as unknown as string[]);
-  if (error) throw new Error(error.message);
+
+  // Stránkovane — Supabase capuje odpoveď na 1000 riadkov (`db-max-rows`); nad
+  // limit by uzly zo sidebaru potichu zmizli (rovnaký prípad ako spatial.ts).
+  const PAGE = 1000;
+  const data: { id: string; object_type: string; object_ref: string | null; name: string | null }[] = [];
+  for (let from = 0; ; from += PAGE) {
+    const { data: rows, error } = await supabase
+      .from("objects")
+      .select("id, object_type, object_ref, name")
+      .in("object_type", NAV_TYPES as unknown as string[])
+      .order("id", { ascending: true })
+      .range(from, from + PAGE - 1);
+    if (error) throw new Error(error.message);
+    data.push(...((rows ?? []) as typeof data));
+    if (!rows || rows.length < PAGE) break;
+  }
 
   const groups: SidebarNavData = {
     assetTypes: [],

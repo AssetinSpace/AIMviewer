@@ -1,9 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { fetchSpaceSiblings } from "@/lib/data/filter";
-
-const UUID_RE =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+import { isUuid } from "@/lib/utils";
 
 export async function GET(
   _req: NextRequest,
@@ -11,7 +9,7 @@ export async function GET(
 ) {
   const { objectId } = await params;
 
-  if (!UUID_RE.test(objectId)) {
+  if (!isUuid(objectId)) {
     return NextResponse.json({ error: "invalid id" }, { status: 400 });
   }
 
