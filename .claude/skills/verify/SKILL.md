@@ -29,6 +29,15 @@ description: Ako overiť zmeny AIM Viewera naživo v tomto repe — build/launch
 4. `/api/element/[id]` vráti 400 (bez DB) → panel ukáže „Detail sa nepodarilo načítať" —
    očakávané, layout panelov sa dá overiť aj tak.
 
+## Range/lazy loading PDF (kadencia 3)
+- Veľké testovacie PDF: generátor s pseudo-náhodnými úsečkami (zle komprimovateľné),
+  40 strán ≈ 4 MB. `next dev` aj prod podporujú Range na `public/` (`curl -r 0-99` → 206).
+- **Meraj `performance.getEntriesByType("resource")[].transferSize`**, NIE `Content-Length`
+  hlavičky z Playwright response eventov — pdf.js prvý plný GET po hlavičkách abortuje
+  (hlavička tvrdí celý súbor, reálne sa prenesie len prvý chunk).
+- Očakávanie (overené): strana 1 viditeľná po ~10 % súboru; listovanie doťahuje chunky
+  on-demand; pri nefunkčnom Range pdf.js potichu spadne na plné stiahnutie.
+
 ## Na čo si dať pozor (poučenia z D-054)
 - **Click cez pointer capture:** `setPointerCapture` v pointerdown presmeruje click na
   scroller a `<a>` regióny prestanú klikať myšou. Capture až po prekročení pan thresholdu.

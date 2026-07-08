@@ -13,6 +13,18 @@ const nextConfig: NextConfig = {
           { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
         ],
       },
+      {
+        // IFClite WASM (~3 MB, pinovaná verzia — mení sa len s bump-om balíka):
+        // deň v cache + týždeň stale-while-revalidate = opakovaný vstup do 3D
+        // nečaká na download; po deployi novej verzie sa potichu obnoví.
+        source: "/ifc-lite_bg.wasm",
+        headers: [
+          {
+            key: "Cache-Control",
+            value: "public, max-age=86400, stale-while-revalidate=604800",
+          },
+        ],
+      },
     ];
   },
 };

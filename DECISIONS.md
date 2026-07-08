@@ -1378,9 +1378,29 @@ math, `focus` deep-link, `onSelect` bočný panel, Ctrl/⌘-klik nová karta, sk
   drží fx 0.4808→0.4807; klik na región otvára panel; pan aj za okraj scrollera; pan
   potláča klik; fullscreen toggle tam/späť; stránkovanie 1→2/3). `tsc` čistý, bez nových
   lint chýb, `next build` compile ✓ (prerender `/` padá len na chýbajúcich DB creds).
-- **Otvorené (ďalšie kadencie):** výkon skutočne veľkých PDF pri prvom načítaní (celý súbor
-  sa sťahuje naraz), prípadný drag-handle/swipe-to-dismiss bottom-sheetu — podľa reálnej
-  spätnej väzby z prevádzky.
+**Implementované — kadencia 3 (rýchle prvé načítanie veľkých PDF + IFC WASM cache):**
+- **Range/lazy loading PDF** (`drawing-viewer.tsx`): `Document options` =
+  `disableAutoFetch + disableStream + rangeChunkSize 256 KB` → pdf.js si cez HTTP Range
+  requesty ťahá len xref/page tree + objekty aktuálne zobrazenej strany namiesto celého
+  súboru; listovanie doťahuje chunky on-demand. **Klikateľné regióny (`_drawing_links`
+  overlay) sú aktívne hneď po rasteri prvej strany** — nečaká sa na zvyšok súboru. Ak
+  server Range nepodporuje, pdf.js automaticky spadne na dnešné plné stiahnutie (žiadna
+  regresia). Supabase Storage Range podporuje; po deployi spot-check v DevTools (206).
+  K tomu progress % v loading state (`onLoadProgress`).
+- **IFC (bezpečný rozsah):** `next.config.ts` — `Cache-Control` pre `ifc-lite_bg.wasm`
+  (~3 MB): deň cache + týždeň `stale-while-revalidate` → opakovaný vstup do 3D nečaká na
+  WASM download. **Viac sa IFC loadingu teraz nedotýkame** — fetch/parse path žije presne
+  v súboroch rozpracovanej 3D federácie (D-050, necommitnuté na inom stroji); pokračovanie
+  (napr. komprimovaný variant IFC, progress) až po jej zamknutí.
+- **Overené live** (devtest harness, 40-stranové 3,8 MB PDF, `next dev` Range = 206):
+  strana 1 viditeľná ~1,1 s po prenose **387 KB = 10 % súboru** (meranie
+  `resource.transferSize`; predtým sa sťahoval celý súbor), región klikateľný okamžite,
+  panel sa otvára; skok na stranu 40 → chunky on-demand (100 % až po prejdení všetkých
+  strán); regresná sada kadencie 2 (sheet, double-tap, pinch preview+commit, wheel kotva
+  fx 0.4808→0.4807, klik, stránkovanie) zelená. `tsc` čistý, bez nových lint chýb,
+  `next build` compile ✓.
+- **Otvorené (ďalšie kadencie):** prípadný drag-handle/swipe-to-dismiss bottom-sheetu;
+  IFC loading UX po zamknutí D-050 — podľa reálnej spätnej väzby z prevádzky.
 
 ### D-055 — 3D / IFClite feature port
 **Rozhodnutie (smer):** Postupne prebrať ďalšie **vhodné IFClite moduly** do 3D vrstvy

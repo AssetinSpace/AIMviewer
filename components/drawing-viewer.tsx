@@ -30,6 +30,18 @@ pdfjs.GlobalWorkerOptions.workerSrc = new URL(
   import.meta.url
 ).toString();
 
+// Lazy načítanie veľkých PDF (D-054 kadencia 3): pdf.js si cez HTTP Range requesty ťahá
+// len xref/page tree + objekty aktuálne renderovanej strany namiesto celého súboru —
+// prvá strana veľkého viacstranového PDF je viditeľná a klikateľná po pár 100 kB.
+// Ak server Range nepodporuje, pdf.js automaticky spadne na plné stiahnutie (dnešné
+// správanie). Supabase Storage Range podporuje. Objekt je modulová konštanta — react-pdf
+// pri novej referencii `options` reloadne celý dokument.
+const DOCUMENT_OPTIONS = {
+  disableAutoFetch: true, // neprednačítavaj zvyšok súboru na pozadí
+  disableStream: true, // vynúti range transport (inak streamuje celý response)
+  rangeChunkSize: 262144, // 256 KB — menej roundtripov na výkresoch s veľkými streammi
+};
+
 const PAD = 16; // px vnútorný padding plátna (`p-4`) — vstupuje do kotvenia zoomu
 const ZOOM_STEP = 0.25; // krok tlačidiel +/−
 const ZOOM_MIN = 0.5; // 1 = „fit to width" viewportu
@@ -106,6 +118,8 @@ export function DrawingViewer({
   const [dims, setDims] = useState<Dims | null>(null);
   const [pulsing, setPulsing] = useState(Boolean(focusRegion));
   const [isFullscreen, setIsFullscreen] = useState(false);
+  // % stiahnutia počas úvodného načítania dokumentu (null = neznámy total).
+  const [loadPct, setLoadPct] = useState<number | null>(null);
 
   const rootRef = useRef<HTMLDivElement | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
@@ -558,9 +572,15 @@ export function DrawingViewer({
       >
         <Document
           file={url}
+          options={DOCUMENT_OPTIONS}
           onLoadSuccess={({ numPages }) => setNumPages(numPages)}
+          onLoadProgress={({ loaded, total }) => {
+            if (total > 0) setLoadPct(Math.min(100, Math.round((loaded / total) * 100)));
+          }}
           loading={
-            <div className="p-8 text-sm text-muted-foreground">Načítavam výkres…</div>
+            <div className="p-8 text-sm text-muted-foreground">
+              Načítavam výkres…{loadPct != null && loadPct < 100 ? ` ${loadPct} %` : ""}
+            </div>
           }
           error={
             <div className="p-8 text-sm text-destructive">
