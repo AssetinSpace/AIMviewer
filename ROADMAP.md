@@ -41,7 +41,8 @@ grafom. Detail v sekcii „Program dema — F-sprinty".**
 `app/(viewer)/ifc/page.tsx`, [etl/ifc_upload.py](etl/ifc_upload.py)): `getIfcModels()`
 vracia pole (ARCH+VZT), viewer rendruje oba do jednej scény, identita naprieč modelmi drží
 IFC GUID (expressId sa medzi súbormi prekrýva), podlažie sa normalizuje (`1NP_VZT`→`1NP`).
-**Treba:** zapísať rozhodnutie **D-050** (3D vrstva federácie D-049) a commitnúť.
+**Rozhodnutie D-050 zapísané** (2026-07-08, DECISIONS.md); **ostáva:** commitnúť lokálnu
+vetvu s kódom na D-050 referenciu.
 
 ### Ďalší krok
 Program **F-sprintov** (D-051–D-056) — viď sekcia „Program dema — F-sprinty". Poradie nie

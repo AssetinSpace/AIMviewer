@@ -1184,10 +1184,38 @@ dema (D-003) aj text-to-query (D-047). Name+elevačný match je pre tento pár m
 (rovnaký Revit projekt) deterministický; ako všeobecný princíp ho drží konfigurovateľná
 policy. Port-konektivita (`IfcRelConnectsPorts`) je odložené rozšírenie (D-047).
 
-### D-050 — 3D multi-model federácia (ARCH+VZT v jednej scéne) — *rezervované*
-**Status:** rezervované číslo pre rozhodnutie k **rozpracovanej 3D multi-model federácii**
-(render VZT+ASR v jednej scéne, ROADMAP „Rozpracované"). Je necommitnuté; rozhodnutie sa
-zapíše pri commite tej vetvy. Číslo držané tu, aby `D-051+` nekolidovalo.
+### D-050 — 3D multi-model federácia (ARCH+VZT v jednej scéne)
+
+**Rozhodnutie:** 3D vrstva (D-044) sa rozširuje na **federovaný render viacerých
+disciplinárnych modelov do jednej Three.js scény** — 3D náprotivok dátovej federácie D-049.
+Zapísané podľa pravidla „najprv záznam, potom kód" (AGENTS.md); implementácia je
+**rozpracovaná lokálne (necommitnutá)**, commitne sa na túto D-050 referenciu.
+
+**Princípy (zrkadlia D-049 na 3D vrstve):**
+- **`getIfcModels()` vracia pole modelov** (ARCH + VZT) namiesto jednej URL
+  (`lib/data/ifc.ts`); viewer (`components/ifc-viewer.tsx`) načíta a rendruje **všetky
+  modely do jednej scény**. Každý model = samostatný IFClite parse + GLB export; pád
+  jedného modelu nezhodí ostatné (izolácia z D-044 trvá).
+- **Identita naprieč modelmi = IFC GUID, nikdy expressId** — expressId sa medzi súbormi
+  prekrýva (každý STEP súbor čísluje od 1). Interné mapy scény (pick, highlight, focus)
+  musia byť kľúčované GUIDom, príp. `(modelId, expressId)` párom.
+- **Podlažia sa normalizujú na spoločný label** (`1NP_VZT` → `1NP`), rovnaká policy ako
+  federačný ETL (D-049 rozhodnutie 2) — floor filter tak funguje nad oboma modelmi naraz.
+- **Upload modelov**: `etl/ifc_upload.py` zovšeobecnený z jedného `ASR.ifc` na nahratie
+  viacerých súborov do bucketu `ifc/`.
+- **Schéma DB sa nemení** — geometria ostáva ephemerálna klient-side (D-044 guardrail);
+  DB↔3D spojka je naďalej `ifc_guid_history` (VZT prvky sú v DB z D-049 federačného ETL).
+
+**Dôvod:** Demo naratív (D-003/D-047) potrebuje **jeden koherentný pohľad** — dátový graf
+už je federovaný (D-049), bez federovanej scény by 3D ukazovalo len ARCH a systémové dotazy
+(VZT prvky) by nemali kam highlightovať. Trust-loop deep-linky (D-056) predpokladajú, že
+prvok z odpovede sa dá zvýrazniť v 3D bez ohľadu na to, z ktorého disciplinárneho súboru
+pochádza.
+
+**Riziká/otvorené:** výkon dvoch parsov na klientovi (lazy-load per model / visibility
+toggle per disciplína je prirodzené rozšírenie); Z-fighting pri prekryvoch modelov;
+rotácia/offset druhého modelu (zatiaľ rovnaký Revit projekt → zhodný origin, všeobecný
+prípad = transform policy, príbuzné D-039).
 
 ---
 
