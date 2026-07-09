@@ -61,12 +61,6 @@ interface Graph {
   parentOf: Map<string, string>;
 }
 
-/**
- * Načíta celý priestorový graf jedným setom dotazov.
- * `cache()` dedupe-uje volania v rámci jedného requestu — layout (strom) aj
- * page (`fetchNode`) zdieľajú jeden výsledok namiesto dvoch identických setov
- * dotazov.
- */
 interface RawSpatialObject {
   id: string;
   object_type: string;
@@ -102,7 +96,21 @@ async function loadSpatialObjects(
   return rows;
 }
 
-const loadGraph = cache(async (): Promise<Graph> => {
+/** Serializovateľná podoba grafu pre `unstable_cache` (Mapy JSON neprežijú). */
+interface GraphData {
+  objects: ObjectRow[];
+  /** Aktívne spatial hrany `[from_id (dieťa), to_id (rodič)]`. */
+  edges: [string, string][];
+}
+
+/**
+ * Načíta celý priestorový graf jedným setom dotazov a cachuje ho ako **jeden
+ * zdieľaný záznam** (ISR, tag `aim`). Kľúčové pre rýchlosť preklikávania:
+ * strom v layoute aj detail ľubovoľného uzla čerpajú z toho istého cache
+ * záznamu, takže prvý klik na nový uzol už nespúšťa žiadne DB dotazy na graf
+ * (predtým bol `fetchNode` cachovaný per-id → každý nový uzol = celý graf znova).
+ */
+const loadGraphData = unstable_cache(async (): Promise<GraphData> => {
   const supabase = getSupabaseAdmin();
 
   const [objectRows, aggRes, containedRes, floorsRes, spacesRes] = await Promise.all([
@@ -160,16 +168,32 @@ const loadGraph = cache(async (): Promise<Graph> => {
     });
   }
 
-  const childrenOf = new Map<string, string[]>();
-  const parentOf = new Map<string, string>();
   // Uzol je buď agregovaný (štruktúra) alebo obsiahnutý (prvok) — nikdy oboje,
-  // takže zliatie oboch tabuliek v parentOf nekoliduje.
+  // takže zliatie oboch tabuliek nekoliduje.
   const relRows = [...(aggRes.data ?? []), ...(containedRes.data ?? [])];
+  const edges: [string, string][] = [];
   for (const r of relRows) {
     const from = r.from_id as string;
     const to = r.to_id as string;
     // Ignoruj hrany mimo priestorového grafu (napr. ak by to_id nebol v byId).
     if (!byId.has(from) || !byId.has(to)) continue;
+    edges.push([from, to]);
+  }
+
+  return { objects: [...byId.values()], edges };
+}, ["spatial-graph"], AIM_CACHE);
+
+/**
+ * Graf ako Mapy (per-request memo cez `cache()`) — zloženie z cachovaných dát
+ * je čisto in-memory (~1–2k uzlov, sub-ms), žiadny DB round-trip pri HIT-e.
+ */
+const loadGraph = cache(async (): Promise<Graph> => {
+  const { objects, edges } = await loadGraphData();
+
+  const byId = new Map<string, ObjectRow>(objects.map((o) => [o.id, o]));
+  const childrenOf = new Map<string, string[]>();
+  const parentOf = new Map<string, string>();
+  for (const [from, to] of edges) {
     parentOf.set(from, to);
     const list = childrenOf.get(to);
     if (list) list.push(from);
@@ -201,22 +225,20 @@ function buildSubtree(id: string, graph: Graph): SpatialNode {
 
 /**
  * Celý strom priestorovej hierarchie. Korene = uzly bez rodiča (typicky `site`).
+ * Derivát cachovaného grafu (`loadGraphData`) — skladanie je in-memory, vlastný
+ * `unstable_cache` netreba (render routy navyše cachuje Full Route Cache).
  */
-export const fetchSpatialTree = unstable_cache(
-  async (): Promise<SpatialNode[]> => {
-    const graph = await loadGraph();
-    const roots: ObjectRow[] = [];
-    for (const row of graph.byId.values()) {
-      // Koreň = priestorová štruktúra bez rodiča (site). `asset` bez rodiča je
-      // group-only MEP prvok (potrubie/tvarovky, D-049) — do stromu nepatrí
-      // (dostupný cez systém / priamy odkaz), inak by zaplavil sidebar.
-      if (!graph.parentOf.has(row.id) && row.object_type !== "asset") roots.push(row);
-    }
-    return roots.sort(compareNodes).map((r) => buildSubtree(r.id, graph));
-  },
-  ["spatial-tree"],
-  AIM_CACHE
-);
+export const fetchSpatialTree = cache(async (): Promise<SpatialNode[]> => {
+  const graph = await loadGraph();
+  const roots: ObjectRow[] = [];
+  for (const row of graph.byId.values()) {
+    // Koreň = priestorová štruktúra bez rodiča (site). `asset` bez rodiča je
+    // group-only MEP prvok (potrubie/tvarovky, D-049) — do stromu nepatrí
+    // (dostupný cez systém / priamy odkaz), inak by zaplavil sidebar.
+    if (!graph.parentOf.has(row.id) && row.object_type !== "asset") roots.push(row);
+  }
+  return roots.sort(compareNodes).map((r) => buildSubtree(r.id, graph));
+});
 
 export interface NodeDetail {
   node: ObjectRow;
@@ -238,32 +260,31 @@ function toRef(row: ObjectRow): NodeRef {
 /**
  * Detail jedného uzla + breadcrumb (chôdza nahor po spatial hranách)
  * a priami potomkovia. `null`, ak uzol neexistuje / nie je priestorový.
+ * Derivát cachovaného grafu — prvý klik na nový uzol nespúšťa DB dotazy
+ * (predchádzajúce per-id cachovanie tu pri každom novom uzle znova načítavalo
+ * celý graf; to bola hlavná latencia studeného kliku).
  */
-export const fetchNode = unstable_cache(
-  async (id: string): Promise<NodeDetail | null> => {
-    const graph = await loadGraph();
-    const node = graph.byId.get(id);
-    if (!node) return null;
+export const fetchNode = cache(async (id: string): Promise<NodeDetail | null> => {
+  const graph = await loadGraph();
+  const node = graph.byId.get(id);
+  if (!node) return null;
 
-    // Breadcrumb: nazbieraj predkov a otoč na poradie root → … → rodič.
-    const breadcrumb: NodeRef[] = [];
-    let cursor = graph.parentOf.get(id);
-    const guard = new Set<string>(); // poistka proti cyklu
-    while (cursor && !guard.has(cursor)) {
-      guard.add(cursor);
-      const parent = graph.byId.get(cursor);
-      if (parent) breadcrumb.push(toRef(parent));
-      cursor = graph.parentOf.get(cursor);
-    }
-    breadcrumb.reverse();
+  // Breadcrumb: nazbieraj predkov a otoč na poradie root → … → rodič.
+  const breadcrumb: NodeRef[] = [];
+  let cursor = graph.parentOf.get(id);
+  const guard = new Set<string>(); // poistka proti cyklu
+  while (cursor && !guard.has(cursor)) {
+    guard.add(cursor);
+    const parent = graph.byId.get(cursor);
+    if (parent) breadcrumb.push(toRef(parent));
+    cursor = graph.parentOf.get(cursor);
+  }
+  breadcrumb.reverse();
 
-    const children = (graph.childrenOf.get(id) ?? [])
-      .map((cid) => graph.byId.get(cid)!)
-      .sort(compareNodes)
-      .map(toRef);
+  const children = (graph.childrenOf.get(id) ?? [])
+    .map((cid) => graph.byId.get(cid)!)
+    .sort(compareNodes)
+    .map(toRef);
 
-    return { node, breadcrumb, children };
-  },
-  ["node"],
-  AIM_CACHE
-);
+  return { node, breadcrumb, children };
+});

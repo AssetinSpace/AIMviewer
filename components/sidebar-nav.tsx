@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
+import { LinkPendingSpinner } from "@/components/link-pending-spinner";
 import type { NavItem, SidebarNavData } from "@/lib/data/nav";
 
 /**
@@ -64,6 +65,7 @@ function Section({
             <li key={it.id}>
               <Link
                 href={href}
+                prefetch={true}
                 className={cn(
                   "flex items-center gap-2 rounded-md py-1.5 pl-8 pr-2 text-sm",
                   active
@@ -71,6 +73,7 @@ function Section({
                     : "hover:bg-sidebar-accent/60"
                 )}
               >
+                <LinkPendingSpinner />
                 <span className="truncate">{it.name ?? it.object_ref ?? it.id}</span>
                 {it.object_ref && (
                   <span className="ml-auto shrink-0 truncate font-mono text-[0.7rem] text-muted-foreground">

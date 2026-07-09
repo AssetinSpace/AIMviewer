@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import Link from "next/link";
 import { Cuboid } from "lucide-react";
 import { notFound, redirect } from "next/navigation";
@@ -18,6 +19,7 @@ import {
 } from "@/lib/data/object";
 import { OBJECT_TYPE_LABEL, SYSTEM_TYPE_LABEL, roleLabel } from "@/lib/object-type";
 import { formatDate } from "@/lib/utils";
+import { LinkPendingSpinner } from "@/components/link-pending-spinner";
 import { PropertySets } from "@/components/property-sets";
 import { ClassificationList } from "@/components/classification-list";
 import { DocumentList } from "@/components/document-list";
@@ -49,6 +51,22 @@ function Breadcrumb({ trail }: { trail: NodeRef[] }) {
         </span>
       ))}
     </nav>
+  );
+}
+
+/**
+ * Placeholder karty počas streamovania sekcie (Suspense fallback) — hlavička
+ * a jadro stránky prídu okamžite z cachovaného grafu, sekcie sa dostreamujú.
+ */
+function SectionSkeleton() {
+  return (
+    <div className="mb-6 animate-pulse rounded-xl border p-6" aria-hidden>
+      <div className="h-5 w-40 rounded bg-muted" />
+      <div className="mt-4 space-y-2">
+        <div className="h-4 w-full rounded bg-muted" />
+        <div className="h-4 w-2/3 rounded bg-muted" />
+      </div>
+    </div>
   );
 }
 
@@ -222,14 +240,10 @@ async function SystemMembershipSection({ id }: { id: string }) {
   );
 }
 
-/** Detail assetu (S2 jadro + S3 sekcie): atribúty, properties, klasifikácie,
- *  dokumenty, zodpovednosti, GUID história. */
+/** Jadro detailu assetu (S2): atribúty, properties, klasifikácie. S3 sekcie
+ *  streamujú súbežne vo vlastných Suspense hraniciach (viď SpatialView). */
 async function AssetDetailView({ id }: { id: string }) {
-  // Asset karta aj jej S3 sekcie závisia len od `id` → načítaj ich paralelne.
-  const [asset, sections] = await Promise.all([
-    fetchAsset(id),
-    fetchNodeSections(id),
-  ]);
+  const asset = await fetchAsset(id);
   if (!asset) notFound();
 
   const predef = asset.predefinedType.value && (
@@ -307,15 +321,17 @@ async function AssetDetailView({ id }: { id: string }) {
           <ClassificationList facets={asset.classifications} />
         </CardContent>
       </Card>
-
-      <SystemMembershipSection id={id} />
-
-      <NodeSectionsCards data={sections} ifcGuid={asset.ifc_guid} nodeId={id} />
     </>
   );
 }
 
-/** Priestorový uzol (S1) + generické S3 sekcie. */
+/**
+ * Priestorový uzol (S1) + generické S3 sekcie.
+ *
+ * Breadcrumb, hlavička a jadro prichádzajú okamžite z cachovaného grafu; každá
+ * dátovo závislá sekcia streamuje vo vlastnej Suspense hranici. Async sekcie sú
+ * súrodenci → ich fetche bežia paralelne a stránka nečaká na najpomalší z nich.
+ */
 function SpatialView({ detail }: { detail: NodeDetail }) {
   const { node, breadcrumb, children } = detail;
   const isAsset = node.object_type === "asset";
@@ -327,7 +343,17 @@ function SpatialView({ detail }: { detail: NodeDetail }) {
       <NodeHeader type={node.object_type} name={node.name} objectRef={node.object_ref} />
 
       {isAsset ? (
-        <AssetDetailView id={node.id} />
+        <>
+          <Suspense fallback={<SectionSkeleton />}>
+            <AssetDetailView id={node.id} />
+          </Suspense>
+          <Suspense fallback={null}>
+            <SystemMembershipSection id={node.id} />
+          </Suspense>
+          <Suspense fallback={<SectionSkeleton />}>
+            <NodeSections id={node.id} ifcGuid={node.ifc_guid} />
+          </Suspense>
+        </>
       ) : (
         <>
           <Card className="mb-6">
@@ -348,10 +374,12 @@ function SpatialView({ detail }: { detail: NodeDetail }) {
                     <li key={c.id}>
                       <Link
                         href={`/node/${c.id}`}
-                        className="flex items-center justify-between gap-2 py-2 text-sm hover:text-foreground"
+                        prefetch={true}
+                        className="flex items-center gap-2 py-2 text-sm hover:text-foreground"
                       >
+                        <LinkPendingSpinner />
                         <span>{c.name ?? c.object_ref ?? c.id}</span>
-                        <span className="shrink-0 font-mono text-xs text-muted-foreground">
+                        <span className="ml-auto shrink-0 font-mono text-xs text-muted-foreground">
                           {c.object_ref}
                         </span>
                       </Link>
@@ -362,9 +390,13 @@ function SpatialView({ detail }: { detail: NodeDetail }) {
             </CardContent>
           </Card>
 
-          <FloorDrawingsSection id={node.id} />
+          <Suspense fallback={null}>
+            <FloorDrawingsSection id={node.id} />
+          </Suspense>
 
-          <NodeSections id={node.id} ifcGuid={node.ifc_guid} />
+          <Suspense fallback={<SectionSkeleton />}>
+            <NodeSections id={node.id} ifcGuid={node.ifc_guid} />
+          </Suspense>
         </>
       )}
     </div>
@@ -643,12 +675,15 @@ export default async function NodePage({
 }) {
   const { id } = await params;
 
+  // Spatial detail aj meta pre dispatch naraz — pre ne-priestorové uzly (osoba,
+  // organizácia, systém, dokument) to odstráni sekvenčný druhý krok; priestorové
+  // uzly stojí navyše len jeden lacný cachovaný single-row dotaz.
+  const [spatial, meta] = await Promise.all([fetchNode(id), fetchObjectMeta(id)]);
+
   // Spatial uzly (site…asset) — bežná cesta, breadcrumb + strom.
-  const spatial = await fetchNode(id);
   if (spatial) return <SpatialView detail={spatial} />;
 
   // Nie je priestorový — rozhodni podľa typu objektu.
-  const meta = await fetchObjectMeta(id);
   if (!meta) notFound();
 
   switch (meta.object_type) {
