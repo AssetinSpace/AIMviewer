@@ -16,6 +16,12 @@ import {
  * o dokumente (metadáta + „Pripojené k"); klik na SNIM kód ho prepne na detail
  * prvku (so „Späť na dokument"). Klik **neopúšťa stránku**.
  *
+ * Úzke šírky (D-054 kadencia 2): na mobile je panel v toku POD viewerom, takže detail
+ * po kliku na kód by skončil pod foldom — vybraný prvok sa preto zobrazí ako plávajúci
+ * **bottom-sheet** (fixed, vlastný scroll, bez backdropu — výkres ostáva interaktívny,
+ * ďalší tap na iný kód panel len prepne). „Späť na dokument" sheet zavrie. Od `lg`
+ * breakpointu sa to isté DOM vracia do statického bočného stĺpca.
+ *
  * Viewer sa načíta výhradne v prehliadači (`ssr: false`) — pdf.js potrebuje DOM/Worker.
  */
 const DrawingViewer = dynamic(
@@ -81,7 +87,15 @@ export default function DrawingWorkspace({
           onSelect={setSelected}
         />
       </div>
-      <aside className="shrink-0 lg:w-80">{panel}</aside>
+      <aside
+        className={
+          selected
+            ? "fixed inset-x-3 bottom-3 z-50 max-h-[70dvh] overflow-y-auto overscroll-contain drop-shadow-xl lg:static lg:inset-auto lg:z-auto lg:max-h-none lg:w-80 lg:shrink-0 lg:overflow-visible lg:overscroll-auto lg:drop-shadow-none"
+            : "shrink-0 lg:w-80"
+        }
+      >
+        {panel}
+      </aside>
     </div>
   );
 }
