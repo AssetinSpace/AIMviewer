@@ -38,10 +38,8 @@ description: Ako overiť zmeny AIM Viewera naživo v tomto repe — build/launch
 - Očakávanie (overené): strana 1 viditeľná po ~10 % súboru; listovanie doťahuje chunky
   on-demand; pri nefunkčnom Range pdf.js potichu spadne na plné stiahnutie.
 
-## Na čo si dať pozor (poučenia z D-054)
-- **Click cez pointer capture:** `setPointerCapture` v pointerdown presmeruje click na
-  scroller a `<a>` regióny prestanú klikať myšou. Capture až po prekročení pan thresholdu.
-- **Zoom kotva:** raster (`dims`) za `width` zaostáva o async render — scroll restore
-  aplikovať až keď `dims.width ≈ width`, inak sa `scrollLeft` clampne na starý rozsah.
+## Na čo si dať pozor
+- Produktové poučenia (pointer capture vs. click, kotva zoomu vs. async raster) žijú
+  v `DECISIONS.md` **D-054** — tu sa neduplikujú, prečítaj si ich tam.
 - Esc v headless Chromium **neukončí** fullscreen (browser UI) — testuj cez toggle tlačidlo.
 - Wrapper transformu je `canvas.closest(".relative")`, nie `canvas.parentElement`.

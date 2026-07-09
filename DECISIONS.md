@@ -1399,6 +1399,30 @@ math, `focus` deep-link, `onSelect` bočný panel, Ctrl/⌘-klik nová karta, sk
   strán); regresná sada kadencie 2 (sheet, double-tap, pinch preview+commit, wheel kotva
   fx 0.4808→0.4807, klik, stránkovanie) zelená. `tsc` čistý, bez nových lint chýb,
   `next build` compile ✓.
+**Review kolo (2026-07-08, 8-uhlový code-review nad kadenciami 2–3 + live verifikácia fixov):**
+- **Fullscreen × výber prvku:** bočný panel/bottom-sheet žije mimo fullscreen elementu
+  (top-layer ho nekreslí) → tap na kód vo fullscreene vyzeral, že nič neurobil. Fix:
+  výber prvku fullscreen ukončí (`handleSelect`), panel je hneď vidno.
+- **`pointercancel` nabíjal double-tap** (palm rejection / prebratie gesta OS-om →
+  najbližší tap spustil nechcený zoom). Fix: tap sa registruje len z `pointerup`.
+- **Stale kotva zoomu:** čakajúca kotva (commit gesta) sa vedela aplikovať na inú stranu
+  (goPage ju nečistil) alebo prepísať čerstvý pan užívateľa. Fix: `goPage` → `cancelPreview()`
+  (zahodí náhľad, timer aj kotvu); štart panu kotvu tiež zahodí (pan má prednosť).
+- **Stale touch pointery:** dotyk sa opäť captureuje hneď v pointerdown (syntetizovaný
+  click z tapu cieli touchstart target aj pri capture — myši/pera sa to netýka, tie
+  ostávajú na threshold capture kvôli klikom) → prst pustený mimo scrollera už nenechá
+  v mape pointer, ktorý by z ďalšieho tapu robil phantom pinch.
+- **Pinch follow-pan:** stred pinchu ťahaný po obrazovke teraz obsah sleduje (translácia
+  v CSS náhľade aj v commit kotve); čistý dvojprstový pan bez zmeny zoomu sa prenesie
+  do scrollu. Koliesko kotvu zámerne nesleduje (pohyb kurzora nie je pan).
+- **Cleanup:** zoom mení jediná `applyZoom` (clamp + no-op guard + kotva — zoomTo aj
+  commitPreview ju zdieľajú, logika sa nerozdvojí); `key={id}` na `DrawingWorkspace`
+  (soft-navigácia na iný dokument resetuje stranu/zoom/výber — predtým nový dokument
+  zdedil napr. stranu 3); verify skill linkuje poučenia sem namiesto duplikátu (D-017).
+- **Ponechané trade-offy (vedomé):** bottom-sheet prekrýva spodok výkresu (bez backdropu,
+  výkres ostáva interaktívny — kód pod sheetom treba odscrollovať/zavrieť); počas dlhého
+  pomalého zoomu je obraz CSS-škálovaný (ostrý rerastr až po ustálení, to je pointa
+  výkonu); kotva kolieska sa zmrazí na začiatku burstu.
 - **Otvorené (ďalšie kadencie):** prípadný drag-handle/swipe-to-dismiss bottom-sheetu;
   IFC loading UX po zamknutí D-050 — podľa reálnej spätnej väzby z prevádzky.
 

@@ -81,7 +81,11 @@ export default async function DrawingPage({
         </div>
       </header>
 
+      {/* key = id: soft-navigácia na iný dokument (klik na výkres v paneli) musí
+          resetnúť stav prehliadačky (strana/zoom/výber/progress) — bez remountu by
+          nový dokument zdedil napr. stranu 3 z predchádzajúceho. */}
       <DrawingWorkspace
+        key={id}
         pdfUrl={pdfUrl}
         links={links}
         focus={focus}

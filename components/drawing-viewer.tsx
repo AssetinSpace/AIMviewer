@@ -151,11 +151,17 @@ export function DrawingViewer({
     null
   );
   // Bežiace zoom gesto: cieľový zoom + kotva (px/py v netransformovaných lokálnych
-  // súradniciach wrappera, base = rect pri štarte gesta). Kým gesto beží, mení sa len
-  // CSS transform — rerastr (setZoom) príde až pri commite.
-  const preview = useRef<{ target: number; px: number; py: number; base: DOMRect } | null>(
-    null
-  );
+  // súradniciach wrappera, base = rect pri štarte gesta) + translácia prstov (tx/ty,
+  // pinch ťahaný po obrazovke sleduje prsty). Kým gesto beží, mení sa len CSS
+  // transform — rerastr (setZoom) príde až pri commite.
+  const preview = useRef<{
+    target: number;
+    px: number;
+    py: number;
+    tx: number;
+    ty: number;
+    base: DOMRect;
+  } | null>(null);
   const commitTimer = useRef<number | null>(null);
 
   const width = Math.round(fitWidth * zoom);
@@ -179,51 +185,86 @@ export function DrawingViewer({
     return () => ro.disconnect();
   }, []);
 
-  /** Absolútny zoom kotvený na bod vo viewporte (client súradnice) — bod ostane pod kurzorom. */
-  const zoomTo = useCallback((next: number, cx: number, cy: number) => {
-    const clamped = clampZoom(next);
-    // Bez viditeľnej zmeny šírky (rounding / clamp) kotvu nenastavuj — inak by ostala visieť.
-    if (
-      Math.round(fitWidthRef.current * clamped) ===
-      Math.round(fitWidthRef.current * zoomRef.current)
-    ) {
-      return;
-    }
-    const wrap = wrapperRef.current;
-    if (wrap) {
-      const r = wrap.getBoundingClientRect();
-      if (r.width > 0 && r.height > 0) {
-        pendingAnchor.current = {
-          fx: (cx - r.left) / r.width,
-          fy: (cy - r.top) / r.height,
-          cx,
-          cy,
-        };
+  /**
+   * Jediné miesto, ktoré mení zoom: clamp + no-op guard + odložená kotva (aplikuje ju
+   * layout efekt po dorastrovaní). Kotvu zdieľajú zoomTo (živý rect) aj commitPreview
+   * (zmrazená geometria gesta) — logika sa nesmie rozdvojiť. Vracia, či sa zoom mení
+   * (bez viditeľnej zmeny šírky sa kotva nenastaví — inak by ostala visieť).
+   */
+  const applyZoom = useCallback(
+    (
+      next: number,
+      anchor: { fx: number; fy: number; cx: number; cy: number } | null
+    ): boolean => {
+      const clamped = clampZoom(next);
+      if (
+        Math.round(fitWidthRef.current * clamped) ===
+        Math.round(fitWidthRef.current * zoomRef.current)
+      ) {
+        return false;
       }
-    }
-    setZoom(clamped);
-  }, []);
+      if (anchor) pendingAnchor.current = anchor;
+      setZoom(clamped);
+      return true;
+    },
+    []
+  );
+
+  /** Absolútny zoom kotvený na bod vo viewporte (client súradnice) — bod ostane pod kurzorom. */
+  const zoomTo = useCallback(
+    (next: number, cx: number, cy: number) => {
+      const wrap = wrapperRef.current;
+      const r = wrap?.getBoundingClientRect();
+      const anchor =
+        r && r.width > 0 && r.height > 0
+          ? { fx: (cx - r.left) / r.width, fy: (cy - r.top) / r.height, cx, cy }
+          : null;
+      applyZoom(next, anchor);
+    },
+    [applyZoom]
+  );
 
   /**
    * Lacný náhľad zoomu počas gesta: CSS scale wrappera okolo kotvy (bod pod kurzorom /
-   * stredom pinchu ostáva na mieste), žiadny rerastr. Kotva sa zmrazí pri štarte gesta.
+   * stredom pinchu ostáva na mieste), žiadny rerastr. Kotva sa zmrazí pri štarte gesta;
+   * `follow=true` (pinch) navyše sleduje posun prstov transláciou — pinch ťahaný po
+   * obrazovke pácha zoom aj pan naraz. Koliesko kotvu nesleduje (pohyb kurzora ≠ pan).
    */
-  const previewZoom = useCallback((target: number, cx: number, cy: number) => {
-    const wrap = wrapperRef.current;
-    if (!wrap) return;
-    const t = clampZoom(target);
-    if (!preview.current) {
-      // Prvý event gesta — wrapper je bez transformu, rect = netransformovaná geometria.
-      const base = wrap.getBoundingClientRect();
-      if (base.width <= 0 || base.height <= 0) return;
-      preview.current = { target: t, px: cx - base.left, py: cy - base.top, base };
-    } else {
-      preview.current.target = t;
+  const previewZoom = useCallback(
+    (target: number, cx: number, cy: number, follow = false) => {
+      const wrap = wrapperRef.current;
+      if (!wrap) return;
+      const t = clampZoom(target);
+      if (!preview.current) {
+        // Prvý event gesta — wrapper je bez transformu, rect = netransformovaná geometria.
+        const base = wrap.getBoundingClientRect();
+        if (base.width <= 0 || base.height <= 0) return;
+        preview.current = { target: t, px: cx - base.left, py: cy - base.top, tx: 0, ty: 0, base };
+      } else {
+        preview.current.target = t;
+        if (follow) {
+          preview.current.tx = cx - (preview.current.base.left + preview.current.px);
+          preview.current.ty = cy - (preview.current.base.top + preview.current.py);
+        }
+      }
+      const p = preview.current;
+      const s = t / zoomRef.current;
+      wrap.style.transformOrigin = "0 0";
+      wrap.style.transform = `translate(${(1 - s) * p.px + p.tx}px, ${(1 - s) * p.py + p.ty}px) scale(${s})`;
+    },
+    []
+  );
+
+  /** Zahoď rozbehnutý náhľad aj odloženú kotvu (bez rerastra) — napr. pri zmene strany. */
+  const cancelPreview = useCallback(() => {
+    if (commitTimer.current != null) {
+      window.clearTimeout(commitTimer.current);
+      commitTimer.current = null;
     }
-    const p = preview.current;
-    const s = t / zoomRef.current;
-    wrap.style.transformOrigin = "0 0";
-    wrap.style.transform = `translate(${(1 - s) * p.px}px, ${(1 - s) * p.py}px) scale(${s})`;
+    preview.current = null;
+    pendingAnchor.current = null;
+    const wrap = wrapperRef.current;
+    if (wrap) wrap.style.transform = "";
   }, []);
 
   /** Ustálenie gesta: zruš CSS náhľad a rerastruj stranu na cieľový zoom (ostrý render). */
@@ -237,23 +278,22 @@ export function DrawingViewer({
     if (!p) return;
     preview.current = null;
     if (wrap) wrap.style.transform = "";
-    const clamped = clampZoom(p.target);
-    // Bez viditeľnej zmeny šírky netreba rerastr — stačilo zrušiť transform.
-    if (
-      Math.round(fitWidthRef.current * clamped) ===
-      Math.round(fitWidthRef.current * zoomRef.current)
-    ) {
-      return;
-    }
-    // Kotvený bod gesta má po rerastri ostať na tej istej pozícii obrazovky.
-    pendingAnchor.current = {
+    // Kotvený bod gesta (posunutý o transláciu prstov) má po rerastri ostať na mieste.
+    const changed = applyZoom(p.target, {
       fx: p.px / p.base.width,
       fy: p.py / p.base.height,
-      cx: p.base.left + p.px,
-      cy: p.base.top + p.py,
-    };
-    setZoom(clamped);
-  }, []);
+      cx: p.base.left + p.px + p.tx,
+      cy: p.base.top + p.py + p.ty,
+    });
+    // Čistý dvojprstový pan (zoom bez zmeny): transláciu prenes do scrollu, inak by snapla.
+    if (!changed && (p.tx !== 0 || p.ty !== 0)) {
+      const c = scrollRef.current;
+      if (c) {
+        c.scrollLeft -= p.tx;
+        c.scrollTop -= p.ty;
+      }
+    }
+  }, [applyZoom]);
 
   // Upratanie odloženého commitu pri unmounte.
   useEffect(
@@ -339,6 +379,9 @@ export function DrawingViewer({
 
   function goPage(next: number) {
     if (next < 1 || (numPages && next > numPages)) return;
+    // Rozbehnutý zoom náhľad aj odložená kotva patria starej strane — zahoď ich,
+    // inak by sa kotva aplikovala na novú stranu (dims.width tam sedí tiež).
+    cancelPreview();
     setDims(null); // kým sa nová strana nevyrenderuje, boxy neskladáme
     setPage(next);
   }
@@ -371,9 +414,14 @@ export function DrawingViewer({
     if (!el) return;
     // Rozbehnutý wheel-náhľad ukonči — pan/pinch potrebuje stabilnú geometriu.
     commitPreview();
-    // POZOR: pointer sa NEzachytáva hneď — capture presmeruje pointerup na scroller,
-    // čím by click event obišiel `<a>` región (klik myšou na kód by bol mŕtvy).
-    // Capture príde až keď gesto reálne začne: pan threshold / pinch (nižšie).
+    // POZOR: myš/pero sa NEzachytáva hneď — capture presmeruje pointerup na scroller,
+    // čím by click event obišiel `<a>` región (klik myšou na kód by bol mŕtvy);
+    // capture príde až keď gesto reálne začne (pan threshold / pinch, nižšie).
+    // Dotyk sa naopak captureuje hneď: syntetizovaný click z tapu cieli touchstart
+    // target aj pri capture (overené live) a capture garantuje, že pointerup/cancel
+    // vždy dôjde do endPointer — bez neho by prst pustený mimo scrollera nechal
+    // v `pointers` stale záznam a ďalší tap by sa tváril ako pinch.
+    if (e.pointerType === "touch") el.setPointerCapture(e.pointerId);
     pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
     if (pointers.current.size === 1) {
       didPan.current = false;
@@ -404,10 +452,12 @@ export function DrawingViewer({
       if (pinchStart.current.d > 0) {
         const mid = { x: (p1.x + p2.x) / 2, y: (p1.y + p2.y) / 2 };
         // Počas pinchu len CSS náhľad — rerastr príde pri pustení prstov.
+        // `follow` = stred pinchu ťahá obsah so sebou (zoom + pan jedným gestom).
         previewZoom(
           (pinchStart.current.zoom * d) / pinchStart.current.d,
           mid.x,
-          mid.y
+          mid.y,
+          true
         );
       }
       return;
@@ -420,6 +470,9 @@ export function DrawingViewer({
         didPan.current = true;
         // Gesto je pan → od teraz drž pointer aj mimo scrollera (klik už nehrozí).
         el.setPointerCapture(e.pointerId);
+        // Čakajúca kotva zoomu by po dorastrovaní prepísala scroll a zrušila
+        // užívateľov posun — pan má prednosť, kotvu zahoď.
+        pendingAnchor.current = null;
       }
       el.scrollLeft = panStart.current.left - dx;
       el.scrollTop = panStart.current.top - dy;
@@ -441,7 +494,9 @@ export function DrawingViewer({
     } else if (pointers.current.size === 0) {
       panStart.current = null;
       // Double-tap (dotyk): priblíž na miesto tapu; z priblíženého stavu späť na fit.
-      if (e.pointerType === "touch" && !didPan.current) {
+      // Len skutočný pointerup — zrušený pointer (pointercancel: palm rejection,
+      // prebratie gesta OS-om) nie je tap a nesmie nabiť double-tap detekciu.
+      if (e.type === "pointerup" && e.pointerType === "touch" && !didPan.current) {
         const now = performance.now();
         const prev = lastTap.current;
         lastTap.current = { t: now, x: e.clientX, y: e.clientY };
@@ -467,6 +522,17 @@ export function DrawingViewer({
       didPan.current = false;
     }
   }
+
+  // Výber prvku opustí fullscreen: bočný panel/bottom-sheet žije MIMO fullscreen
+  // elementu (rootRef), takže v top-layer režime by nebol vidno — klik na kód by
+  // vyzeral, že nič neurobil. Mimo fullscreenu je to no-op.
+  const handleSelect = useMemo(() => {
+    if (!onSelect) return undefined;
+    return (sel: SelectedElement) => {
+      if (document.fullscreenElement) void document.exitFullscreen();
+      onSelect(sel);
+    };
+  }, [onSelect]);
 
   return (
     <div
@@ -618,7 +684,7 @@ export function DrawingViewer({
                       selected={isSelected}
                       pulsing={isFocus && pulsing}
                       boxRef={isFocus ? focusBoxRef : undefined}
-                      onSelect={onSelect}
+                      onSelect={handleSelect}
                     />
                   );
                 })}
