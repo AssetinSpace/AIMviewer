@@ -314,16 +314,30 @@ async function fetchAssetImpl(id: string): Promise<AssetDetail | null> {
 async function fetchAssetTypeImpl(id: string): Promise<AssetTypeDetail | null> {
   const supabase = getSupabaseAdmin();
 
-  const { data: rows, error } = await supabase
-    .from("objects")
-    .select(
-      "id, object_ref, name, ifc_type, ifc_guid, predefined_type, user_defined_type, properties"
-    )
-    .eq("id", id)
-    .eq("object_type", "asset_type")
-    .limit(1);
-  if (error) throw new Error(error.message);
-  const t = (rows?.[0] ?? null) as {
+  // Hlavný riadok, klasifikačné väzby aj occurrence väzby závisia len od `id`
+  // → jedna paralelná vlna namiesto troch sekvenčných round-tripov.
+  const [rowsRes, clsRes, occRelsRes] = await Promise.all([
+    supabase
+      .from("objects")
+      .select(
+        "id, object_ref, name, ifc_type, ifc_guid, predefined_type, user_defined_type, properties"
+      )
+      .eq("id", id)
+      .eq("object_type", "asset_type")
+      .limit(1),
+    supabase
+      .from("rel_associates_classification")
+      .select("to_id")
+      .eq("from_id", id)
+      .is("valid_until", null),
+    supabase
+      .from("rel_defines_by_type")
+      .select("from_id")
+      .eq("to_id", id)
+      .is("valid_until", null),
+  ]);
+  if (rowsRes.error) throw new Error(rowsRes.error.message);
+  const t = (rowsRes.data?.[0] ?? null) as {
     id: string;
     object_ref: string | null;
     name: string | null;
@@ -335,49 +349,46 @@ async function fetchAssetTypeImpl(id: string): Promise<AssetTypeDetail | null> {
   } | null;
   if (!t) return null;
 
+  if (clsRes.error) throw new Error(clsRes.error.message);
+  if (occRelsRes.error) throw new Error(occRelsRes.error.message);
+
   // Typ nemá nad sebou vrstvu → všetko `own` (typeProps prázdne).
   const propertySets = buildPropertySets({}, asBag(t.properties));
 
-  // Vlastné klasifikácie typu (level 'type' — zdedí ich každá occurrence).
-  const { data: clsRows, error: clsErr } = await supabase
-    .from("rel_associates_classification")
-    .select("to_id")
-    .eq("from_id", id)
-    .is("valid_until", null);
-  if (clsErr) throw new Error(clsErr.message);
-  const refMap = await loadRefs(supabase, [
-    ...new Set((clsRows ?? []).map((r) => r.to_id as string)),
+  const occIds = [...new Set((occRelsRes.data ?? []).map((r) => r.from_id as string))];
+
+  // Detaily referencií (klasifikácie) a occurrence objekty — druhá paralelná vlna.
+  const [refMap, occObjs] = await Promise.all([
+    loadRefs(supabase, [
+      ...new Set((clsRes.data ?? []).map((r) => r.to_id as string)),
+    ]),
+    occIds.length
+      ? supabase
+          .from("objects")
+          .select("id, object_ref, name")
+          .in("id", occIds)
+          .then(({ data, error: e }) => {
+            if (e) throw new Error(e.message);
+            return data ?? [];
+          })
+      : Promise.resolve([]),
   ]);
+
+  // Vlastné klasifikácie typu (level 'type' — zdedí ich každá occurrence).
   const classifications: ClassificationFacet[] = [...refMap.values()]
     .map((r) => ({ ...r, level: "type" as const }))
     .sort((a, b) => a.identification.localeCompare(b.identification));
 
   // Occurrence definované týmto typom (aktívne väzby).
-  const { data: occRows, error: occErr } = await supabase
-    .from("rel_defines_by_type")
-    .select("from_id")
-    .eq("to_id", id)
-    .is("valid_until", null);
-  if (occErr) throw new Error(occErr.message);
-  const occIds = [...new Set((occRows ?? []).map((r) => r.from_id as string))];
-
-  let occurrences: TypeRef[] = [];
-  if (occIds.length) {
-    const { data: occObjs, error: e } = await supabase
-      .from("objects")
-      .select("id, object_ref, name")
-      .in("id", occIds);
-    if (e) throw new Error(e.message);
-    occurrences = (occObjs ?? [])
-      .map((o) => ({
-        id: o.id as string,
-        name: (o.name as string | null) ?? null,
-        object_ref: (o.object_ref as string | null) ?? null,
-      }))
-      .sort((a, b) =>
-        (a.object_ref ?? a.name ?? "").localeCompare(b.object_ref ?? b.name ?? "")
-      );
-  }
+  const occurrences: TypeRef[] = occObjs
+    .map((o) => ({
+      id: o.id as string,
+      name: (o.name as string | null) ?? null,
+      object_ref: (o.object_ref as string | null) ?? null,
+    }))
+    .sort((a, b) =>
+      (a.object_ref ?? a.name ?? "").localeCompare(b.object_ref ?? b.name ?? "")
+    );
 
   return {
     id: t.id,

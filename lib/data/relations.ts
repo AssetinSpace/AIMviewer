@@ -360,28 +360,30 @@ export async function fetchResponsibilities(
 
   const actorIds = [...new Set(relRows.map((r) => r.from_id))];
 
-  const { data: actors, error: actErr } = await supabase
-    .from("objects")
-    .select("id, object_type, object_ref, name")
-    .in("id", actorIds);
-  if (actErr) throw new Error(actErr.message);
-
-  const actorById = new Map((actors ?? []).map((a) => [a.id as string, a]));
-
-  // Firmy pre person actorov (rel_member_of, aktívne).
-  const personIds = (actors ?? [])
-    .filter((a) => a.object_type === "person")
-    .map((a) => a.id as string);
-
-  const orgByPerson = new Map<string, ActorOrg>();
-  if (personIds.length > 0) {
-    const { data: memberRows, error: memErr } = await supabase
+  // Aktori + ich členstvá paralelne — `rel_member_of` vychádza len z osôb, takže
+  // filter cez všetky actorIds vráti presne to, čo filter cez persons (organizácie
+  // žiadne riadky nemajú), ušetrí ale jeden sekvenčný round-trip.
+  const [actorsRes, memberRes] = await Promise.all([
+    supabase
+      .from("objects")
+      .select("id, object_type, object_ref, name")
+      .in("id", actorIds),
+    supabase
       .from("rel_member_of")
       .select("from_id, to_id")
-      .in("from_id", personIds)
-      .is("valid_until", null);
-    if (memErr) throw new Error(memErr.message);
+      .in("from_id", actorIds)
+      .is("valid_until", null),
+  ]);
+  if (actorsRes.error) throw new Error(actorsRes.error.message);
+  if (memberRes.error) throw new Error(memberRes.error.message);
 
+  const actorById = new Map(
+    (actorsRes.data ?? []).map((a) => [a.id as string, a])
+  );
+  const memberRows = memberRes.data ?? [];
+
+  const orgByPerson = new Map<string, ActorOrg>();
+  if (memberRows.length > 0) {
     const orgIds = [...new Set((memberRows ?? []).map((m) => m.to_id as string))];
     const orgName = new Map<string, string | null>();
     if (orgIds.length > 0) {

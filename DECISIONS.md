@@ -331,6 +331,26 @@ v klientskom PDF pipeline, dominantne externý worker z unpkg.
 vyrenderuje s 102 klikateľnými regiónmi, `/api/element/[id]` vracia očakávanú
 `Cache-Control` hlavičku.
 
+**Dodatok (streaming navigácie + orezanie DB waterfallov, 2026-07-09):** D-030 cachovalo
+dáta; ostala latencia *studeného* renderu (prvá návšteva uzla / po revalidácii), kde stránka
+čakala na najpomalšiu reťaz sekvenčných Supabase round-tripov. Tri opravy:
+(1) **Streaming sekcií `/node/[id]`** — breadcrumb, hlavička a jadro (deti uzla z cachovaného
+grafu, resp. atribúty assetu) sa flushnú okamžite; S3 sekcie (dokumenty/zodpovednosti/GUID,
+„prvky vo výkrese", „súčasť systému") streamujú v samostatných `<Suspense>` hraniciach so
+skeleton fallbackom. Async sekcie sú súrodenci → fetche bežia paralelne a neblokujú prvý
+obsah. (2) **Paralelný dispatch** — `fetchNode` + `fetchObjectMeta` cez `Promise.all`:
+ne-priestorové uzly (osoba/organizácia/systém/dokument) už nečakajú na dva sekvenčné kroky;
+priestorové stojí navyše jeden lacný cachovaný single-row dotaz. (3) **Menej round-tripov
+v dátovej vrstve** — `fetchResponsibilities` 4→3 (aktori + `rel_member_of` paralelne, filter
+cez všetky actorIds je ekvivalentný filtru cez persons), `fetchAssetType` ~5→2 paralelné vlny
+(hlavný riadok + cls väzby + occurrence väzby naraz; potom refy + occurrence objekty naraz).
+**Dôvod:** klik na prvok má byť okamžitý aj pri studenej ceste; teplá cesta (ISR + prefetch
+viditeľných liniek vo viewporte) bola už po D-030 rýchla.
+**Dôsledok:** žiadna zmena schémy, dát ani API kontraktov; poradie kariet na stránke sa
+nemení. `notFound()` v streamovanej sekcii Next korektne prepne na not-found UI.
+**Verifikácia:** `tsc --noEmit` čisté, `next build` kompilácia OK (prerender v remote
+prostredí bez Supabase env padá by-design, na Verceli s env prechádza).
+
 ### D-031 — ETL pipeline: architektúra a idempotencia
 **Rozhodnutie:** ETL žije v podadresári **`etl/`** tohto repa (zdieľa SCHEMA/DECISIONS
 kontext). Stack **Python + ifcopenshell**; zápis **priamo do Supabase Postgresu cez
@@ -1533,6 +1553,9 @@ polí pasport↔Odoo, metóda zamerania (3D scan/Matterport/ručne — zatiaľ n
 > Kompaktný reverse-chrono log pridaných/zmenených rozhodnutí. Plný kontext = príslušný
 > D-záznam vyššie.
 
+- **2026-07-09** — **Výkon preklikávania (dodatok D-030):** streaming S3 sekcií `/node/[id]`
+  cez `<Suspense>`, paralelný dispatch `fetchNode`+`fetchObjectMeta`, orezané DB waterfally
+  (`fetchResponsibilities` 4→3, `fetchAssetType` ~5→2 round-tripov). Bez zmeny schémy/API.
 - **2026-07-07** — **F1 nasadené na Supabase prod (D-051):** migrácia `relationships_metamodel`
   na `acwoupricatirhlfkhvk`; cleanup D-048 compat views; migračná história sync (8 migrácií =
   `supabase/migrations/`); 4461 hrán, PostgREST reload.
