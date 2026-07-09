@@ -1,7 +1,7 @@
 "use client";
 
 import { createContext, useCallback, useContext, useState } from "react";
-import Link from "next/link";
+import Link, { useLinkStatus } from "next/link";
 import { usePathname } from "next/navigation";
 import {
   Box,
@@ -11,6 +11,7 @@ import {
   ChevronsUpDown,
   DoorOpen,
   Layers,
+  Loader2,
   MapPin,
   type LucideIcon,
 } from "lucide-react";
@@ -43,6 +44,23 @@ interface TreeCtx {
 
 const TreeContext = createContext<TreeCtx | null>(null);
 
+/**
+ * Ikona uzla, ktorá sa počas prebiehajúcej navigácie z tohto odkazu zmení na
+ * točiace sa koliesko (`useLinkStatus`) — klik má okamžitú viditeľnú odozvu.
+ */
+function TreeLinkIcon({ icon: Icon }: { icon: LucideIcon }) {
+  const { pending } = useLinkStatus();
+  if (pending) {
+    return (
+      <Loader2
+        aria-label="Načítava sa"
+        className="size-4 shrink-0 animate-spin text-muted-foreground"
+      />
+    );
+  }
+  return <Icon className="size-4 shrink-0 text-muted-foreground" />;
+}
+
 function useTree() {
   const ctx = useContext(TreeContext);
   if (!ctx) throw new Error("TreeContext chýba");
@@ -55,8 +73,6 @@ function TreeNode({ node, depth }: { node: SpatialNode; depth: number }) {
   const isActive = pathname === `/node/${node.id}`;
   const hasChildren = node.children.length > 0;
   const open = isOpen(node.id, depth);
-
-  const Icon = ICONS[node.object_type];
 
   return (
     <li>
@@ -87,9 +103,12 @@ function TreeNode({ node, depth }: { node: SpatialNode; depth: number }) {
 
         <Link
           href={`/node/${node.id}`}
+          // Plný prefetch RSC payloadu viditeľných uzlov — klik je potom
+          // z klientskej cache namiesto server round-tripu.
+          prefetch={true}
           className="flex min-w-0 flex-1 items-center gap-2 py-1.5"
         >
-          <Icon className="size-4 shrink-0 text-muted-foreground" />
+          <TreeLinkIcon icon={ICONS[node.object_type]} />
           <span className="truncate">{node.name ?? node.object_ref ?? node.id}</span>
           {node.object_ref && (
             <span className="ml-auto shrink-0 truncate font-mono text-[0.7rem] text-muted-foreground">

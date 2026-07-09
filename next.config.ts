@@ -3,6 +3,12 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   // Turbopack (default in Next.js 16). WASM is served from public/ via fetch — no bundler config needed.
   turbopack: {},
+  experimental: {
+    // Klientská router cache: opakovaná navigácia na nedávno navštívený /
+    // prefetchnutý uzol sa vykreslí z cache bez server round-tripu. Viewer je
+    // verejný read-only s ISR 60 s, takže krátka klientská staleness je OK.
+    staleTimes: { dynamic: 30, static: 300 },
+  },
   async headers() {
     return [
       {

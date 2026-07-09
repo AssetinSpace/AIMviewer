@@ -351,6 +351,27 @@ nemení. `notFound()` v streamovanej sekcii Next korektne prepne na not-found UI
 **Verifikácia:** `tsc --noEmit` čisté, `next build` kompilácia OK (prerender v remote
 prostredí bez Supabase env padá by-design, na Verceli s env prechádza).
 
+**Dodatok 2 (spinner na kliku + zdieľaný graf + klientská cache, 2026-07-09):** klik na uzol
+v strome trval aj sekundy bez akejkoľvek odozvy. Tri opravy:
+(1) **`LinkPendingSpinner`** (`components/link-pending-spinner.tsx`) — `useLinkStatus`
+(Next 15.3+) točiace koliesko priamo na kliknutom odkaze počas prebiehajúcej navigácie;
+nasadené v strome (ikona uzla sa vymení za spinner), v sidebar zoznamoch a v zozname
+potomkov na `/node/[id]`. Klientský ostrov — funguje aj vnútri server-komponentových liniek.
+(2) **Graf ako jeden zdieľaný cache záznam** — `fetchNode`/`fetchSpatialTree` boli
+`unstable_cache` per-id/per-výstup, takže **každý prvý klik na nový uzol znovu načítal celý
+priestorový graf** (stránkované `objects` + hrany + prípony, 3–6 round-tripov) — hlavná
+príčina multisekundového studeného kliku. Teraz je cachovaný samotný graf
+(`loadGraphData`, kľúč `spatial-graph`, serializovateľné polia namiesto Máp) a
+`fetchNode`/`fetchSpatialTree` sú in-memory deriváty (React `cache()` na request); graf sa
+z DB ťahá najviac raz za revalidačné okno pre všetky uzly aj strom.
+(3) **Explicitný `prefetch={true}`** na navigačných linkách (strom, sidebar, deti uzla) +
+`experimental.staleTimes { dynamic: 30, static: 300 }` — viditeľné linky sa prefetchnú
+celé a opakovaná navigácia ide z klientskej router cache bez server round-tripu.
+**Dôsledok:** staleness línia nezmenená (ISR 60 s, tag `aim`); klientská cache pridáva
+≤30 s staleness pri opakovanej návšteve — pre verejný read-only viewer prijateľné.
+**Verifikácia:** Playwright (devtest bez DB, umelo pomalá cieľová routa): spinner sa zobrazí
+počas pending navigácie, po dokončení zmizne; `tsc` + eslint čisté, `next build` kompilácia OK.
+
 ### D-031 — ETL pipeline: architektúra a idempotencia
 **Rozhodnutie:** ETL žije v podadresári **`etl/`** tohto repa (zdieľa SCHEMA/DECISIONS
 kontext). Stack **Python + ifcopenshell**; zápis **priamo do Supabase Postgresu cez
@@ -1553,6 +1574,10 @@ polí pasport↔Odoo, metóda zamerania (3D scan/Matterport/ručne — zatiaľ n
 > Kompaktný reverse-chrono log pridaných/zmenených rozhodnutí. Plný kontext = príslušný
 > D-záznam vyššie.
 
+- **2026-07-09** — **Výkon preklikávania, kolo 2 (dodatok 2 D-030):** spinner na kliknutom
+  odkaze (`useLinkStatus`), priestorový graf ako jeden zdieľaný cache záznam (prvý klik na
+  nový uzol už nenačítava celý graf z DB), `prefetch={true}` na nav linkách +
+  `staleTimes` klientská router cache.
 - **2026-07-09** — **Výkon preklikávania (dodatok D-030):** streaming S3 sekcií `/node/[id]`
   cez `<Suspense>`, paralelný dispatch `fetchNode`+`fetchObjectMeta`, orezané DB waterfally
   (`fetchResponsibilities` 4→3, `fetchAssetType` ~5→2 round-tripov). Bez zmeny schémy/API.

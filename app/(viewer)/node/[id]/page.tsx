@@ -19,6 +19,7 @@ import {
 } from "@/lib/data/object";
 import { OBJECT_TYPE_LABEL, SYSTEM_TYPE_LABEL, roleLabel } from "@/lib/object-type";
 import { formatDate } from "@/lib/utils";
+import { LinkPendingSpinner } from "@/components/link-pending-spinner";
 import { PropertySets } from "@/components/property-sets";
 import { ClassificationList } from "@/components/classification-list";
 import { DocumentList } from "@/components/document-list";
@@ -373,10 +374,12 @@ function SpatialView({ detail }: { detail: NodeDetail }) {
                     <li key={c.id}>
                       <Link
                         href={`/node/${c.id}`}
-                        className="flex items-center justify-between gap-2 py-2 text-sm hover:text-foreground"
+                        prefetch={true}
+                        className="flex items-center gap-2 py-2 text-sm hover:text-foreground"
                       >
+                        <LinkPendingSpinner />
                         <span>{c.name ?? c.object_ref ?? c.id}</span>
-                        <span className="shrink-0 font-mono text-xs text-muted-foreground">
+                        <span className="ml-auto shrink-0 font-mono text-xs text-muted-foreground">
                           {c.object_ref}
                         </span>
                       </Link>
