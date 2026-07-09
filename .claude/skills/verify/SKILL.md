@@ -38,6 +38,18 @@ description: Ako overiť zmeny AIM Viewera naživo v tomto repe — build/launch
 - Očakávanie (overené): strana 1 viditeľná po ~10 % súboru; listovanie doťahuje chunky
   on-demand; pri nefunkčnom Range pdf.js potichu spadne na plné stiahnutie.
 
+## LLM rozhranie /ask (F6, D-056)
+- Celá slučka bez API kľúča aj bez DB: `LLM_PROVIDER=mock npx next dev -p 3210`.
+  Mock provider (`lib/llm/mock.ts`) na prvý vstup zavolá `search_objects` (bez DB
+  vráti tool error — overuje error vetvu), po tool výsledku odpovie textom;
+  vstup `notool: …` odpovie bez toolu. `/api/ask` sa dá curl-núť priamo.
+- UI: `AskPanel` renderuj na devtest stránke mimo `(viewer)` (layout ťahá DB).
+  Zdroje/deep-linky (karta/3D/výkres chips) otestuj Playwright `page.route()`
+  interceptom `/api/ask` s podvrhnutými `sources` — mock bez DB žiadne nevráti.
+- 503 vetva (nenakonfigurované): spusti dev BEZ `LLM_PROVIDER`/`ANTHROPIC_API_KEY`.
+- `next build` v remote prostredí padá na prerenderi `/` (layout číta DB bez env)
+  — pre-existujúce, na Verceli s env prechádza; kompilácia+TS sú relevantný signál.
+
 ## Na čo si dať pozor
 - Produktové poučenia (pointer capture vs. click, kotva zoomu vs. async raster) žijú
   v `DECISIONS.md` **D-054** — tu sa neduplikujú, prečítaj si ich tam.

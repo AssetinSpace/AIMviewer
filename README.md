@@ -24,6 +24,10 @@ rozhodnutia: [`DECISIONS.md`](DECISIONS.md), plán: [`ROADMAP.md`](ROADMAP.md).
    Supabase → *Project Settings → API*:
    - `SUPABASE_URL` = `https://acwoupricatirhlfkhvk.supabase.co`
    - `SUPABASE_SERVICE_ROLE_KEY` = service_role kľúč (tajný)
+   - `ANTHROPIC_API_KEY` = kľúč pre LLM rozhranie `/ask` (D-056; bez neho
+     stránka zobrazí, že AI asistent nie je nakonfigurovaný — zvyšok appky beží)
+   - voliteľné: `LLM_MODEL` (default `claude-sonnet-5`), `LLM_PROVIDER`
+     (`anthropic` | `mock` — mock je pre vývoj/testy bez kľúča)
 
    > `.env.local` je gitignored — **nikdy** ho necommituj. `service_role`
    > kľúč sa číta len server-side a nikdy sa nedostane do prehliadača.
@@ -45,8 +49,9 @@ rozhodnutia: [`DECISIONS.md`](DECISIONS.md), plán: [`ROADMAP.md`](ROADMAP.md).
    Variables* alebo v import obrazovke):
    - `SUPABASE_URL` = `https://acwoupricatirhlfkhvk.supabase.co`
    - `SUPABASE_SERVICE_ROLE_KEY` = service_role kľúč
-   - Scope: Production + Preview + Development. Kľúč je **secret** (nie je
-     `NEXT_PUBLIC_*`, takže sa nedostane do client bundle).
+   - `ANTHROPIC_API_KEY` = kľúč pre LLM rozhranie `/ask` (D-056)
+   - Scope: Production + Preview + Development. Kľúče sú **secret** (nie sú
+     `NEXT_PUBLIC_*`, takže sa nedostanú do client bundle).
 3. **Deploy** → appka beží na `*.vercel.app`. Push do `main` = auto-deploy.
 
 Vlastná doména sa rieši až keď je demo verejné (po S3, D-026).

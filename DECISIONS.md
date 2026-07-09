@@ -1515,6 +1515,33 @@ najbližší uzatvárací ventil" má **dátovú prerekvizitu = import vodného 
 D-049: 0 `IfcValve`) a spôsob určenia „najbližší" (topológia portov cez `IfcRelNests`/
 `IfcRelConnectsPorts` vs geometrická vzdialenosť) — **doriešime neskôr**.
 
+**Kadencia 1 (2026-07-09) — implementácia jadra:**
+- **Provider vrstva `lib/llm/`** — neutrálne typy správ/tool-callov (`provider.ts`) +
+  factory z env `LLM_PROVIDER`; `anthropic.ts` = Anthropic Messages API cez čistý `fetch`
+  (bez SDK — žiadna nová dependency, server-only), `mock.ts` = deterministický provider
+  pre devtest/e2e bez API kľúča (trvalá súčasť — umožňuje overiť celú slučku offline).
+  Model z env `LLM_MODEL` (default `claude-sonnet-5`; výber pre demo = otvorený bod D-047).
+- **Tools = read-only executory nad whitelistom** (`lib/llm/tools.ts`), NIE text-to-SQL:
+  `search_objects`, `get_object`, `get_asset_details` (`v_asset_effective` +
+  `v_asset_classifications`), `list_relations` (LEN 8 kanonických `rel_*` views, D-051),
+  `get_spatial_path`, `find_in_drawings` (`_drawing_links`). Guardraily D-005: každý tool
+  má tvrdý row-cap (≤ 50, default 20), dotazuje len whitelistované views/tabuľky cez
+  `service_role` server-side (D-026), žiadny zápis.
+- **Agentická slučka v `app/api/ask/route.ts`** — max 8 kôl tool-callov, orezaná história,
+  `max_tokens` cap; bez nakonfigurovaného kľúča vráti 503 s návodom (UI to zobrazí ako
+  empty-state, nie crash). Chyba toolu (napr. výpadok DB) sa vracia modelu ako tool error —
+  slučka nespadne.
+- **Trust loop deterministicky zo servera, nie z formátovania modelu:** server pri behu
+  slučky **automaticky zbiera „zdroje" zo všetkých tool výsledkov** (id → meta + aktívny
+  IFC GUID + výkresové regióny) a vracia ich štruktúrovane popri odpovedi. UI z nich
+  renderuje deep-linky: karta `/node|/type/[id]`, 3D `/ifc?focus=<guid>`, výkres
+  `/drawing/[docId]?focus=<id>&page=<n>`. Model je inštruovaný citovať `object_ref`,
+  ale dohľadateľnosť nestojí na jeho poslušnosti.
+- **UI `/ask`** (`components/ask-panel.tsx`, klient) + položka v sidebari; vlákno správ,
+  collapsible „Ako som hľadal" (tool trace), zdroje ako chips s deep-linkami.
+- **Odložené (ďalšie kadencie):** streaming odpovede, highlight regiónu vo výkrese priamo
+  z odpovede, ventilový dotaz (čaká na import ÚK/ZTI), výber produkčného modelu.
+
 ---
 
 ## 8. Budúce rozhodnutia (D-037+)
@@ -1604,6 +1631,7 @@ polí pasport↔Odoo, metóda zamerania (3D scan/Matterport/ručne — zatiaľ n
 > Kompaktný reverse-chrono log pridaných/zmenených rozhodnutí. Plný kontext = príslušný
 > D-záznam vyššie.
 
+- **2026-07-09** — **D-056 kadencia 1 (F6 — LLM rozhranie):** provider vrstva `lib/llm/` (Anthropic cez fetch + mock, API-pluggable), read-only tools nad whitelist views s row-capom, agentická slučka `/api/ask`, trust-loop zdroje zbierané deterministicky serverom (deep-linky karta/3D/výkres), UI `/ask`.
 - **2026-07-09** — **D-050 (3D vrstva federácie):** multi-model render ASR+VZT v jednej scéne, identita cez IFC GUID, floor filter cez normalizované podlažie.
 - **2026-07-09** — **Výkon preklikávania, kolo 2 (dodatok 2 D-030):** spinner na kliknutom
   odkaze (`useLinkStatus`), priestorový graf ako jeden zdieľaný cache záznam (prvý klik na
