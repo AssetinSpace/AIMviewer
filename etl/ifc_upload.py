@@ -90,9 +90,9 @@ def ensure_bucket(base: str, key: str) -> None:
         raise SystemExit(f"Bucket zlyhal ({status}): {body.decode(errors='replace')}")
 
 
-def upload_ifc(base: str, key: str, content: bytes) -> str:
+def upload_ifc(base: str, key: str, content: bytes, object_key: str = OBJECT_KEY) -> str:
     """Nahrá IFC súbor (upsert) a vráti verejnú URL."""
-    encoded = urllib.parse.quote(OBJECT_KEY)
+    encoded = urllib.parse.quote(object_key)
     status, body = _request(
         "POST",
         f"{base}/storage/v1/object/{BUCKET}/{encoded}",
@@ -120,12 +120,20 @@ def main(argv: list[str] | None = None) -> None:
         help=f"Cesta k IFC súboru (default: {DEFAULT_IFC})",
     )
     parser.add_argument(
+        "--key",
+        default=None,
+        metavar="OBJECT_KEY",
+        help=f"Object key v bucketе `ifc/` (default: {OBJECT_KEY} pre ASR; VZT federáciu "
+             "nahraj ako --key VZT.ifc, D-049).",
+    )
+    parser.add_argument(
         "--dry-run",
         action="store_true",
         help="Iba overí súbor a env vars, žiadny upload.",
     )
     args = parser.parse_args(argv)
 
+    object_key: str = args.key or OBJECT_KEY
     ifc_path: Path = args.file
     if not ifc_path.exists():
         raise SystemExit(
@@ -141,15 +149,15 @@ def main(argv: list[str] | None = None) -> None:
 
     if args.dry_run:
         print("\n[dry-run] OK — súbor nájdený, env vars nastavené.")
-        print(f"  Výsledná URL by bola: {base}/storage/v1/object/public/{BUCKET}/{urllib.parse.quote(OBJECT_KEY)}")
+        print(f"  Výsledná URL by bola: {base}/storage/v1/object/public/{BUCKET}/{urllib.parse.quote(object_key)}")
         return
 
     content = ifc_path.read_bytes()
     print(f"\nEnsure bucket '{BUCKET}'...")
     ensure_bucket(base, key)
 
-    print(f"Nahrávam {OBJECT_KEY} ({size_mb:.1f} MB)...")
-    public_url = upload_ifc(base, key, content)
+    print(f"Nahrávam {object_key} ({size_mb:.1f} MB)...")
+    public_url = upload_ifc(base, key, content, object_key)
 
     print(f"\n✓ Hotovo!")
     print(f"\nPublic URL:\n  {public_url}")

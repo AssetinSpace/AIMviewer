@@ -27,21 +27,13 @@ grafom. Detail v sekcii „Program dema — F-sprinty".**
 | **D-048** IFC-kanonická vrstva hrán | ✅ | `rel_*` presne podľa `IfcRel*` |
 | **D-049** VZT federácia + distribučné systémy | ✅ | 9 systémov, 1029 `rel_assigns_to_group`, MEP prvky na existujúce podlažia |
 | **S4** Polish & launch | 🟢 beží | reálne dáta naloadené; ostáva doména + polish |
-| **S5-fed** 3D multi-model federácia (ARCH+VZT) | 🛠️ rozpracované | render VZT+ASR v jednej scéne — **necommitnuté, čaká na D-050** (viď „Rozpracované") |
+| **S5-fed** 3D multi-model federácia (ARCH+VZT) | ✅ | D-050; ASR+VZT v jednej scéne, identita cez IFC GUID, floor filter cez normalizované podlažie |
 | **F1** Meta-model vzťahov B | ✅ nasadené | D-051; generická `relationships` + manifest + kanonické views + trigger; migrácia `20260707150000` na Supabase prod (`acwoupricatirhlfkhvk`), 4461 hrán, história 8 migrácií sync s repom |
 | **F4** PDF prehliadačka rework | ✅ (kadencie 1–3) | D-054; interakcia (zoom-to-pointer, pinch+pan, fullscreen, fit-to-width, double-tap), výkon gest (CSS preview + rerastr po ustálení), mobilný bottom-sheet panela, range/lazy loading veľkých PDF (strana 1 klikateľná po ~10 % súboru) + IFC WASM cache hlavička. Ďalšie už len podľa spätnej väzby z prevádzky |
 | **F2, F3, F5, F6** Program dema | 📋 plánované | D-052/D-053/D-055/D-056; viď sekcia „Program dema — F-sprinty" |
 | **S-LLM → F6** LLM interface nad grafom | 🟢 **kritická cesta** | D-047/D-056; ETL základ hotový (D-049), kód ešte nezačatý |
 | **E5** ICDD export | ⏸️ odložené | D-015/D-032 |
 | **D-045** Pasportizácia + dynamika | 📋 kandidát | čaká na reálnu zákazku |
-
-### Rozpracované (necommitnuté)
-**3D multi-model federácia** — 5 modif. súborov ([lib/data/ifc.ts](lib/data/ifc.ts),
-[components/ifc-viewer.tsx](components/ifc-viewer.tsx), `ifc-workspace.tsx`,
-`app/(viewer)/ifc/page.tsx`, [etl/ifc_upload.py](etl/ifc_upload.py)): `getIfcModels()`
-vracia pole (ARCH+VZT), viewer rendruje oba do jednej scény, identita naprieč modelmi drží
-IFC GUID (expressId sa medzi súbormi prekrýva), podlažie sa normalizuje (`1NP_VZT`→`1NP`).
-**Treba:** zapísať rozhodnutie **D-050** (3D vrstva federácie D-049) a commitnúť.
 
 ### Ďalší krok
 Program **F-sprintov** (D-051–D-056) — viď sekcia „Program dema — F-sprinty". Poradie nie
@@ -311,6 +303,7 @@ naming convention finálny tvar) sú v DECISIONS §7.
 > Kompaktný reverse-chrono log. Detail ku každému bodu je v `DECISIONS.md` (D-0xx);
 > aktuálny stav je hore v sekcii „Stav".
 
+- **2026-07-09** — **S5-fed hotové (D-050):** 3D multi-model federácia ASR+VZT v jednej scéne — identita cez IFC GUID, floor filter cez normalizované podlažie, `getIfcModels()` + `ifc_upload.py --key`.
 - **2026-07-08** — **F4 review kolo (D-054):** 8-uhlový code-review kadencií 2–3, opravené: výber prvku vo fullscreene (panel žil mimo fullscreen top-layer → exit pri selecte), `pointercancel` nabíjal double-tap, stale kotva zoomu pri zmene strany / prepisovala pan, stale touch pointery (phantom pinch), pinch teraz sleduje posun prstov (zoom+pan jedným gestom); `key={id}` resetuje viewer pri soft-navigácii medzi dokumentmi; `applyZoom` zjednotená. Všetko overené live (Playwright).
 - **2026-07-08** — **F4 kadencia 3 (D-054):** range/lazy loading PDF — pdf.js s `disableAutoFetch`/`disableStream` ťahá cez HTTP Range len chunky aktuálnej strany: prvá strana veľkého výkresu viditeľná a klikateľná po ~10 % súboru (overené live: 387 KB z 3,8 MB / 40 strán), listovanie doťahuje on-demand, bez Range podpory tichý fallback na plné stiahnutie; progress % v loading state. IFC (bezpečný rozsah popri D-050): `Cache-Control` pre `ifc-lite_bg.wasm` v `next.config.ts`. F4 tým uzavretý — ďalej len podľa spätnej väzby z prevádzky.
 - **2026-07-08** — **F4 kadencia 2 (D-054):** double-tap-to-zoom (dotyk); výkon zoom gest — počas kolieska/pinchu lacný CSS preview okolo kotvy gesta, ostrý rerastr až po ustálení (veľké výkresy sa nerastrujú per frame); detail prvku na mobile ako plávajúci bottom-sheet (`drawing-workspace.tsx`, od `lg` späť statický stĺpec). Live verifikácia (Playwright, devtest harness) odhalila a opravila 2 pre-existujúce bugy kadencie 1: `setPointerCapture` v pointerdown zabíjal klik myšou na región (capture až po pan thresholde) a kotva zoomu sa aplikovala so starým rastrom (`dims`≠`width` → clamp scrollu). Recept na live overovanie bez Supabase: `.claude/skills/verify/SKILL.md`.

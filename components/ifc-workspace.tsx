@@ -6,7 +6,7 @@ import { useRef, useState } from "react";
 import { ElementInfoPanel } from "@/components/element-info-panel";
 import { FilterBar } from "@/components/filter-bar";
 import type { SelectedElement } from "@/lib/data/drawing";
-import type { GuidMap } from "@/lib/data/ifc";
+import type { GuidMap, IfcModel } from "@/lib/data/ifc";
 import type { ViewerApi } from "@/lib/viewer-api";
 
 const IFCViewer = dynamic(
@@ -22,11 +22,11 @@ const IFCViewer = dynamic(
 );
 
 export default function IFCWorkspace({
-  ifcUrl,
+  models,
   guidMap,
   focus,
 }: {
-  ifcUrl: string;
+  models: IfcModel[];
   guidMap: GuidMap;
   focus?: string;
 }) {
@@ -87,7 +87,7 @@ export default function IFCWorkspace({
 
         <div style={{ height: "72vh" }}>
           <IFCViewer
-            ifcUrl={ifcUrl}
+            models={models}
             guidMap={guidMap}
             focus={focus}
             apiRef={viewerApiRef}

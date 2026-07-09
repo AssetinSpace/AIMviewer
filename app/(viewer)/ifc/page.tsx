@@ -1,4 +1,4 @@
-import { fetchGuidMap, getIfcUrl } from "@/lib/data/ifc";
+import { fetchGuidMap, getIfcModels } from "@/lib/data/ifc";
 import IFCWorkspace from "@/components/ifc-workspace";
 
 // SSR na každý request — GUID mapa sa číta z DB (cache na úrovni fetchGuidMap, D-029).
@@ -11,8 +11,8 @@ export default async function IFCPage({
 }) {
   const { focus } = await searchParams;
 
-  const [ifcUrl, guidMap] = await Promise.all([
-    Promise.resolve(getIfcUrl()),
+  const [models, guidMap] = await Promise.all([
+    Promise.resolve(getIfcModels()),
     fetchGuidMap(),
   ]);
 
@@ -23,11 +23,14 @@ export default async function IFCPage({
           3D Model
         </span>
         <h1 className="mt-2 font-heading text-2xl font-semibold">
-          ASR — 3D model budovy
+          3D model budovy
         </h1>
+        <p className="mt-1 text-sm text-muted-foreground">
+          {models.map((m) => m.label).join(" + ")} — federované (D-049)
+        </p>
       </header>
 
-      <IFCWorkspace ifcUrl={ifcUrl} guidMap={guidMap} focus={focus} />
+      <IFCWorkspace models={models} guidMap={guidMap} focus={focus} />
     </div>
   );
 }

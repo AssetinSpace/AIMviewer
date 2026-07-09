@@ -1225,10 +1225,40 @@ dema (D-003) aj text-to-query (D-047). Name+elevačný match je pre tento pár m
 (rovnaký Revit projekt) deterministický; ako všeobecný princíp ho drží konfigurovateľná
 policy. Port-konektivita (`IfcRelConnectsPorts`) je odložené rozšírenie (D-047).
 
-### D-050 — 3D multi-model federácia (ARCH+VZT v jednej scéne) — *rezervované*
-**Status:** rezervované číslo pre rozhodnutie k **rozpracovanej 3D multi-model federácii**
-(render VZT+ASR v jednej scéne, ROADMAP „Rozpracované"). Je necommitnuté; rozhodnutie sa
-zapíše pri commite tej vetvy. Číslo držané tu, aby `D-051+` nekolidovalo.
+### D-050 — 3D vrstva federácie: multi-model render s identitou cez IFC GUID
+
+**Kontext:** D-049 federoval VZT do **grafu** (DB); 3D viewer (D-044) však stále rendroval
+jediný model (`getIfcUrl()` → ASR). Aby demo ukázalo federáciu aj vizuálne (systém → prvky
+v 3D), treba rendrovať ASR + VZT v **jednej scéne**. Problém: `expressId` je lokálny per
+IFC súbor — medzi modelmi sa **prekrýva**, takže identita postavená na expressId (D-044
+fázy 1–3) sa pri multi-modeli rozpadá.
+
+**Rozhodnutie 1 — identita = IFC GUID, nie expressId:** Viewer pri načítaní každého modelu
+stampne každý mesh jeho `ifc_guid` (`node.userData.guid`, cez lokálnu `expressId → guid`
+mapu z STEP textu) a plní **globálne, GUID-centrické mapy** (`guidToMeshes`, `meshToGuid`,
+`meshToFloor`) naprieč modelmi. Picking, highlight, focus aj filter bar pracujú výhradne
+s GUID — expressId ostáva len lokálnym medzikrokom pri loade. To je konzistentné s D-044
+(„spojka na dáta = IFC GUID cez `guidMap`") — teraz to platí aj vnútri scény.
+
+**Rozhodnutie 2 — floor filter cez normalizovaný label podlažia:** Storey filter z D-044
+(per-expressId) sa nahrádza filtrom cez **normalizovaný názov podlažia** (`1NP_VZT` → `1NP`,
+regex `\d+NP`) — rovnaký princíp ako federačný match v ETL (D-049 R2). Podlažia oboch
+modelov sa tak zlúčia do jednej sady tlačidiel (1NP–5NP); prvky bez podlažia (strecha,
+rozvody bez containment) ostávajú viditeľné vždy.
+
+**Rozhodnutie 3 — konfigurácia modelov:** `getIfcModels(): IfcModel[]` (id, label, url).
+Default = ASR + VZT zo Supabase Storage (`ifc/ASR.ifc`, `ifc/VZT.ifc`). Override
+`NEXT_PUBLIC_IFC_URLS="Label|url,Label|url"`; legacy `NEXT_PUBLIC_IFC_URL` = jeden model.
+`etl/ifc_upload.py` dostal `--key` (upload ďalších modelov do bucketu `ifc/`).
+
+**Obmedzenie (vedomé):** `getIfcBuffer()` pre query bridging (D-044 fáza 4) vracia zatiaľ
+**len prvý model** (ASR) — `@ifc-lite/query` API berie jeden buffer. Multi-model query
+bridging sa rieši, až keď bude reálne treba (VZT dotazy idú cez graf, D-049).
+
+**Dôvod:** Geometria ostáva klient-side ephemerálna (D-044 — Postgres sa jej nedotýka),
+federácia v 3D je čisto view-side záležitosť. GUID-centrická identita je jediná, ktorá
+prežije ľubovoľný počet modelov, a zároveň zjednodušila kód (picking/highlight bez
+scene-traverse per selection).
 
 ---
 
@@ -1431,8 +1461,8 @@ math, `focus` deep-link, `onSelect` bočný panel, Ctrl/⌘-klik nová karta, sk
 - **IFC (bezpečný rozsah):** `next.config.ts` — `Cache-Control` pre `ifc-lite_bg.wasm`
   (~3 MB): deň cache + týždeň `stale-while-revalidate` → opakovaný vstup do 3D nečaká na
   WASM download. **Viac sa IFC loadingu teraz nedotýkame** — fetch/parse path žije presne
-  v súboroch rozpracovanej 3D federácie (D-050, necommitnuté na inom stroji); pokračovanie
-  (napr. komprimovaný variant IFC, progress) až po jej zamknutí.
+  v súboroch 3D federácie (D-050, medzičasom zamknutá); pokračovanie
+  (napr. komprimovaný variant IFC, progress) podľa spätnej väzby z prevádzky.
 - **Overené live** (devtest harness, 40-stranové 3,8 MB PDF, `next dev` Range = 206):
   strana 1 viditeľná ~1,1 s po prenose **387 KB = 10 % súboru** (meranie
   `resource.transferSize`; predtým sa sťahoval celý súbor), región klikateľný okamžite,
@@ -1574,6 +1604,7 @@ polí pasport↔Odoo, metóda zamerania (3D scan/Matterport/ručne — zatiaľ n
 > Kompaktný reverse-chrono log pridaných/zmenených rozhodnutí. Plný kontext = príslušný
 > D-záznam vyššie.
 
+- **2026-07-09** — **D-050 (3D vrstva federácie):** multi-model render ASR+VZT v jednej scéne, identita cez IFC GUID, floor filter cez normalizované podlažie.
 - **2026-07-09** — **Výkon preklikávania, kolo 2 (dodatok 2 D-030):** spinner na kliknutom
   odkaze (`useLinkStatus`), priestorový graf ako jeden zdieľaný cache záznam (prvý klik na
   nový uzol už nenačítava celý graf z DB), `prefetch={true}` na nav linkách +
