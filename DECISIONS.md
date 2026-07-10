@@ -1714,6 +1714,29 @@ z orezaných riadkov."
 zdedených), count group by ifc_type, numerický filter gt 4900 (vráti len 5000, text
 porovnanie by zlyhalo), rows režim s object_type, injection sada.
 
+### D-061 — Statický IFC slovník psetov (`ifc_property_definitions`)
+**Rozhodnutie:** Definície **štandardných** psetov (Pset_/Qto_) žijú v DB ako referenčná
+tabuľka `ifc_property_definitions` — LLM grounding **významu**: description, dátový typ
+(PrimaryMeasureType), enum hodnoty (PEnum_*), aplikovateľné triedy. Zrkadlo vzoru
+`relationship_types` (D-051): zdroj pravdy = Python modul **`etl/pset_manifest.py`**,
+ktorý číta bSDD/psd šablóny zabudované v `ifcopenshell`
+(`ifcopenshell.util.pset.PsetQto("IFC4X3")`), `--sql` generuje deterministické INSERTy
+commitované do migrácie `20260714120000`. Komplementárne k `v_property_dictionary`
+(D-058): statický slovník = čo property ZNAMENÁ; runtime slovník = čo v dátach reálne JE
+(vrátane custom psetov, ktoré statická schéma z princípu nepozná).
+
+**Rozsah:** LEN triedy prítomné/plánované v projekte (kurátorovaný `DEFAULT_CLASSES` —
+ARCH+VZT demo model + ÚK/ZTI triedy pre ventilový use-case; 25 tried → 973 properties
+v 127 psetoch), nie celý IFC4.3 katalóg. Description orezané na 200 znakov (grounding,
+nie špecifikácia). Enum hodnoty rozbalené na čisté stringy (wrappedValue). Regenerácia
+po zmene dát: `--classes-from-db` (distinct `objects.ifc_type`) → nová migrácia; trieda
+bez šablón sa reportuje, nezhodí generovanie. PK `(pset, property)` +
+`applicable_classes text[]` (žiadna class×pset×property explózia).
+
+**Napojenie:** tabuľka vo whiteliste `QUERY_RELATIONS` (dedikovaný tool netreba —
+`query_view` stačí); prompt: „význam/jednotku/enum štandardnej property →
+ifc_property_definitions; skutočný výskyt → v_property_dictionary."
+
 ---
 
 ## 8. Budúce rozhodnutia (D-037+)
@@ -1803,6 +1826,7 @@ polí pasport↔Odoo, metóda zamerania (3D scan/Matterport/ručne — zatiaľ n
 > Kompaktný reverse-chrono log pridaných/zmenených rozhodnutí. Plný kontext = príslušný
 > D-záznam vyššie.
 
+- **2026-07-10** — **D-061 (statický IFC slovník psetov):** `etl/pset_manifest.py` (PsetQto šablóny z ifcopenshell, deterministický --sql) → tabuľka `ifc_property_definitions` (973 properties / 127 psetov pre triedy projektu; description/data_type/enum/applicable_classes) vo whiteliste. Migrácia `20260714120000`.
 - **2026-07-10** — **D-060 (agregácie + numerika):** RPC `aggregate_objects` (sum/avg/min/max/count + group_by + numericky bezpečné filtre nad psetmi, guarded cast + skipped_non_numeric, interné whitelisty) + tool + guidance guard v query_view (gt/lt nad JSONB = text). Migrácia `20260713120000`.
 - **2026-07-10** — **D-059 (fulltext nad všetkým):** `objects.search_text` (generated, unaccent+lower flattening psetov) + GIN tsvector/trgm indexy + RPC `search_everything` (FTS + fuzzy, matched_properties ako dôkaz) + tool a prompt. Custom psety sú prvýkrát vyhľadateľné. Migrácia `20260712120000`.
 - **2026-07-10** — **D-058 (runtime slovník psetov):** view `v_property_dictionary` (pset × property × typ × vzorky z reálnych dát, aj custom psety) + rozšírený `get_model_stats` (psety, podlažia, systémy, klasifikácie, dokumenty) + prompt „nehádaj názvy psetov". Migrácia `20260711120000`.

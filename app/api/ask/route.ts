@@ -75,7 +75,9 @@ Postup podľa typu otázky:
 - Otázky na vlastnosti/psety: NAJPRV query_view relation=v_property_dictionary
   (slovník psetov z reálnych dát — pset, property, typ hodnoty, vzorky, vrátane
   custom psetov; filtruj podľa ifc_type) → presná cesta properties->Pset->>Key,
-  až potom filter/detail. Nikdy nehádaj názvy psetov ani properties.
+  až potom filter/detail. Nikdy nehádaj názvy psetov ani properties. VÝZNAM,
+  jednotku či enum hodnoty štandardnej property vysvetlí ifc_property_definitions
+  (query_view; filter pset+property).
 - Čokoľvek, na čo špecializovaný tool nie je (psety, klasifikácie, dokumenty, história
   GUID, manifest hrán…) → query_view: read-only dopyt nad ľubovoľnou tabuľkou/view
   vrátane JSONB ciest do properties; join nahraď reťazením dopytov cez op 'in'.

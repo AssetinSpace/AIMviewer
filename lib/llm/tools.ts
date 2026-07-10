@@ -38,6 +38,7 @@ const QUERY_RELATIONS = new Set([
   "classification_references",
   "ifc_guid_history",
   "relationship_types",
+  "ifc_property_definitions",
   "v_asset_effective",
   "v_asset_classifications",
   "v_floors",
@@ -234,7 +235,9 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
       "v_asset_effective (properties s dedičnosťou type→occurrence), v_asset_classifications, " +
       "v_floors, v_actors, v_property_dictionary (slovník psetov z dát: object_type, ifc_type, " +
       "pset, property, value_type, object_count, sample_values, min/max_number — presné JSONB " +
-      "cesty zisti TU, nehádaj ich) a hrany rel_aggregates, rel_contained_in_spatial_structure, " +
+      "cesty zisti TU, nehádaj ich), ifc_property_definitions (IFC definície štandardných " +
+      "psetov: description, data_type, enum_values, applicable_classes — VÝZNAM a jednotky " +
+      "property) a hrany rel_aggregates, rel_contained_in_spatial_structure, " +
       "rel_defines_by_type, rel_associates_document, rel_associates_classification, " +
       "rel_assigns_to_actor, rel_assigns_to_group, rel_member_of (všetky: from_id→to_id, " +
       "valid_until null = aktívna). JSONB cesty fungujú v select aj filtri: " +
