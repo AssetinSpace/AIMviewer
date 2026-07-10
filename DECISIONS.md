@@ -1681,6 +1681,39 @@ modeli (dôkazovo — viď trust loop nižšie). Migrácia `20260712120000`.
 („vzduchotechnicka jednotka" → VZT uzly), prázdny dopyt → 0 riadkov, object_types filter.
 Eval metrika: kategória psets_custom (fail-by-design pred D-059) → cieľ ≥ 75 %.
 
+### D-060 — Agregácie + numericky bezpečné filtre (`aggregate_objects`)
+**Rozhodnutie:** Súčty/priemery/min/max a **každé číselné porovnanie** hodnoty psetu počíta
+**databáza**, nie model z orezaných riadkov (row-cap 50 → vymyslené čísla — pozorované
+v prevádzke D-056). Dôvod v koreni: PostgREST filter nad JSONB cestou porovnáva gt/lt ako
+**text** (lexikograficky `'9' > '10'`) a `::numeric` cast sa v ňom vyjadriť nedá → RPC.
+Migrácia `20260713120000`.
+
+**RPC `aggregate_objects`** (plpgsql, `stable`, `set search_path`, read-only):
+- `agg count|sum|avg|min|max` nad `prop_path` (cesta v properties); **guarded numeric
+  cast** (regex) — nenumerické hodnoty sa preskočia a reportujú v `skipped_non_numeric`
+  (poctivosť voči modelu).
+- `group_by` (stĺpec z whitelistu) alebo `group_by_path` (pset cesta, napr. výrobca),
+  skupiny capped ≤ 50, radené podľa hodnoty.
+- AND `filters` `{column|path, op, value}` — `gt/gte/lt/lte` nad path porovnáva
+  **numericky** (nečíselná value → raise); `ids uuid[]` na reťazenie (locate → agregácia).
+- `return_rows=true` = escape hatch: top 50 riadkov s hodnotou (implicitný not-null),
+  vrátane `object_type` pre trust-loop zdroje.
+- **Bezpečnosť dynamického SQL** (jediné miesto v repe): whitelisty relation
+  (objects|v_asset_effective) / agg / op / stĺpcov, identifikátory `format('%I')`,
+  literály `format('%L')`, JSONB cesty ako pole `%L` literálov. Injection pokusy
+  (relation, group_by, filter column, quote breakout vo value, path prvok) overené —
+  raise alebo neškodný literál.
+
+**Napojenie:** tool `aggregate_objects`; **guidance guard v `query_view`** — pokus
+o gt/gte/lt/lte nad JSONB cestou vyhodí chybu s presným návodom na aggregate_objects
+(viditeľné v trace; lepšie než tiché zlé výsledky aj než neviditeľný re-routing);
+prompt: „súčty a číselné porovnania psetov → aggregate_objects, nikdy nepočítaj
+z orezaných riadkov."
+
+**Overené na lokálnom PG 16:** sum s dedičnosťou type→occurrence (9800 = 4800 + 5000
+zdedených), count group by ifc_type, numerický filter gt 4900 (vráti len 5000, text
+porovnanie by zlyhalo), rows režim s object_type, injection sada.
+
 ---
 
 ## 8. Budúce rozhodnutia (D-037+)
@@ -1770,6 +1803,7 @@ polí pasport↔Odoo, metóda zamerania (3D scan/Matterport/ručne — zatiaľ n
 > Kompaktný reverse-chrono log pridaných/zmenených rozhodnutí. Plný kontext = príslušný
 > D-záznam vyššie.
 
+- **2026-07-10** — **D-060 (agregácie + numerika):** RPC `aggregate_objects` (sum/avg/min/max/count + group_by + numericky bezpečné filtre nad psetmi, guarded cast + skipped_non_numeric, interné whitelisty) + tool + guidance guard v query_view (gt/lt nad JSONB = text). Migrácia `20260713120000`.
 - **2026-07-10** — **D-059 (fulltext nad všetkým):** `objects.search_text` (generated, unaccent+lower flattening psetov) + GIN tsvector/trgm indexy + RPC `search_everything` (FTS + fuzzy, matched_properties ako dôkaz) + tool a prompt. Custom psety sú prvýkrát vyhľadateľné. Migrácia `20260712120000`.
 - **2026-07-10** — **D-058 (runtime slovník psetov):** view `v_property_dictionary` (pset × property × typ × vzorky z reálnych dát, aj custom psety) + rozšírený `get_model_stats` (psety, podlažia, systémy, klasifikácie, dokumenty) + prompt „nehádaj názvy psetov". Migrácia `20260711120000`.
 - **2026-07-10** — **D-057 (eval harness):** zlaté otázky `eval/questions.json` + runner `scripts/eval-ask.ts` (`npm run eval`) — deterministické skórovanie answer/sources/no_facts, verified workflow nad prod datasetom, mock smoke overený. Štart programu presnosti LLM dotazov (→ D-058…D-063).

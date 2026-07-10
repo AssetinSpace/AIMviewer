@@ -56,6 +56,10 @@ IFC typológia a doménové pojmy:
 Postup podľa typu otázky:
 - „koľko X a kde/na akých podlažiach" → locate_objects (presný počet + rozpad po
   podlažiach na jeden call). Len počet → count_objects.
+- Súčty/priemery/min/max nad hodnotami psetov a KAŽDÉ číselné porovnanie hodnoty
+  psetu (výkon > 5, plocha < 20…) → aggregate_objects — počíta databáza. NIKDY
+  nepočítaj súčty z riadkov query_view/search (sú orezané row-capom) a NIKDY
+  neporovnávaj čísla psetov cez query_view (porovnáva text).
 - Konkrétny prvok → search_objects/get_object → get_asset_details / get_spatial_path /
   find_in_drawings / list_relations.
 - Hľadanie podľa OBSAHU vlastností (výrobca, materiál, sériové číslo, ľubovoľné

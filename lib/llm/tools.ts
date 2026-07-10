@@ -277,6 +277,61 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
     },
   },
   {
+    name: "aggregate_objects",
+    description:
+      "Presné agregácie a ČÍSELNÉ porovnania nad hodnotami psetov — počíta databáza, " +
+      "nikdy nepočítaj z orezaných riadkov. agg=count|sum|avg|min|max nad numerickou " +
+      "hodnotou prop_path (napr. ['VZT_Parametre','AirFlowRate']); group_by (stĺpec: " +
+      "object_type|ifc_type|predefined_type|user_defined_type|name|object_ref) alebo " +
+      "group_by_path (pset cesta ako kľúč, napr. výrobca). AND filtre " +
+      "{column|path, op eq|neq|gt|gte|lt|lte|ilike|is, value} — gt/lt nad path porovnáva " +
+      "NUMERICKY (v query_view sa JSONB porovnáva ako text — na čísla vždy toto). " +
+      "ids = zúženie na konkrétne prvky (reťazenie s locate_objects/search_everything). " +
+      "return_rows=true vráti top 50 riadkov s hodnotou (implicitne len tie, čo hodnotu " +
+      "majú). Nenumerické hodnoty preskočí a reportuje v skipped_non_numeric. " +
+      "relation: objects | v_asset_effective (dedičnosť type→occurrence — pre psety " +
+      "assetov preferuj v_asset_effective).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        relation: { type: "string", description: "objects (default) | v_asset_effective" },
+        agg: { type: "string", description: "count (default) | sum | avg | min | max" },
+        prop_path: {
+          type: "array",
+          items: { type: "string" },
+          description: "Cesta v properties, napr. ['Qto_DoorBaseQuantities','Width']",
+        },
+        group_by: { type: "string", description: "Stĺpec pre skupiny (whitelist)" },
+        group_by_path: {
+          type: "array",
+          items: { type: "string" },
+          description: "Alternatíva: pset cesta ako kľúč skupiny",
+        },
+        filters: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              column: { type: "string", description: "Stĺpec z whitelistu" },
+              path: { type: "array", items: { type: "string" }, description: "Alebo pset cesta" },
+              op: { type: "string", description: "eq|neq|gt|gte|lt|lte|ilike|is" },
+              value: { description: "Hodnota (pre gt/lt nad path číslo ako string)" },
+            },
+            required: ["op"],
+          },
+          description: "AND filtre",
+        },
+        ids: {
+          type: "array",
+          items: { type: "string" },
+          description: "Voliteľné: len tieto objects.id (UUID)",
+        },
+        max_groups: { type: "number", description: "Strop skupín (default a max 50)" },
+        return_rows: { type: "boolean", description: "true = riadky s hodnotou namiesto agregátu" },
+      },
+    },
+  },
+  {
     name: "get_object",
     description:
       "Detail jedného uzla podľa UUID alebo object_ref (napr. 'DD01.06.03'): " +
@@ -476,6 +531,8 @@ export class AskToolRuntime {
         return this.locateObjects(input);
       case "query_view":
         return this.queryView(input);
+      case "aggregate_objects":
+        return this.aggregateObjects(input);
       case "get_object":
         return this.getObject(input);
       case "get_asset_details":
@@ -764,6 +821,15 @@ export class AskToolRuntime {
       if (!COLUMN_RE.test(col)) throw new Error(`Neplatný stĺpec '${col}'.`);
       if (!QUERY_OPS.has(operator))
         throw new Error(`Neplatný operátor '${operator}' — povolené: ${[...QUERY_OPS].join(", ")}.`);
+      // PostgREST porovnáva JSONB cesty ako TEXT ('9' > '10') → číselné porovnanie
+      // psetov musí ísť cez aggregate_objects (guidance error, viditeľný v trace).
+      if (col.includes("->") && ["gt", "gte", "lt", "lte"].includes(operator)) {
+        throw new Error(
+          `Porovnanie '${operator}' nad JSONB cestou tu porovnáva text ('9' > '10'), nie ` +
+            `čísla — použi aggregate_objects s filters: [{path: [...], op: '${operator}', ` +
+            `value: '...'}] (numericky bezpečné; return_rows=true vráti riadky).`
+        );
+      }
       if (operator === "in") {
         const vals = Array.isArray(value) ? value : [value];
         q = q.in(col, vals.slice(0, IN_CHUNK));
@@ -797,6 +863,60 @@ export class AskToolRuntime {
       }
     }
     return { rows, row_count: rows.length };
+  }
+
+  /**
+   * Agregácie/číselné filtre nad psetmi (D-060) — RPC `aggregate_objects`.
+   * Whitelisty a formátovanie identifikátorov/literálov drží SQL funkcia;
+   * TS strana len normalizuje vstup a zbiera zdroje z rows režimu.
+   */
+  private async aggregateObjects(input: Record<string, unknown>) {
+    const supabase = getSupabaseAdmin();
+    const strArr = (v: unknown): string[] | null =>
+      Array.isArray(v)
+        ? (v as unknown[]).filter((x): x is string => typeof x === "string" && x.length > 0)
+        : null;
+    const propPath = strArr(input.prop_path);
+    const groupByPath = strArr(input.group_by_path);
+    const idsArr = (strArr(input.ids) ?? []).filter(isUuid);
+
+    const { data, error } = await supabase.rpc("aggregate_objects", {
+      relation:
+        typeof input.relation === "string" && input.relation ? input.relation : "objects",
+      agg: typeof input.agg === "string" && input.agg ? input.agg : "count",
+      prop_path: propPath && propPath.length > 0 ? propPath : null,
+      group_by:
+        typeof input.group_by === "string" && input.group_by ? input.group_by : null,
+      group_by_path: groupByPath && groupByPath.length > 0 ? groupByPath : null,
+      filters: Array.isArray(input.filters) ? input.filters : [],
+      ids: idsArr.length > 0 ? idsArr : null,
+      max_groups: typeof input.max_groups === "number" ? input.max_groups : 50,
+      return_rows: input.return_rows === true,
+    });
+    if (error) throw new Error(error.message);
+
+    const res = data as {
+      mode?: string;
+      rows?: {
+        id?: string;
+        object_ref?: string | null;
+        name?: string | null;
+        object_type?: string;
+      }[];
+    } | null;
+    if (res?.mode === "rows" && Array.isArray(res.rows)) {
+      for (const r of res.rows) {
+        if (typeof r.id === "string" && typeof r.object_type === "string") {
+          this.addSource({
+            id: r.id,
+            object_type: r.object_type,
+            object_ref: r.object_ref ?? null,
+            name: r.name ?? null,
+          });
+        }
+      }
+    }
+    return data;
   }
 
   /** Slovník modelu — grounding pre filtre (model nemusí hádať hodnoty). */

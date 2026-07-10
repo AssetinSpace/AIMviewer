@@ -315,10 +315,28 @@ create function f_object_search_text(…) …   -- IMMUTABLE flattening uzla (be
 create index idx_objects_search_tsv  on objects using gin (to_tsvector('simple', search_text));
 create index idx_objects_search_trgm on objects using gin (search_text gin_trgm_ops);
 
--- RPC pre LLM tool (jediné .rpc() rozhranie; parametrizované, row-cap 50):
+-- RPC pre LLM tool (parametrizované, row-cap 50):
 -- search_everything(q, object_types[], max_rows) → id, object_type, object_ref, name,
 --   ifc_type, predefined_type, score, match_kind (fulltext|fuzzy), headline,
 --   matched_properties (dôkaz: pset/property/hodnota so zásahom)
+```
+
+### 2.10 Agregácie nad psetmi (D-060, migrácia 20260713120000)
+
+PostgREST filter nad JSONB cestou porovnáva gt/lt ako **text** a agregovať nevie —
+súčty/priemery/číselné porovnania hodnôt psetov robí RPC `aggregate_objects`
+(read-only, `stable`, `set search_path`; interné whitelisty relation/agg/op/stĺpcov,
+identifikátory `format('%I')`, literály `format('%L')` — presné DDL v migrácii).
+
+```sql
+-- aggregate_objects(relation objects|v_asset_effective, agg count|sum|avg|min|max,
+--   prop_path text[],                -- numerická hodnota psetu (guarded cast,
+--                                    --  nenumerické → skipped_non_numeric)
+--   group_by | group_by_path,        -- stĺpec z whitelistu / pset cesta ako kľúč
+--   filters jsonb,                   -- AND; {column|path, op, value};
+--                                    --  gt/gte/lt/lte nad path = NUMERICKY
+--   ids uuid[],                      -- reťazenie (napr. z locate_objects)
+--   max_groups ≤ 50, return_rows)    -- rows režim: top 50 riadkov s hodnotou
 ```
 
 ---

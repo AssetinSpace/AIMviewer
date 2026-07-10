@@ -212,3 +212,7 @@ Python 3.9+ (`py -3.9`), `PYTHONUTF8=1` na Windows (cp1250 konzola). Vždy z kor
 Zmena LLM vrstvy (tools, system prompt, model/provider) ⇒ pred commitom spusti evaly
 (`npm run eval` proti bežiacemu dev serveru) a porovnaj s baseline; výsledok patrí do
 ROADMAP changelogu. Detail → `DECISIONS.md` D-057.
+
+Nová RPC pre LLM = vždy read-only `stable` + `set search_path` + interné whitelisty
+(relation/op/stĺpce), identifikátory `format('%I')`, literály `format('%L')` — vzor
+`search_everything`/`aggregate_objects` (D-059/D-060).

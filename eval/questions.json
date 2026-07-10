@@ -292,6 +292,38 @@
       "notes": "Over: select name from objects where object_type='document' and name ilike '%pudorys%' (CDE popis, D-036)."
     },
     {
+      "id": "agg-sum",
+      "category": "aggregation",
+      "question": "Aký je celkový prietok vzduchu všetkých VZT jednotiek?",
+      "expect": { "answer_matches": ["\\bTODO\\b"] },
+      "verified": false,
+      "notes": "Over: aggregate_objects relation=v_asset_effective, agg=sum, prop_path=<cesta prietoku z v_property_dictionary>, filter ifc_type=IfcUnitaryEquipment."
+    },
+    {
+      "id": "agg-avg",
+      "category": "aggregation",
+      "question": "Aká je priemerná šírka dverí v budove?",
+      "expect": { "answer_matches": ["\\bTODO\\b"] },
+      "verified": false,
+      "notes": "Over: aggregate_objects agg=avg nad šírkou dverí (Qto_DoorBaseQuantities.Width alebo ekvivalent z v_property_dictionary), filter ifc_type=IfcDoor."
+    },
+    {
+      "id": "agg-groupby",
+      "category": "aggregation",
+      "question": "Koľko prvkov je od jednotlivých výrobcov?",
+      "expect": { "answer_matches": ["TODO-vyrobca"] },
+      "verified": false,
+      "notes": "Over: aggregate_objects agg=count, group_by_path=<cesta Manufacturer z v_property_dictionary> — rozpad po výrobcoch."
+    },
+    {
+      "id": "agg-numeric-filter",
+      "category": "aggregation",
+      "question": "Ktoré miestnosti majú plochu väčšiu ako TODO m²?",
+      "expect": { "answer_matches": ["TODO-miestnost"] },
+      "verified": false,
+      "notes": "Číselné porovnanie psetu (D-060): aggregate_objects return_rows=true, filter path=<plocha>, op=gt. Hodnotu prahu vyber z prod dát tak, aby prešla len časť miestností — chytá lexikografickú chybu ('9'>'10')."
+    },
+    {
       "id": "neg-valves",
       "category": "negative",
       "question": "Koľko uzatváracích ventilov je v budove?",
