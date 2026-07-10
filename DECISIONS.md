@@ -1554,6 +1554,25 @@ D-049: 0 `IfcValve`) a spôsob určenia „najbližší" (topológia portov cez 
 - **Odložené (ďalšie kadencie):** streaming odpovede, highlight regiónu vo výkrese priamo
   z odpovede, ventilový dotaz (čaká na import ÚK/ZTI), výber produkčného modelu.
 
+**Dodatok (2026-07-10) — celá DB + spoľahlivosť (spätná väzba z prevádzky):** prvá
+prevádzka odhalila dve slabiny: (1) model nemal ako nájsť „AIRCONDITIONINGUNIT" — je to
+`predefined_type` enum, nie `ifc_type`, a search hľadal len name/object_ref; (2) na „koľko X
+a kde" nemal count ani batch lokalizáciu, tak hádal — a lite modely si po zlyhaní toolov
+**vymysleli čísla** napriek promptu. Riešenie:
+- **`query_view`** — generický read-only dopyt nad **celou dátovou vrstvou** (whitelist
+  všetkých tabuliek + views vrátane JSONB ciest do properties, AND filtre, in-reťazenie
+  namiesto joinov, count_only). Base `relationships` ostáva mimo (D-051). Nie je to surové
+  text-to-SQL — štruktúrovaný dopyt drží guardraily D-005 (whitelist, read-only, row-cap).
+- **`locate_objects`** — batch „koľko a kde": filtre/ids → presný count + rozpad po
+  podlažiach (containment element→space|floor, space→floor, dávkované po 100).
+- **`count_objects`**, **`get_model_stats`** (slovník tried modelu = grounding filtrov),
+  `search_objects` query rozšírené aj na `ifc_type`/`predefined_type` + nový filter.
+- **Doménový preklad v prompte** (VZT→IfcUnitaryEquipment/AIRCONDITIONINGUNIT, vyústka→
+  IfcAirTerminal…) + postup podľa typu otázky.
+- **Anti-konfabulačná poistka v route:** keď všetky tool cally zlyhajú, odpoveď modelu sa
+  zahodí a vráti sa deterministická chybová hláška (overené live: flash-lite si inak vymyslel
+  „12 jednotiek s rozpadom po podlažiach").
+
 ---
 
 ## 8. Budúce rozhodnutia (D-037+)

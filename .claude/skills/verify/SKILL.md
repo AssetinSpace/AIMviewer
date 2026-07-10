@@ -43,6 +43,9 @@ description: Ako overiť zmeny AIM Viewera naživo v tomto repe — build/launch
   Mock provider (`lib/llm/mock.ts`) na prvý vstup zavolá `search_objects` (bez DB
   vráti tool error — overuje error vetvu), po tool výsledku odpovie textom;
   vstup `notool: …` odpovie bez toolu. `/api/ask` sa dá curl-núť priamo.
+  POZOR: keď VŠETKY tool cally zlyhajú (typicky bez DB), route vráti poistkovú
+  odpoveď „Dáta sa nepodarilo načítať…" namiesto textu modelu (anti-konfabulácia)
+  — mock tool flow teda končí touto hláškou, `notool:` vetva textom modelu.
 - UI: `AskPanel` renderuj na devtest stránke mimo `(viewer)` (layout ťahá DB).
   Zdroje/deep-linky (karta/3D/výkres chips) otestuj Playwright `page.route()`
   interceptom `/api/ask` s podvrhnutými `sources` — mock bez DB žiadne nevráti.
