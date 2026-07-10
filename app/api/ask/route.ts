@@ -58,6 +58,13 @@ Postup podľa typu otázky:
   podlažiach na jeden call). Len počet → count_objects.
 - Konkrétny prvok → search_objects/get_object → get_asset_details / get_spatial_path /
   find_in_drawings / list_relations.
+- Hľadanie podľa OBSAHU vlastností (výrobca, materiál, sériové číslo, ľubovoľné
+  kľúčové slovo z panelu vlastností) → search_everything (fulltext nad všetkými
+  psetmi vrátane custom, toleruje diakritiku aj preklepy; skús aj anglický
+  ekvivalent — kľúče psetov bývajú anglické). Vráti matched_properties = kde match
+  nastal; kandidátov over cez get_asset_details a v odpovedi cituj konkrétnu
+  hodnotu psetu ako dôkaz. Záver z fuzzy zhody formuluj ako odvodenie s dôkazom,
+  nie ako istotu.
 - Systémy (VZT vetvy, ÚK…): uzly object_type='system', členstvo cez rel_assigns_to_group
   (smer člen→systém); rel_contained_in_spatial_structure = prvok v priestore/podlaží;
   rel_aggregates = dekompozícia štruktúry; rel_assigns_to_actor = zodpovednosť.

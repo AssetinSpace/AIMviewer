@@ -1646,6 +1646,41 @@ podlažia, systémy, klasifikačné systémy, dokumenty — best-effort, výpado
 tool); system prompt: „otázky na vlastnosti → najprv v_property_dictionary, nikdy
 nehádaj názvy psetov."
 
+### D-059 — Fulltext nad všetkým (`search_text` + `search_everything`)
+**Rozhodnutie:** Cieľ = **parita s človekom skenujúcim panel vlastností**: LLM musí nájsť
+kľúčové slovo kdekoľvek v obsahu uzla — vrátane **custom psetov**, ktoré `search_objects`
+(identita/typológia) principiálne nevidí. Recall rieši DB, úsudok nad nájdeným ostáva na
+modeli (dôkazovo — viď trust loop nižšie). Migrácia `20260712120000`.
+
+**Mechanika:**
+- **`f_unaccent`** — IMMUTABLE wrapper nad `unaccent` (extension funkcia je STABLE, do
+  generated column/indexu nesmie); poradie `lower(f_unaccent(…))` — unaccent najprv
+  (Ú→U je ASCII, `lower` potom funguje bez ohľadu na DB locale).
+- **`f_object_search_text`** — IMMUTABLE flattener: `name + object_ref + ifc_type +
+  predefined_type + user_defined_type + všetky psety` (názov psetu + celý JSON = kľúče aj
+  hodnoty), deterministické poradie; rezervované `_kľúče` (D-022) vynechané —
+  `_drawing_links` (stovky regiónov) by utopili signál.
+- **`objects.search_text`** — STORED generated stĺpec (pri ~10³ riadkoch bloat
+  irelevantný) + GIN indexy: `to_tsvector('simple', …)` (fulltext) a `gin_trgm_ops`
+  (preklepy/podreťazce). Zmena konvencie `_kľúčov` ⇒ regenerácia stĺpca novou migráciou.
+  ETL/seed insertujú explicitné stĺpce → kompatibilné bez zmeny.
+- **RPC `search_everything(q, object_types[], max_rows)`** — prvé `.rpc()` v repe,
+  čisto parametrizované; kombinuje FTS (`websearch_to_tsquery('simple')` — slovenský
+  stemmer neexistuje, morfológiu aproximuje trigram) s fuzzy vetvou (`word_similarity`,
+  threshold 0.4 cez SET na funkcii — default 0.6 nechytal bežné preklepy). FTS zásah
+  vždy ranked nad čisto fuzzy (+1.0). Vracia `score`, `match_kind`, `headline`
+  (ts_headline úryvok) a **`matched_properties`** — v ktorom psete/property match nastal
+  (lateral len nad vrátenými riadkami; dôkaz pre trust loop). Row-cap 50 (D-005).
+- **Tool `search_everything`** + prompt: hľadanie podľa obsahu → search_everything,
+  skúsiť aj anglický ekvivalent (kľúče psetov bývajú anglické), citovať
+  matched_properties ako dôkaz, záver z fuzzy zhody formulovať ako odvodenie.
+
+**Overené na lokálnom PG 16 (migrácie + seed):** diakritika („cerpadlo" → „Obehové
+čerpadlo ÚK-01"), custom pset hodnota („daikin" → matched_properties
+`VZT_Parametre.Manufacturer`), preklep („carpadlo" → fuzzy 0.56), multiword
+(„vzduchotechnicka jednotka" → VZT uzly), prázdny dopyt → 0 riadkov, object_types filter.
+Eval metrika: kategória psets_custom (fail-by-design pred D-059) → cieľ ≥ 75 %.
+
 ---
 
 ## 8. Budúce rozhodnutia (D-037+)
@@ -1735,6 +1770,7 @@ polí pasport↔Odoo, metóda zamerania (3D scan/Matterport/ručne — zatiaľ n
 > Kompaktný reverse-chrono log pridaných/zmenených rozhodnutí. Plný kontext = príslušný
 > D-záznam vyššie.
 
+- **2026-07-10** — **D-059 (fulltext nad všetkým):** `objects.search_text` (generated, unaccent+lower flattening psetov) + GIN tsvector/trgm indexy + RPC `search_everything` (FTS + fuzzy, matched_properties ako dôkaz) + tool a prompt. Custom psety sú prvýkrát vyhľadateľné. Migrácia `20260712120000`.
 - **2026-07-10** — **D-058 (runtime slovník psetov):** view `v_property_dictionary` (pset × property × typ × vzorky z reálnych dát, aj custom psety) + rozšírený `get_model_stats` (psety, podlažia, systémy, klasifikácie, dokumenty) + prompt „nehádaj názvy psetov". Migrácia `20260711120000`.
 - **2026-07-10** — **D-057 (eval harness):** zlaté otázky `eval/questions.json` + runner `scripts/eval-ask.ts` (`npm run eval`) — deterministické skórovanie answer/sources/no_facts, verified workflow nad prod datasetom, mock smoke overený. Štart programu presnosti LLM dotazov (→ D-058…D-063).
 - **2026-07-09** — **D-056 kadencia 1 (F6 — LLM rozhranie):** provider vrstva `lib/llm/` (Anthropic cez fetch + mock, API-pluggable), read-only tools nad whitelist views s row-capom, agentická slučka `/api/ask`, trust-loop zdroje zbierané deterministicky serverom (deep-linky karta/3D/výkres), UI `/ask`.

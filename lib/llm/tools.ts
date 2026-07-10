@@ -146,12 +146,14 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
   {
     name: "search_objects",
     description:
-      "Vyhľadanie uzlov grafu (objects). `query` hľadá naraz v názve, object_ref, IFC triede " +
-      "aj predefined_type (ilike). Filtre: object_type (asset, asset_type, space, floor, " +
-      "building, site, system, document, person, organization), ifc_type = IFC trieda " +
-      "(napr. IfcDoor, IfcUnitaryEquipment), predefined_type = IFC enum podtypu (napr. " +
-      "AIRCONDITIONINGUNIT, VAV). POZOR: podtyp ako AIRCONDITIONINGUNIT je predefined_type, " +
-      "NIE ifc_type. Na počty použi count_objects, na slovník hodnôt get_model_stats.",
+      "Vyhľadanie uzlov grafu (objects) podľa IDENTITY a IFC typológie. `query` hľadá naraz " +
+      "v názve, object_ref, IFC triede aj predefined_type (ilike). Filtre: object_type " +
+      "(asset, asset_type, space, floor, building, site, system, document, person, " +
+      "organization), ifc_type = IFC trieda (napr. IfcDoor, IfcUnitaryEquipment), " +
+      "predefined_type = IFC enum podtypu (napr. AIRCONDITIONINGUNIT, VAV). POZOR: podtyp " +
+      "ako AIRCONDITIONINGUNIT je predefined_type, NIE ifc_type. Obsah VLASTNOSTÍ (psety) " +
+      "tento tool nevidí — na to je search_everything. Na počty použi count_objects, " +
+      "na slovník hodnôt get_model_stats.",
     inputSchema: {
       type: "object",
       properties: {
@@ -161,6 +163,31 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
         predefined_type: { type: "string", description: "Filter na IFC predefined_type enum (case-insensitive zhoda)" },
         limit: { type: "number", description: `Max riadkov (default ${DEFAULT_LIMIT}, strop ${MAX_LIMIT})` },
       },
+    },
+  },
+  {
+    name: "search_everything",
+    description:
+      "Fulltextové vyhľadávanie nad CELÝM obsahom uzlov — názov, object_ref, IFC trieda " +
+      "aj VŠETKY psety (kľúče a hodnoty, vrátane custom psetov). Tolerantné na diakritiku " +
+      "a preklepy (fuzzy). Použi vždy, keď hľadáš podľa OBSAHU vlastností (výrobca, materiál, " +
+      "sériové číslo, ľubovoľné kľúčové slovo) alebo keď search_objects nič nenašiel. " +
+      "Vracia score, match_kind, úryvok (headline) a matched_properties = v ktorom psete/" +
+      "property match nastal — cituj to ako dôkaz. Kandidátov ďalej over cez " +
+      "get_asset_details/get_object; hľadané slovo skús aj v angličtine (kľúče psetov " +
+      "bývajú anglické: HeatRecovery, Manufacturer…).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        q: { type: "string", description: "Hľadaný text (slová, kód, hodnota; min 2 znaky)" },
+        object_types: {
+          type: "array",
+          items: { type: "string" },
+          description: "Voliteľný filter na object_type (napr. ['asset','asset_type'])",
+        },
+        limit: { type: "number", description: `Max riadkov (default ${DEFAULT_LIMIT}, strop ${MAX_LIMIT})` },
+      },
+      required: ["q"],
     },
   },
   {
@@ -441,6 +468,8 @@ export class AskToolRuntime {
         return this.getModelStats();
       case "search_objects":
         return this.searchObjects(input);
+      case "search_everything":
+        return this.searchEverything(input);
       case "count_objects":
         return this.countObjects(input);
       case "locate_objects":
@@ -509,6 +538,46 @@ export class AskToolRuntime {
     for (const r of rows) this.addSource(r);
     if (rows.length === 0) {
       return { rows, hint: "Nič sa nenašlo — zavolaj get_model_stats a over hodnoty filtrov." };
+    }
+    return rows;
+  }
+
+  /**
+   * Fulltext + fuzzy nad `objects.search_text` (D-059) — RPC `search_everything`.
+   * Jediné .rpc() volanie LLM vrstvy: parametrizované (žiadny SQL splicing),
+   * row-cap drží SQL funkcia (limit 50).
+   */
+  private async searchEverything(input: Record<string, unknown>) {
+    const supabase = getSupabaseAdmin();
+    const q = String(input.q ?? "").trim().slice(0, 200);
+    if (q.length < 2) throw new Error("q musí mať aspoň 2 znaky.");
+    const objectTypes = Array.isArray(input.object_types)
+      ? (input.object_types as unknown[]).filter(
+          (v): v is string => typeof v === "string" && v.trim().length > 0
+        )
+      : null;
+
+    const { data, error } = await supabase.rpc("search_everything", {
+      q,
+      object_types: objectTypes && objectTypes.length > 0 ? objectTypes : null,
+      max_rows: clampLimit(input.limit),
+    });
+    if (error) throw new Error(error.message);
+
+    const rows = (data ?? []) as (ObjectRow & {
+      score: number;
+      match_kind: string;
+      headline: string | null;
+      matched_properties: unknown;
+    })[];
+    for (const r of rows) this.addSource(r);
+    if (rows.length === 0) {
+      return {
+        rows,
+        hint:
+          "Nič sa nenašlo — skús synonymá alebo anglický ekvivalent (kľúče psetov " +
+          "bývajú anglické), prípadne over slovník cez v_property_dictionary.",
+      };
     }
     return rows;
   }

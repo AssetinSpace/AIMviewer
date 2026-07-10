@@ -81,6 +81,12 @@ create index on objects (ifc_guid);
 create index on objects (predefined_type);
 ```
 
+**Dodatok (D-059, migrácia 20260712120000):** `objects` má navyše STORED generated
+stĺpec `search_text` = `f_object_search_text(name, object_ref, ifc_type,
+predefined_type, user_defined_type, properties)` — normalizovaný (unaccent + lower)
+flattening identity a všetkých psetov (rezervované `_kľúče` vynechané) pre fulltext.
+Indexy a RPC → §2.9.
+
 ### 2.2 Typové prípony (1:1 k `objects`)
 
 ```sql
@@ -294,6 +300,25 @@ group by o.object_type, o.ifc_type, p.key, a.key, jsonb_typeof(a.value);
 create trigger trg_objects_updated before update on objects
   for each row execute function set_updated_at();
 -- + classification_systems, classification_references
+```
+
+### 2.9 Fulltext vyhľadávanie (D-059, migrácia 20260712120000)
+
+Parita s človekom skenujúcim panel vlastností — kľúčové slovo sa nájde kdekoľvek
+v obsahu uzla vrátane custom psetov. Presné DDL v migrácii.
+
+```sql
+create extension if not exists unaccent;   -- + pg_trgm
+create function f_unaccent(text) …          -- IMMUTABLE wrapper (indexovateľné)
+create function f_object_search_text(…) …   -- IMMUTABLE flattening uzla (bez _kľúčov)
+-- objects.search_text = generated stored stĺpec (viď §2.1 dodatok)
+create index idx_objects_search_tsv  on objects using gin (to_tsvector('simple', search_text));
+create index idx_objects_search_trgm on objects using gin (search_text gin_trgm_ops);
+
+-- RPC pre LLM tool (jediné .rpc() rozhranie; parametrizované, row-cap 50):
+-- search_everything(q, object_types[], max_rows) → id, object_type, object_ref, name,
+--   ifc_type, predefined_type, score, match_kind (fulltext|fuzzy), headline,
+--   matched_properties (dôkaz: pset/property/hodnota so zásahom)
 ```
 
 ---

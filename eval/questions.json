@@ -198,6 +198,22 @@
       "notes": "FAIL-BY-DESIGN pred fázou C. Over: properties::text ilike '%rekuper%' or ilike '%HeatRecovery%' — uprav kľúčové slovo podľa reálnych dát."
     },
     {
+      "id": "fuzzy-diacritics",
+      "category": "psets_custom",
+      "question": "Najdi vzduchotechnicke jednotky",
+      "expect": { "answer_matches": ["TODO-ref"] },
+      "verified": false,
+      "notes": "Dopyt bez diakritiky (D-059 fuzzy) — musí nájsť VZT jednotky. Doplň očakávaný object_ref z prod dát."
+    },
+    {
+      "id": "fuzzy-typo",
+      "category": "psets_custom",
+      "question": "Ktoré prvky vyrába TODO-vyrobca-s-preklepom?",
+      "expect": { "answer_matches": ["TODO-ref"] },
+      "verified": false,
+      "notes": "Zámerný preklep v názve výrobcu (napr. 'Daikni' namiesto 'Daikin') — trigram fuzzy vetva search_everything (threshold 0.4). Vyber výrobcu z prod dát."
+    },
+    {
       "id": "cls-code-of",
       "category": "classifications",
       "question": "Aký klasifikačný kód má prvok DD01.06.03?",
