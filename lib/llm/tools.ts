@@ -84,6 +84,14 @@ export interface AskSource {
   drawings: { docId: string; docName: string | null; page: number | null }[];
 }
 
+/** UI akcia vyžiadaná modelom (show_in_3d…) — klient na ňu naviguje (D-056). */
+export interface AskAction {
+  type: "navigate";
+  /** Interná cesta Viewera (server ju stavia z whitelistu — nikdy nie z modelu). */
+  url: string;
+  label: string;
+}
+
 /** Záznam o vykonanom tool calle (transparentnosť v UI). */
 export interface AskToolTrace {
   name: string;
@@ -294,6 +302,49 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
     },
   },
   {
+    name: "show_in_3d",
+    description:
+      "UI AKCIA: otvorí 3D model so zvýrazneným a priblíženým prvkom. Zavolaj, keď " +
+      "používateľ žiada prvok UKÁZAŤ/ZOBRAZIŤ v 3D. Najprv prvok nájdi (search/locate), " +
+      "potom sem pošli jeho id alebo object_ref. Funguje len pre prvky s IFC GUID (sú z IFC modelu).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        id_or_ref: { type: "string", description: "objects.id (UUID) alebo object_ref prvku" },
+      },
+      required: ["id_or_ref"],
+    },
+  },
+  {
+    name: "open_drawing",
+    description:
+      "UI AKCIA: otvorí výkres/dokument v prehliadačke, voliteľne so zvýrazneným prvkom " +
+      "a stranou. Zavolaj, keď používateľ žiada otvoriť/ukázať výkres alebo prvok vo výkrese " +
+      "(document_id a page zisti cez find_in_drawings).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        document_id: { type: "string", description: "objects.id dokumentu (UUID)" },
+        focus_id: { type: "string", description: "Voliteľné: objects.id prvku na zvýraznenie" },
+        page: { type: "number", description: "Voliteľné: číslo strany" },
+      },
+      required: ["document_id"],
+    },
+  },
+  {
+    name: "open_node",
+    description:
+      "UI AKCIA: otvorí detailnú kartu uzla (asset, typ, miestnosť, podlažie, systém, " +
+      "osoba, organizácia…). Zavolaj, keď používateľ žiada otvoriť/ukázať detail alebo kartu.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        id_or_ref: { type: "string", description: "objects.id (UUID) alebo object_ref uzla" },
+      },
+      required: ["id_or_ref"],
+    },
+  },
+  {
     name: "find_in_drawings",
     description:
       "Výkresy, v ktorých je prvok (asset/asset_type) zobrazený (E4 auto-linking) vrátane " +
@@ -317,6 +368,8 @@ export interface ToolExecution {
 export class AskToolRuntime {
   private sources = new Map<string, AskSource>();
   readonly trace: AskToolTrace[] = [];
+  /** UI akcie vyžiadané modelom — route ich vráti klientovi na vykonanie. */
+  readonly actions: AskAction[] = [];
 
   /** Zaregistruje objekt medzi zdroje (dedupe podľa id). */
   private addSource(row: ObjectRow) {
@@ -393,6 +446,12 @@ export class AskToolRuntime {
         return this.getSpatialPath(input);
       case "find_in_drawings":
         return this.findInDrawings(input);
+      case "show_in_3d":
+        return this.showIn3d(input);
+      case "open_drawing":
+        return this.openDrawing(input);
+      case "open_node":
+        return this.openNode(input);
       default:
         throw new Error(`Neznámy tool '${name}'.`);
     }
@@ -920,6 +979,92 @@ export class AskToolRuntime {
       };
     });
     return { drawings: out };
+  }
+
+  /** Uzol podľa UUID alebo object_ref — spoločné pre akčné tools. */
+  private async resolveObject(idOrRef: string): Promise<ObjectRow | null> {
+    const supabase = getSupabaseAdmin();
+    const value = idOrRef.trim();
+    if (!value) return null;
+    const col = isUuid(value) ? "id" : "object_ref";
+    const { data, error } = await supabase
+      .from("objects")
+      .select("id, object_type, object_ref, name, ifc_type, predefined_type")
+      .eq(col, value)
+      .limit(1);
+    if (error) throw new Error(error.message);
+    const row = (data?.[0] as ObjectRow | undefined) ?? null;
+    if (row) this.addSource(row);
+    return row;
+  }
+
+  private async showIn3d(input: Record<string, unknown>) {
+    const supabase = getSupabaseAdmin();
+    const obj = await this.resolveObject(String(input.id_or_ref ?? ""));
+    if (!obj) throw new Error("Uzol neexistuje — najprv ho nájdi cez search_objects.");
+
+    const { data, error } = await supabase
+      .from("ifc_guid_history")
+      .select("ifc_guid")
+      .eq("object_id", obj.id)
+      .is("valid_until", null)
+      .limit(1);
+    if (error) throw new Error(error.message);
+    const guid = data?.[0]?.ifc_guid as string | undefined;
+    if (!guid) {
+      throw new Error(
+        `Prvok ${obj.object_ref ?? obj.id} nemá aktívny IFC GUID — nie je v 3D modeli.`
+      );
+    }
+
+    const label = obj.object_ref ?? obj.name ?? obj.id.slice(0, 8);
+    this.actions.push({
+      type: "navigate",
+      url: `/ifc?focus=${encodeURIComponent(guid)}`,
+      label: `3D: ${label}`,
+    });
+    return { ok: true, opened: "3d", element: label, ifc_guid: guid };
+  }
+
+  private async openDrawing(input: Record<string, unknown>) {
+    const docId = String(input.document_id ?? "").trim();
+    if (!isUuid(docId)) throw new Error("document_id musí byť UUID (objects.id dokumentu).");
+    const doc = await this.resolveObject(docId);
+    if (!doc || doc.object_type !== "document") {
+      throw new Error("Dokument neexistuje — id výkresu zisti cez find_in_drawings.");
+    }
+
+    const focusId = typeof input.focus_id === "string" && isUuid(input.focus_id.trim())
+      ? input.focus_id.trim()
+      : null;
+    const page =
+      typeof input.page === "number" && Number.isFinite(input.page) && input.page >= 1
+        ? Math.floor(input.page)
+        : null;
+
+    const params = new URLSearchParams();
+    if (focusId) params.set("focus", focusId);
+    if (page) params.set("page", String(page));
+    const qs = params.toString();
+    const label = doc.name ?? doc.object_ref ?? "výkres";
+    this.actions.push({
+      type: "navigate",
+      url: `/drawing/${doc.id}${qs ? `?${qs}` : ""}`,
+      label: `Výkres: ${label}`,
+    });
+    return { ok: true, opened: "drawing", document: label };
+  }
+
+  private async openNode(input: Record<string, unknown>) {
+    const obj = await this.resolveObject(String(input.id_or_ref ?? ""));
+    if (!obj) throw new Error("Uzol neexistuje — najprv ho nájdi cez search_objects.");
+    const label = obj.name ?? obj.object_ref ?? obj.id.slice(0, 8);
+    this.actions.push({
+      type: "navigate",
+      url: `/${routeFor(obj.object_type)}/${obj.id}`,
+      label: `Karta: ${label}`,
+    });
+    return { ok: true, opened: "node", node: label, object_type: obj.object_type };
   }
 
   /**

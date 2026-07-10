@@ -1573,6 +1573,17 @@ a kde" nemal count ani batch lokalizáciu, tak hádal — a lite modely si po zl
   zahodí a vráti sa deterministická chybová hláška (overené live: flash-lite si inak vymyslel
   „12 jednotiek s rozpadom po podlažiach").
 
+**Dodatok (2026-07-10) — globálny dock + UI akcie:** chat presunutý zo samostatnej `/ask`
+stránky na **plávajúci dock pri spodku Viewera** (`ask-dock.tsx` vo `(viewer)` layoute;
+zbalený = pilulka vpravo dole, rozbalený = panel; stav aj vlákno prežívajú navigáciu aj
+reload cez sessionStorage; `ssr:false` cez `next/dynamic` — storage sa číta v useState
+initializeri bez hydration mismatchu). **UI akcie cez tools:** `show_in_3d` (id/ref →
+aktívny GUID → `/ifc?focus=`), `open_drawing` (`/drawing/[id]?focus&page`), `open_node`
+(karta podľa object_type) — server ich vracia ako `actions` (URL stavia výhradne server
+z whitelistu, nikdy model) a klient na prvú naviguje; dock pritom ostáva otvorený, takže
+„zobraz VZT jednotku v 3D" otvorí 3D pod bežiacou konverzáciou. `/ask` stránka a sidebar
+odkaz odstránené (dock ich nahrádza).
+
 ---
 
 ## 8. Budúce rozhodnutia (D-037+)

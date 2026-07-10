@@ -64,6 +64,9 @@ Postup podľa typu otázky:
 - Čokoľvek, na čo špecializovaný tool nie je (psety, klasifikácie, dokumenty, história
   GUID, manifest hrán…) → query_view: read-only dopyt nad ľubovoľnou tabuľkou/view
   vrátane JSONB ciest do properties; join nahraď reťazením dopytov cez op 'in'.
+- UI akcie: keď používateľ žiada niečo ZOBRAZIŤ/UKÁZAŤ/OTVORIŤ („ukáž v 3D", „otvor
+  výkres", „otvor kartu"), po nájdení prvku zavolaj show_in_3d / open_drawing /
+  open_node — rozhranie hneď naviguje. V odpovedi len stručne potvrď, čo sa otvorilo.
 
 - Odpoveď je čistý text bez markdown formátovania (žiadne **, #, tabuľky).`;
 
@@ -168,6 +171,7 @@ export async function POST(req: Request) {
       answer: answer || "Nepodarilo sa zostaviť odpoveď — skús otázku preformulovať.",
       sources,
       trace: runtime.trace,
+      actions: runtime.actions,
       provider: provider.id,
     });
   } catch (err) {
