@@ -171,7 +171,7 @@ export async function POST(req: Request) {
       answer: answer || "Nepodarilo sa zostaviť odpoveď — skús otázku preformulovať.",
       sources,
       trace: runtime.trace,
-      actions: runtime.actions,
+      actions: runtime.finalActions(),
       provider: provider.id,
     });
   } catch (err) {

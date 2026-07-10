@@ -304,15 +304,20 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
   {
     name: "show_in_3d",
     description:
-      "UI AKCIA: otvorí 3D model so zvýrazneným a priblíženým prvkom. Zavolaj, keď " +
-      "používateľ žiada prvok UKÁZAŤ/ZOBRAZIŤ v 3D. Najprv prvok nájdi (search/locate), " +
-      "potom sem pošli jeho id alebo object_ref. Funguje len pre prvky s IFC GUID (sú z IFC modelu).",
+      "UI AKCIA: otvorí 3D model so zvýraznenými a priblíženými prvkami. Zavolaj, keď " +
+      "používateľ žiada prvky UKÁZAŤ/ZOBRAZIŤ v 3D. Najprv prvky nájdi (search/locate), " +
+      "potom pošli VŠETKY naraz v ids_or_refs (viac prvkov = JEDEN call, nie viac callov). " +
+      "Funguje len pre prvky s IFC GUID (sú z IFC modelu).",
     inputSchema: {
       type: "object",
       properties: {
-        id_or_ref: { type: "string", description: "objects.id (UUID) alebo object_ref prvku" },
+        ids_or_refs: {
+          type: "array",
+          items: { type: "string" },
+          description: "objects.id (UUID) alebo object_ref prvkov na zvýraznenie (1–20)",
+        },
+        id_or_ref: { type: "string", description: "Alternatíva pre jediný prvok" },
       },
-      required: ["id_or_ref"],
     },
   },
   {
@@ -1000,30 +1005,53 @@ export class AskToolRuntime {
 
   private async showIn3d(input: Record<string, unknown>) {
     const supabase = getSupabaseAdmin();
-    const obj = await this.resolveObject(String(input.id_or_ref ?? ""));
-    if (!obj) throw new Error("Uzol neexistuje — najprv ho nájdi cez search_objects.");
-
-    const { data, error } = await supabase
-      .from("ifc_guid_history")
-      .select("ifc_guid")
-      .eq("object_id", obj.id)
-      .is("valid_until", null)
-      .limit(1);
-    if (error) throw new Error(error.message);
-    const guid = data?.[0]?.ifc_guid as string | undefined;
-    if (!guid) {
-      throw new Error(
-        `Prvok ${obj.object_ref ?? obj.id} nemá aktívny IFC GUID — nie je v 3D modeli.`
+    const refs: string[] = [];
+    if (Array.isArray(input.ids_or_refs)) {
+      refs.push(
+        ...(input.ids_or_refs as unknown[]).filter(
+          (v): v is string => typeof v === "string" && v.trim().length > 0
+        )
       );
     }
+    const single = String(input.id_or_ref ?? "").trim();
+    if (single) refs.push(single);
+    if (refs.length === 0) throw new Error("Zadaj ids_or_refs (pole) alebo id_or_ref.");
 
-    const label = obj.object_ref ?? obj.name ?? obj.id.slice(0, 8);
+    const shown: { label: string; guid: string }[] = [];
+    const skipped: string[] = [];
+    for (const ref of [...new Set(refs)].slice(0, 20)) {
+      const obj = await this.resolveObject(ref);
+      if (!obj) {
+        skipped.push(`${ref} (neexistuje)`);
+        continue;
+      }
+      const { data, error } = await supabase
+        .from("ifc_guid_history")
+        .select("ifc_guid")
+        .eq("object_id", obj.id)
+        .is("valid_until", null)
+        .limit(1);
+      if (error) throw new Error(error.message);
+      const guid = data?.[0]?.ifc_guid as string | undefined;
+      const label = obj.object_ref ?? obj.name ?? obj.id.slice(0, 8);
+      if (!guid) skipped.push(`${label} (bez IFC GUID — nie je v 3D)`);
+      else shown.push({ label, guid });
+    }
+    if (shown.length === 0) {
+      throw new Error(`Žiadny z prvkov sa nedá zobraziť v 3D: ${skipped.join(", ")}.`);
+    }
+
     this.actions.push({
       type: "navigate",
-      url: `/ifc?focus=${encodeURIComponent(guid)}`,
-      label: `3D: ${label}`,
+      url: `/ifc?focus=${encodeURIComponent(shown.map((s) => s.guid).join(","))}`,
+      label: shown.length === 1 ? `3D: ${shown[0].label}` : `3D: ${shown.length} prvkov`,
     });
-    return { ok: true, opened: "3d", element: label, ifc_guid: guid };
+    return {
+      ok: true,
+      opened: "3d",
+      shown: shown.map((s) => s.label),
+      ...(skipped.length ? { skipped } : {}),
+    };
   }
 
   private async openDrawing(input: Record<string, unknown>) {
@@ -1065,6 +1093,31 @@ export class AskToolRuntime {
       label: `Karta: ${label}`,
     });
     return { ok: true, opened: "node", node: label, object_type: obj.object_type };
+  }
+
+  /**
+   * Akcie pre klienta: viac 3D akcií (model občas zavolá show_in_3d per prvok
+   * napriek inštrukcii) sa zlúči do jednej multi-focus URL — klient vykonáva
+   * len prvú navigáciu, bez zlúčenia by sa zvýraznil jediný prvok.
+   */
+  finalActions(): AskAction[] {
+    const PREFIX = "/ifc?focus=";
+    const ifcActions = this.actions.filter((a) => a.url.startsWith(PREFIX));
+    if (ifcActions.length <= 1) return this.actions;
+
+    const guids = [
+      ...new Set(
+        ifcActions.flatMap((a) =>
+          decodeURIComponent(a.url.slice(PREFIX.length)).split(",")
+        )
+      ),
+    ];
+    const merged: AskAction = {
+      type: "navigate",
+      url: `${PREFIX}${encodeURIComponent(guids.join(","))}`,
+      label: `3D: ${guids.length} prvkov`,
+    };
+    return [merged, ...this.actions.filter((a) => !a.url.startsWith(PREFIX))];
   }
 
   /**

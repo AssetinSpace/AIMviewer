@@ -266,14 +266,23 @@ export function IFCViewer({
         }
         applyFloorFilterRef.current = applyFloorFilter;
 
-        // ── Focus param (karta → 3D) ────────────────────────────────
+        // ── Focus param (karta/AI → 3D) ─────────────────────────────
+        // Viac GUIDov oddelených čiarkou (AI akcia „zobraz ich v 3D", D-056):
+        // zvýrazni všetky a zoomni na ich spoločný bounding box. Floor filter
+        // sa prepne len keď sú všetky na jednom podlaží (inak by skryl zvyšok).
         if (focus) {
-          const meshes = guidToMeshes.get(focus);
-          if (meshes && meshes.length > 0) {
+          const meshes = focus
+            .split(",")
+            .filter(Boolean)
+            .flatMap((g) => guidToMeshes.get(g) ?? []);
+          if (meshes.length > 0) {
             highlightMeshes(meshes);
             zoomToMeshes(meshes, camera, orbitControls);
-            const fl = meshToFloor.get(meshes[0]);
-            if (fl && !cancelled) {
+            const floors = new Set(
+              meshes.map((m) => meshToFloor.get(m)).filter((f): f is string => !!f)
+            );
+            if (floors.size === 1 && !cancelled) {
+              const fl = [...floors][0];
               setActiveFloor(fl);
               applyFloorFilter(fl);
             }
