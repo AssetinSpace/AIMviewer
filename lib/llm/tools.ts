@@ -20,6 +20,43 @@ const DEFAULT_LIMIT = 20;
 const MAX_LIMIT = 50;
 /** Max dĺžka JSON payloadu tool výsledku (ochrana kontextu). */
 const MAX_RESULT_CHARS = 12_000;
+/** Koľko prvkov naraz zvládne lokalizácia (locate_objects). */
+const LOCATE_CAP = 500;
+/** Veľkosť dávky pre `.in()` filtre (limit dĺžky URL v PostgREST). */
+const IN_CHUNK = 100;
+
+/**
+ * Whitelist relácií pre generický query_view (celá čitateľná DB, D-056 dodatok).
+ * Base `relationships` zámerne chýba — LLM dotazuje len kanonické views (D-051).
+ */
+const QUERY_RELATIONS = new Set([
+  "objects",
+  "floors",
+  "documents",
+  "persons",
+  "classification_systems",
+  "classification_references",
+  "ifc_guid_history",
+  "relationship_types",
+  "v_asset_effective",
+  "v_asset_classifications",
+  "v_floors",
+  "v_actors",
+  "rel_aggregates",
+  "rel_contained_in_spatial_structure",
+  "rel_defines_by_type",
+  "rel_associates_document",
+  "rel_associates_classification",
+  "rel_assigns_to_actor",
+  "rel_assigns_to_group",
+  "rel_member_of",
+]);
+
+/** Povolené operátory filtra query_view (PostgREST). */
+const QUERY_OPS = new Set(["eq", "neq", "gt", "gte", "lt", "lte", "like", "ilike", "is", "in"]);
+
+/** Stĺpec alebo JSONB cesta (properties->Pset_X->>Kľúč) — nič iné neprejde. */
+const COLUMN_RE = /^[a-zA-Z_][a-zA-Z0-9_]*(->>?[a-zA-Z0-9_ .-]+)*$/;
 
 /** Whitelist kanonických views vzťahov (D-051) — jediné povolené `rel_type`. */
 const REL_VIEWS = new Set([
@@ -87,19 +124,115 @@ function isUuid(v: string): boolean {
 
 export const TOOL_DEFINITIONS: ToolDefinition[] = [
   {
+    name: "get_model_stats",
+    description:
+      "Slovník modelu: počty uzlov podľa object_type + zoznam IFC tried assetov " +
+      "(ifc_type × predefined_type) s počtami. Zavolaj, keď nevieš, aké triedy/podtypy " +
+      "v projekte existujú, alebo keď search_objects nič nenašiel — zistíš správne hodnoty filtrov.",
+    inputSchema: { type: "object", properties: {} },
+  },
+  {
     name: "search_objects",
     description:
-      "Fulltext vyhľadanie uzlov grafu (objects) podľa názvu alebo object_ref. " +
-      "Voliteľne filtruj podľa object_type (asset, asset_type, space, floor, building, " +
-      "site, system, document, person, organization) alebo IFC triedy (ifc_type, napr. IfcDoor).",
+      "Vyhľadanie uzlov grafu (objects). `query` hľadá naraz v názve, object_ref, IFC triede " +
+      "aj predefined_type (ilike). Filtre: object_type (asset, asset_type, space, floor, " +
+      "building, site, system, document, person, organization), ifc_type = IFC trieda " +
+      "(napr. IfcDoor, IfcUnitaryEquipment), predefined_type = IFC enum podtypu (napr. " +
+      "AIRCONDITIONINGUNIT, VAV). POZOR: podtyp ako AIRCONDITIONINGUNIT je predefined_type, " +
+      "NIE ifc_type. Na počty použi count_objects, na slovník hodnôt get_model_stats.",
     inputSchema: {
       type: "object",
       properties: {
-        query: { type: "string", description: "Hľadaný text (názov alebo object_ref, ilike)" },
+        query: { type: "string", description: "Hľadaný text (názov/object_ref/ifc_type/predefined_type, ilike)" },
         object_type: { type: "string", description: "Filter na object_type" },
-        ifc_type: { type: "string", description: "Filter na IFC triedu (presná zhoda)" },
+        ifc_type: { type: "string", description: "Filter na IFC triedu (case-insensitive zhoda)" },
+        predefined_type: { type: "string", description: "Filter na IFC predefined_type enum (case-insensitive zhoda)" },
         limit: { type: "number", description: `Max riadkov (default ${DEFAULT_LIMIT}, strop ${MAX_LIMIT})` },
       },
+    },
+  },
+  {
+    name: "count_objects",
+    description:
+      "Presný počet uzlov vyhovujúcich filtrom (rovnaké filtre ako search_objects). " +
+      "Použi na otázky typu 'koľko X je v projekte' — search_objects vracia max " +
+      `${MAX_LIMIT} riadkov, takže počítať z jeho výsledkov je nespoľahlivé.`,
+    inputSchema: {
+      type: "object",
+      properties: {
+        query: { type: "string", description: "Hľadaný text (názov/object_ref/ifc_type/predefined_type, ilike)" },
+        object_type: { type: "string", description: "Filter na object_type" },
+        ifc_type: { type: "string", description: "Filter na IFC triedu (case-insensitive zhoda)" },
+        predefined_type: { type: "string", description: "Filter na IFC predefined_type enum (case-insensitive zhoda)" },
+      },
+    },
+  },
+  {
+    name: "locate_objects",
+    description:
+      "Nájde prvky podľa filtrov (rovnaké ako search_objects) a rovno určí, na ktorom " +
+      "podlaží a v ktorej miestnosti sú — vráti presný celkový počet + rozpad po podlažiach " +
+      "so vzorkou prvkov. Ideálne na otázky 'koľko X je v projekte a kde/na akých podlažiach'. " +
+      "Alternatívne miesto filtrov prijme zoznam ids z predchádzajúceho hľadania.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        query: { type: "string", description: "Hľadaný text (názov/object_ref/ifc_type/predefined_type, ilike)" },
+        object_type: { type: "string", description: "Filter na object_type (default asset)" },
+        ifc_type: { type: "string", description: "Filter na IFC triedu (case-insensitive zhoda)" },
+        predefined_type: { type: "string", description: "Filter na IFC predefined_type enum (case-insensitive zhoda)" },
+        ids: { type: "array", items: { type: "string" }, description: "Alternatíva k filtrom: konkrétne objects.id" },
+      },
+    },
+  },
+  {
+    name: "query_view",
+    description:
+      "Generický read-only dopyt nad ľubovoľnou tabuľkou/view v DB (celá dátová vrstva). " +
+      "Relácie: objects (uzly: id, object_type, object_ref, name, ifc_type, predefined_type, " +
+      "user_defined_type, properties JSONB s psetmi), floors (elevation), documents, persons, " +
+      "classification_systems/references, ifc_guid_history, relationship_types (manifest hrán), " +
+      "v_asset_effective (properties s dedičnosťou type→occurrence), v_asset_classifications, " +
+      "v_floors, v_actors a hrany rel_aggregates, rel_contained_in_spatial_structure, " +
+      "rel_defines_by_type, rel_associates_document, rel_associates_classification, " +
+      "rel_assigns_to_actor, rel_assigns_to_group, rel_member_of (všetky: from_id→to_id, " +
+      "valid_until null = aktívna). JSONB cesty fungujú v select aj filtri: " +
+      "properties->Pset_ValveTypeIsolating->>IsNormallyOpen. Join nie je — reťaz dopyty " +
+      "cez op 'in' so zoznamom id z predchádzajúceho výsledku.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        relation: { type: "string", description: "Názov tabuľky/view z whitelistu" },
+        select: {
+          type: "array",
+          items: { type: "string" },
+          description: "Stĺpce (default *). JSONB cesta: properties->Pset->>Kľúč",
+        },
+        filters: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              column: { type: "string" },
+              op: { type: "string", description: "eq|neq|gt|gte|lt|lte|like|ilike|is|in" },
+              value: { description: "Hodnota; pre 'in' pole hodnôt; pre 'is' null" },
+            },
+            required: ["column", "op"],
+          },
+          description: "AND filtre",
+        },
+        order: {
+          type: "object",
+          properties: {
+            column: { type: "string" },
+            ascending: { type: "boolean" },
+          },
+          description: "Zoradenie výsledku",
+        },
+        count_only: { type: "boolean", description: "true = vráť len presný počet riadkov" },
+        limit: { type: "number", description: `Max riadkov (default ${DEFAULT_LIMIT}, strop ${MAX_LIMIT})` },
+      },
+      required: ["relation"],
     },
   },
   {
@@ -200,14 +333,18 @@ export class AskToolRuntime {
   }
 
   private async loadObjects(ids: string[]): Promise<ObjectRow[]> {
-    if (ids.length === 0) return [];
+    const unique = [...new Set(ids)].slice(0, LOCATE_CAP);
+    if (unique.length === 0) return [];
     const supabase = getSupabaseAdmin();
-    const { data, error } = await supabase
-      .from("objects")
-      .select("id, object_type, object_ref, name, ifc_type, predefined_type")
-      .in("id", [...new Set(ids)].slice(0, MAX_LIMIT * 2));
-    if (error) throw new Error(error.message);
-    const rows = (data ?? []) as ObjectRow[];
+    const rows: ObjectRow[] = [];
+    for (let i = 0; i < unique.length; i += IN_CHUNK) {
+      const { data, error } = await supabase
+        .from("objects")
+        .select("id, object_type, object_ref, name, ifc_type, predefined_type")
+        .in("id", unique.slice(i, i + IN_CHUNK));
+      if (error) throw new Error(error.message);
+      rows.push(...((data ?? []) as ObjectRow[]));
+    }
     for (const r of rows) this.addSource(r);
     return rows;
   }
@@ -236,8 +373,16 @@ export class AskToolRuntime {
 
   private async dispatch(name: string, input: Record<string, unknown>): Promise<unknown> {
     switch (name) {
+      case "get_model_stats":
+        return this.getModelStats();
       case "search_objects":
         return this.searchObjects(input);
+      case "count_objects":
+        return this.countObjects(input);
+      case "locate_objects":
+        return this.locateObjects(input);
+      case "query_view":
+        return this.queryView(input);
       case "get_object":
         return this.getObject(input);
       case "get_asset_details":
@@ -253,26 +398,307 @@ export class AskToolRuntime {
     }
   }
 
+  /** Spoločné filtre search_objects/count_objects nad `objects`. */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private applyObjectFilters<T extends { or: any; ilike: any; eq: any }>(
+    q: T,
+    input: Record<string, unknown>
+  ): T {
+    const query = sanitizeQuery(input.query);
+    if (query) {
+      // Hľadáme naprieč identitou aj IFC typológiou — podtyp (AIRCONDITIONINGUNIT)
+      // žije v predefined_type, nie v názve (poučenie z prevádzky, D-056).
+      q = q.or(
+        `name.ilike.%${query}%,object_ref.ilike.%${query}%,` +
+          `ifc_type.ilike.%${query}%,predefined_type.ilike.%${query}%`
+      );
+    }
+    if (typeof input.object_type === "string" && input.object_type)
+      q = q.eq("object_type", input.object_type);
+    // ilike bez % = case-insensitive presná zhoda (model píše ifcdoor/IFCDOOR…).
+    const ifcType = sanitizeQuery(input.ifc_type);
+    if (ifcType) q = q.ilike("ifc_type", ifcType);
+    const predefinedType = sanitizeQuery(input.predefined_type);
+    if (predefinedType) q = q.ilike("predefined_type", predefinedType);
+    return q;
+  }
+
   private async searchObjects(input: Record<string, unknown>) {
     const supabase = getSupabaseAdmin();
     const limit = clampLimit(input.limit);
-    let q = supabase
-      .from("objects")
-      .select("id, object_type, object_ref, name, ifc_type, predefined_type")
-      .limit(limit);
-
-    const query = sanitizeQuery(input.query);
-    if (query) q = q.or(`name.ilike.%${query}%,object_ref.ilike.%${query}%`);
-    if (typeof input.object_type === "string" && input.object_type)
-      q = q.eq("object_type", input.object_type);
-    if (typeof input.ifc_type === "string" && input.ifc_type)
-      q = q.eq("ifc_type", input.ifc_type);
+    const q = this.applyObjectFilters(
+      supabase
+        .from("objects")
+        .select("id, object_type, object_ref, name, ifc_type, predefined_type"),
+      input
+    ).limit(limit);
 
     const { data, error } = await q;
     if (error) throw new Error(error.message);
     const rows = (data ?? []) as ObjectRow[];
     for (const r of rows) this.addSource(r);
+    if (rows.length === 0) {
+      return { rows, hint: "Nič sa nenašlo — zavolaj get_model_stats a over hodnoty filtrov." };
+    }
     return rows;
+  }
+
+  private async countObjects(input: Record<string, unknown>) {
+    const supabase = getSupabaseAdmin();
+    const q = this.applyObjectFilters(
+      supabase.from("objects").select("id", { count: "exact", head: true }),
+      input
+    );
+    const { count, error } = await q;
+    if (error) throw new Error(error.message);
+    return { count: count ?? 0 };
+  }
+
+  /**
+   * Batch lokalizácia: prvky podľa filtrov/ids → podlažie (+ miestnosť) na
+   * jeden call. Containment: prvok →(contained_in) space|floor; space
+   * →(aggregates) floor (MEP býva rovno na podlaží, D-049).
+   */
+  private async locateObjects(input: Record<string, unknown>) {
+    const supabase = getSupabaseAdmin();
+
+    let elements: ObjectRow[];
+    let total: number;
+    const idsInput = Array.isArray(input.ids)
+      ? (input.ids as unknown[]).filter((v): v is string => typeof v === "string" && isUuid(v))
+      : [];
+    if (idsInput.length > 0) {
+      elements = await this.loadObjects(idsInput.slice(0, LOCATE_CAP));
+      total = elements.length;
+    } else {
+      const filters = { object_type: "asset", ...input };
+      const [listRes, countRes] = await Promise.all([
+        this.applyObjectFilters(
+          supabase
+            .from("objects")
+            .select("id, object_type, object_ref, name, ifc_type, predefined_type"),
+          filters
+        ).limit(LOCATE_CAP),
+        this.applyObjectFilters(
+          supabase.from("objects").select("id", { count: "exact", head: true }),
+          filters
+        ),
+      ]);
+      if (listRes.error) throw new Error(listRes.error.message);
+      if (countRes.error) throw new Error(countRes.error.message);
+      elements = (listRes.data ?? []) as ObjectRow[];
+      total = countRes.count ?? elements.length;
+    }
+    if (elements.length === 0) {
+      return { total: 0, hint: "Nič sa nenašlo — over hodnoty filtrov cez get_model_stats." };
+    }
+
+    // Rodičia (space alebo priamo floor) po dávkach.
+    const elementIds = elements.map((e) => e.id);
+    const parentByElement = new Map<string, string>();
+    for (let i = 0; i < elementIds.length; i += IN_CHUNK) {
+      const { data, error } = await supabase
+        .from("rel_contained_in_spatial_structure")
+        .select("from_id, to_id")
+        .in("from_id", elementIds.slice(i, i + IN_CHUNK))
+        .is("valid_until", null);
+      if (error) throw new Error(error.message);
+      for (const r of (data ?? []) as { from_id: string; to_id: string }[]) {
+        parentByElement.set(r.from_id, r.to_id);
+      }
+    }
+
+    const parentIds = [...new Set(parentByElement.values())];
+    const parents = new Map<string, ObjectRow>();
+    for (let i = 0; i < parentIds.length; i += IN_CHUNK) {
+      const { data, error } = await supabase
+        .from("objects")
+        .select("id, object_type, object_ref, name")
+        .in("id", parentIds.slice(i, i + IN_CHUNK));
+      if (error) throw new Error(error.message);
+      for (const r of (data ?? []) as ObjectRow[]) parents.set(r.id, r);
+    }
+
+    // space → floor (rel_aggregates, smer dieťa→rodič).
+    const spaceIds = parentIds.filter((id) => parents.get(id)?.object_type === "space");
+    const floorBySpace = new Map<string, string>();
+    for (let i = 0; i < spaceIds.length; i += IN_CHUNK) {
+      const { data, error } = await supabase
+        .from("rel_aggregates")
+        .select("from_id, to_id")
+        .in("from_id", spaceIds.slice(i, i + IN_CHUNK))
+        .is("valid_until", null);
+      if (error) throw new Error(error.message);
+      for (const r of (data ?? []) as { from_id: string; to_id: string }[]) {
+        floorBySpace.set(r.from_id, r.to_id);
+      }
+    }
+    const floorIds = [...new Set(floorBySpace.values())].filter((id) => !parents.has(id));
+    for (let i = 0; i < floorIds.length; i += IN_CHUNK) {
+      const { data, error } = await supabase
+        .from("objects")
+        .select("id, object_type, object_ref, name")
+        .in("id", floorIds.slice(i, i + IN_CHUNK));
+      if (error) throw new Error(error.message);
+      for (const r of (data ?? []) as ObjectRow[]) parents.set(r.id, r);
+    }
+
+    // Zoskupenie po podlažiach; vzorka prvkov (+miestnosť) na podlažie.
+    const SAMPLE = 10;
+    const groups = new Map<
+      string,
+      { floor: { id: string; name: string | null; object_ref: string | null } | null; count: number; sample: unknown[] }
+    >();
+    for (const el of elements) {
+      const parentId = parentByElement.get(el.id);
+      const parent = parentId ? parents.get(parentId) : undefined;
+      const floorId =
+        parent?.object_type === "floor"
+          ? parent.id
+          : parent?.object_type === "space"
+            ? floorBySpace.get(parent.id)
+            : undefined;
+      const floor = floorId ? parents.get(floorId) : undefined;
+      const key = floor?.id ?? "bez-podlažia";
+      let g = groups.get(key);
+      if (!g) {
+        g = {
+          floor: floor
+            ? { id: floor.id, name: floor.name ?? null, object_ref: floor.object_ref ?? null }
+            : null,
+          count: 0,
+          sample: [],
+        };
+        groups.set(key, g);
+        if (floor) this.addSource(floor);
+      }
+      g.count += 1;
+      if (g.sample.length < SAMPLE) {
+        this.addSource(el);
+        g.sample.push({
+          id: el.id,
+          object_ref: el.object_ref,
+          name: el.name,
+          ifc_type: el.ifc_type,
+          predefined_type: el.predefined_type,
+          space: parent?.object_type === "space" ? (parent.name ?? parent.object_ref) : null,
+        });
+      }
+    }
+
+    return {
+      total,
+      located: elements.length,
+      truncated: total > elements.length,
+      by_floor: [...groups.values()].sort((a, b) => b.count - a.count),
+    };
+  }
+
+  /** Generický read-only dopyt nad whitelistom relácií (celá dátová vrstva). */
+  private async queryView(input: Record<string, unknown>) {
+    const supabase = getSupabaseAdmin();
+    const relation = String(input.relation ?? "").trim();
+    if (!QUERY_RELATIONS.has(relation)) {
+      throw new Error(
+        `Relácia '${relation}' nie je vo whiteliste. Povolené: ${[...QUERY_RELATIONS].join(", ")}.`
+      );
+    }
+
+    const selectCols = Array.isArray(input.select)
+      ? (input.select as unknown[]).filter(
+          (c): c is string => typeof c === "string" && COLUMN_RE.test(c)
+        )
+      : [];
+    const select = selectCols.length > 0 ? selectCols.join(", ") : "*";
+
+    const countOnly = input.count_only === true;
+    let q = countOnly
+      ? supabase.from(relation).select("*", { count: "exact", head: true })
+      : supabase.from(relation).select(select).limit(clampLimit(input.limit));
+
+    const filters = Array.isArray(input.filters) ? (input.filters as unknown[]) : [];
+    for (const f of filters) {
+      if (typeof f !== "object" || f === null) continue;
+      const { column, op, value } = f as { column?: unknown; op?: unknown; value?: unknown };
+      const col = String(column ?? "");
+      const operator = String(op ?? "");
+      if (!COLUMN_RE.test(col)) throw new Error(`Neplatný stĺpec '${col}'.`);
+      if (!QUERY_OPS.has(operator))
+        throw new Error(`Neplatný operátor '${operator}' — povolené: ${[...QUERY_OPS].join(", ")}.`);
+      if (operator === "in") {
+        const vals = Array.isArray(value) ? value : [value];
+        q = q.in(col, vals.slice(0, IN_CHUNK));
+      } else if (operator === "is") {
+        q = q.is(col, value === "null" ? null : (value as boolean | null));
+      } else {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        q = (q as any)[operator](col, value);
+      }
+    }
+
+    const order = input.order as { column?: unknown; ascending?: unknown } | undefined;
+    if (!countOnly && order && typeof order.column === "string" && COLUMN_RE.test(order.column)) {
+      q = q.order(order.column, { ascending: order.ascending !== false });
+    }
+
+    const { data, count, error } = await q;
+    if (error) throw new Error(error.message);
+    if (countOnly) return { count: count ?? 0 };
+
+    const rows = (data ?? []) as Record<string, unknown>[];
+    // Uzly do zdrojov (trust loop) — podľa tvaru riadku (objects/v_* views).
+    for (const r of rows) {
+      if (typeof r.id === "string" && (typeof r.object_type === "string" || relation === "v_asset_effective")) {
+        this.addSource({
+          id: r.id,
+          object_type: (r.object_type as string | undefined) ?? "asset",
+          object_ref: (r.object_ref as string | null | undefined) ?? null,
+          name: (r.name as string | null | undefined) ?? null,
+        });
+      }
+    }
+    return { rows, row_count: rows.length };
+  }
+
+  /** Slovník modelu — grounding pre filtre (model nemusí hádať hodnoty). */
+  private async getModelStats() {
+    const supabase = getSupabaseAdmin();
+    const { data, error } = await supabase
+      .from("objects")
+      .select("object_type, ifc_type, predefined_type")
+      .limit(10000);
+    if (error) throw new Error(error.message);
+
+    const byObjectType = new Map<string, number>();
+    const byClass = new Map<string, { ifc_type: string; predefined_type: string | null; count: number }>();
+    for (const r of (data ?? []) as {
+      object_type: string;
+      ifc_type: string | null;
+      predefined_type: string | null;
+    }[]) {
+      byObjectType.set(r.object_type, (byObjectType.get(r.object_type) ?? 0) + 1);
+      if ((r.object_type === "asset" || r.object_type === "asset_type") && r.ifc_type) {
+        const key = `${r.object_type}|${r.ifc_type}|${r.predefined_type ?? ""}`;
+        const entry = byClass.get(key);
+        if (entry) entry.count += 1;
+        else
+          byClass.set(key, {
+            ifc_type: r.ifc_type,
+            predefined_type: r.predefined_type,
+            count: 1,
+          });
+      }
+    }
+
+    return {
+      object_types: Object.fromEntries(byObjectType),
+      // Len occurrence triedy (asset) — typy by duplikovali slovník.
+      asset_classes: [...byClass.entries()]
+        .filter(([k]) => k.startsWith("asset|"))
+        .map(([, v]) => v)
+        .sort((a, b) => b.count - a.count)
+        .slice(0, 150),
+    };
   }
 
   private async getObject(input: Record<string, unknown>) {
@@ -508,29 +934,35 @@ export class AskToolRuntime {
 
     try {
       const ids = all.map((s) => s.id);
-      const [guidRes, drawRes] = await Promise.all([
-        supabase
-          .from("ifc_guid_history")
-          .select("object_id, ifc_guid")
-          .in("object_id", ids)
-          .is("valid_until", null),
-        supabase
-          .from("rel_associates_document")
-          .select("from_id, to_id")
-          .in("from_id", ids)
-          .eq("source", PDF_LINK_SOURCE)
-          .is("valid_until", null),
-      ]);
-
-      if (!guidRes.error) {
-        const guidById = new Map(
-          (guidRes.data ?? []).map((g) => [g.object_id as string, g.ifc_guid as string])
-        );
-        for (const s of all) s.ifcGuid = guidById.get(s.id) ?? null;
+      const guidById = new Map<string, string>();
+      const relRows: { from_id: string; to_id: string }[] = [];
+      for (let i = 0; i < ids.length; i += IN_CHUNK) {
+        const chunk = ids.slice(i, i + IN_CHUNK);
+        const [guidRes, drawRes] = await Promise.all([
+          supabase
+            .from("ifc_guid_history")
+            .select("object_id, ifc_guid")
+            .in("object_id", chunk)
+            .is("valid_until", null),
+          supabase
+            .from("rel_associates_document")
+            .select("from_id, to_id")
+            .in("from_id", chunk)
+            .eq("source", PDF_LINK_SOURCE)
+            .is("valid_until", null),
+        ]);
+        if (!guidRes.error) {
+          for (const g of guidRes.data ?? [])
+            guidById.set(g.object_id as string, g.ifc_guid as string);
+        }
+        if (!drawRes.error) {
+          relRows.push(...((drawRes.data ?? []) as { from_id: string; to_id: string }[]));
+        }
       }
 
-      if (!drawRes.error) {
-        const relRows = (drawRes.data ?? []) as { from_id: string; to_id: string }[];
+      for (const s of all) s.ifcGuid = guidById.get(s.id) ?? null;
+
+      {
         const docIds = [...new Set(relRows.map((r) => r.to_id))];
         if (docIds.length > 0) {
           const { data: docs } = await supabase

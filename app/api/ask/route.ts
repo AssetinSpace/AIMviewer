@@ -35,14 +35,36 @@ organization) a IFC-kanonické vzťahy (rel_* views). Identita prvkov: object_re
 čitateľný SNIM kód (napr. DD01.06.03), IFC GUID spája dáta s 3D modelom.
 
 Pravidlá:
-- Na fakty VŽDY použi tools — nič si nedomýšľaj. Ak tools nič nenájdu, povedz to.
+- Na fakty VŽDY použi tools — nič si nedomýšľaj a nevzdávaj sa po prvom prázdnom
+  výsledku. Preformuluj filtre, over slovník cez get_model_stats, skús synonymá —
+  „nenašiel som" povedz až po vyčerpaní možností.
+- Ak tool vráti CHYBU, výsledok si NIKDY nevymýšľaj — oznám, že dáta sa nepodarilo
+  načítať. Čísla a fakty smú pochádzať len z úspešných tool výsledkov.
 - Cituj object_ref (prípadne názov) každého prvku, o ktorom hovoríš.
 - Odpovedaj v jazyku otázky (default slovenčina), stručne a vecne.
-- Typický postup: search_objects → get_object/get_asset_details → list_relations /
-  get_spatial_path / find_in_drawings podľa otázky.
-- Vzťahy: rel_contained_in_spatial_structure = prvok v priestore; rel_aggregates =
-  dekompozícia štruktúry; rel_assigns_to_group = člen systému (smer člen→systém);
-  rel_assigns_to_actor = zodpovednosť (smer aktor→uzol).
+
+IFC typológia a doménové pojmy:
+- ifc_type = IFC trieda (IfcDoor, IfcUnitaryEquipment, IfcDuctSegment…),
+  predefined_type = enum podtypu (AIRCONDITIONINGUNIT, VAV, ISOLATING…). Podtyp
+  spomenutý používateľom filtruj cez predefined_type, nie ifc_type.
+- Používateľ hovorí jazykom profesie, preklad na IFC urob sám. Príklady: VZT/
+  vzduchotechnická jednotka → IfcUnitaryEquipment (AIRCONDITIONINGUNIT/AIRHANDLER);
+  potrubie → IfcDuctSegment/IfcPipeSegment; vyústka → IfcAirTerminal; ventilátor →
+  IfcFan; ventil → IfcValve; dvere → IfcDoor; stena → IfcWall. Ak si nie si istý,
+  get_model_stats vráti presný slovník tried modelu s počtami.
+
+Postup podľa typu otázky:
+- „koľko X a kde/na akých podlažiach" → locate_objects (presný počet + rozpad po
+  podlažiach na jeden call). Len počet → count_objects.
+- Konkrétny prvok → search_objects/get_object → get_asset_details / get_spatial_path /
+  find_in_drawings / list_relations.
+- Systémy (VZT vetvy, ÚK…): uzly object_type='system', členstvo cez rel_assigns_to_group
+  (smer člen→systém); rel_contained_in_spatial_structure = prvok v priestore/podlaží;
+  rel_aggregates = dekompozícia štruktúry; rel_assigns_to_actor = zodpovednosť.
+- Čokoľvek, na čo špecializovaný tool nie je (psety, klasifikácie, dokumenty, história
+  GUID, manifest hrán…) → query_view: read-only dopyt nad ľubovoľnou tabuľkou/view
+  vrátane JSONB ciest do properties; join nahraď reťazením dopytov cez op 'in'.
+
 - Odpoveď je čistý text bez markdown formátovania (žiadne **, #, tabuľky).`;
 
 interface AskRequestBody {
@@ -123,6 +145,22 @@ export async function POST(req: Request) {
         });
       }
       messages.push({ role: "user", content: results });
+    }
+
+    // Poistka proti konfabulácii: keď VŠETKY tool cally zlyhali, model nemá
+    // žiadne dáta — jeho text sa nesmie tváriť ako fakt (overené: lite modely
+    // si po chybách vymyslia čísla napriek promptu).
+    const allToolsFailed =
+      runtime.trace.length > 0 && runtime.trace.every((t) => !t.ok);
+    if (allToolsFailed) {
+      return NextResponse.json({
+        answer:
+          "Dáta sa nepodarilo načítať (chyba pripojenia k databáze) — odpoveď " +
+          "nemám z čoho podložiť. Skús to o chvíľu znova.",
+        sources: [],
+        trace: runtime.trace,
+        provider: provider.id,
+      });
     }
 
     const sources = await runtime.finalizeSources();
