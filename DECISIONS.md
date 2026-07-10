@@ -1595,6 +1595,14 @@ Dock prestavaný na **voľné okno**: drag za hlavičku, resize za pravý dolný
 320×300, clamp do viewportu aj pri resize okna prehliadača), geometria v sessionStorage;
 default ostáva ukotvené pri spodku v strede.
 
+**Druhé kolo (root cause):** ani multi-focus URL nepomohla — hlavný efekt viewera beží
+len na `[modelsKey]` a focus aplikoval **iba pri načítaní modelu**. AI dock ale mení
+`?focus=` **soft navigáciou** (komponent sa neremountuje, model sa nereloadne) → nový
+focus sa ignoroval. Oprava vzorom `applyFloorFilterRef`: `applyFocus` žije v ref-e
+(obnoví materiály predchádzajúceho focusu, zvýrazní nové meshe, zoomne na spoločný bbox,
+multi-floor = floor filter vypne) a samostatný efekt na `[focus]` ju volá pri každej
+zmene. Kapacita zvýrazniť veľa meshov naraz nebola problém — filter bar to robí bežne.
+
 ---
 
 ## 8. Budúce rozhodnutia (D-037+)
