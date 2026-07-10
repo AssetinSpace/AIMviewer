@@ -1,0 +1,306 @@
+{
+  "note": "Zlatá eval sada pre /api/ask (D-057). Otázky sú písané na prod dataset (Office centrum Brno). Polia expect.* vyhodnocuje scripts/eval-ask.ts nad JSON odpoveďou /api/ask (answer, sources, trace). verified=false znamená: očakávané hodnoty ešte neboli overené dopytom do prod DB — runner ich preskakuje, kým sa nedoplnia (spusti s --include-unverified, over hodnotu podľa notes a doplň expect + verified=true). Regexy sú case-insensitive.",
+  "questions": [
+    {
+      "id": "smoke-notool",
+      "category": "smoke",
+      "mock_only": true,
+      "question": "notool:ping",
+      "expect": { "answer_matches": ["Mock odpoveď bez toolu: ping"] },
+      "verified": true,
+      "notes": "Mechanika runnera + priama odpoveď mock providera (lib/llm/mock.ts). Beží len s LLM_PROVIDER=mock."
+    },
+    {
+      "id": "smoke-tool-loop",
+      "category": "smoke",
+      "mock_only": true,
+      "question": "test vyhľadania dverí",
+      "expect": {
+        "answer_matches": ["Mock odpoveď: tool dobehol|Dáta sa nepodarilo načítať"]
+      },
+      "verified": true,
+      "notes": "Tool slučka end-to-end: s DB prejde search_objects (mock odpovie 'tool dobehol'), bez DB sa overí anti-konfabulačná poistka route. Oba výsledky = mechanika OK."
+    },
+    {
+      "id": "counts-doors",
+      "category": "counts",
+      "question": "Koľko dverí je v budove?",
+      "expect": { "answer_matches": ["\\bTODO\\b"], "source_types": ["asset"] },
+      "verified": false,
+      "notes": "Over: select count(*) from objects where object_type='asset' and ifc_type='IfcDoor'; — doplň číslo ako \\b<N>\\b."
+    },
+    {
+      "id": "counts-vzt",
+      "category": "counts",
+      "question": "Koľko vzduchotechnických jednotiek máme v projekte?",
+      "expect": { "answer_matches": ["\\bTODO\\b"] },
+      "verified": false,
+      "notes": "Over: select count(*) from objects where object_type='asset' and ifc_type='IfcUnitaryEquipment'; (predefined_type AIRCONDITIONINGUNIT/AIRHANDLER — D-056)."
+    },
+    {
+      "id": "counts-spaces",
+      "category": "counts",
+      "question": "Koľko miestností je v budove?",
+      "expect": { "answer_matches": ["\\bTODO\\b"] },
+      "verified": false,
+      "notes": "Over: select count(*) from objects where object_type='space';"
+    },
+    {
+      "id": "counts-floors",
+      "category": "counts",
+      "question": "Koľko podlaží má budova?",
+      "expect": { "answer_matches": ["\\bTODO\\b"], "source_types": ["floor"] },
+      "verified": false,
+      "notes": "Over: select count(*) from objects where object_type='floor'; POZOR na federované VZT podlažia normalizované na spoločný label (D-049)."
+    },
+    {
+      "id": "counts-airterminals",
+      "category": "counts",
+      "question": "Koľko vyústok vzduchotechniky je v projekte?",
+      "expect": { "answer_matches": ["\\bTODO\\b"] },
+      "verified": false,
+      "notes": "Over: select count(*) from objects where object_type='asset' and ifc_type='IfcAirTerminal';"
+    },
+    {
+      "id": "counts-documents",
+      "category": "counts",
+      "question": "Koľko dokumentov evidujeme?",
+      "expect": { "answer_matches": ["\\bTODO\\b"] },
+      "verified": false,
+      "notes": "Over: select count(*) from objects where object_type='document';"
+    },
+    {
+      "id": "loc-ref-floor",
+      "category": "location",
+      "question": "Na ktorom podlaží je prvok DD01.06.03?",
+      "expect": {
+        "answer_matches": ["TODO-nazov-podlazia"],
+        "sources_any_ref": ["DD01.06.03"]
+      },
+      "verified": false,
+      "notes": "Over cez get_spatial_path / SQL reťaz rel_contained_in_spatial_structure → rel_aggregates. DD01.06.03 = príklad SNIM kódu zo system promptu — over, že existuje."
+    },
+    {
+      "id": "loc-vzt-floors",
+      "category": "location",
+      "question": "Na ktorých podlažiach sú vzduchotechnické jednotky?",
+      "expect": { "answer_matches": ["TODO-podlazie"] },
+      "verified": false,
+      "notes": "Over: locate_objects ifc_type=IfcUnitaryEquipment (rozpad po podlažiach). MEP prvky bývajú contained priamo na podlaží (D-049)."
+    },
+    {
+      "id": "loc-fans",
+      "category": "location",
+      "question": "Kde sa nachádzajú ventilátory a koľko ich je?",
+      "expect": { "answer_matches": ["\\bTODO\\b"] },
+      "verified": false,
+      "notes": "Over: locate_objects ifc_type=IfcFan — presný počet + podlažia."
+    },
+    {
+      "id": "loc-ref-space",
+      "category": "location",
+      "question": "V ktorej miestnosti je prvok DD01.06.03?",
+      "expect": {
+        "answer_matches": ["TODO-miestnost"],
+        "sources_any_ref": ["DD01.06.03"]
+      },
+      "verified": false,
+      "notes": "Over: rel_contained_in_spatial_structure from_id=<id prvku> → space. Ak je prvok contained na podlaží (nie v miestnosti), uprav očakávanie."
+    },
+    {
+      "id": "loc-spatial-path",
+      "category": "location",
+      "question": "Ukáž celé priestorové zaradenie prvku DD01.06.03 — od areálu po miestnosť.",
+      "expect": {
+        "answer_matches": ["TODO-budova"],
+        "sources_any_ref": ["DD01.06.03"],
+        "source_types": ["asset"]
+      },
+      "verified": false,
+      "notes": "Over: get_spatial_path — očakávaj názvy site/building/floor v odpovedi."
+    },
+    {
+      "id": "ps-std-isexternal",
+      "category": "psets_standard",
+      "question": "Ktoré dvere sú exteriérové?",
+      "expect": { "answer_matches": ["TODO-ref-alebo-pocet"] },
+      "verified": false,
+      "notes": "Over: select count(*) from objects where ifc_type='IfcDoor' and (properties->'Pset_DoorCommon'->>'IsExternal')::boolean; — cez v_asset_effective (dedičnosť z typu!)."
+    },
+    {
+      "id": "ps-std-firerating",
+      "category": "psets_standard",
+      "question": "Akú požiarnu odolnosť majú dvere DD01.06.03?",
+      "expect": {
+        "answer_matches": ["TODO-hodnota"],
+        "sources_any_ref": ["DD01.06.03"]
+      },
+      "verified": false,
+      "notes": "Over: select properties->'Pset_DoorCommon'->>'FireRating' from v_asset_effective where object_ref='DD01.06.03'; Ak prvok nie je dvere / pset chýba, vyber iný prvok."
+    },
+    {
+      "id": "ps-std-flowrate",
+      "category": "psets_standard",
+      "question": "Aký nominálny prietok vzduchu má najväčšia VZT jednotka?",
+      "expect": { "answer_matches": ["\\bTODO\\b"] },
+      "verified": false,
+      "notes": "Over: max prietok z psetov IfcUnitaryEquipment (napr. Pset_UnitaryEquipmentTypeCommon / výrobcovské pset polia) cez v_asset_effective."
+    },
+    {
+      "id": "ps-std-doorwidth",
+      "category": "psets_standard",
+      "question": "Akú šírku majú dvere DD01.06.03?",
+      "expect": {
+        "answer_matches": ["\\bTODO\\b"],
+        "sources_any_ref": ["DD01.06.03"]
+      },
+      "verified": false,
+      "notes": "Over: Qto_DoorBaseQuantities.Width alebo atribútové pole v psete; jednotky mm/m — akceptuj obe formy v regexe."
+    },
+    {
+      "id": "ps-std-spacearea",
+      "category": "psets_standard",
+      "question": "Aká je podlahová plocha miestnosti TODO-nazov-miestnosti?",
+      "expect": { "answer_matches": ["\\bTODO\\b"] },
+      "verified": false,
+      "notes": "Vyber reálnu miestnosť; over: Qto_SpaceBaseQuantities.NetFloorArea (properties space uzla)."
+    },
+    {
+      "id": "pc-manufacturer",
+      "category": "psets_custom",
+      "question": "Ktoré zariadenia sú od výrobcu TODO-vyrobca?",
+      "expect": { "answer_matches": ["TODO-ref"] },
+      "verified": false,
+      "notes": "FAIL-BY-DESIGN pred fázou C (D-059): hodnota žije v (custom) psete, search_objects ju nevidí. Over: select object_ref, properties from objects where properties::text ilike '%<vyrobca>%'; — vyber výrobcu, ktorý sa v dátach reálne vyskytuje."
+    },
+    {
+      "id": "pc-serial",
+      "category": "psets_custom",
+      "question": "Nájdi prvok so sériovým číslom TODO-serial.",
+      "expect": { "answer_matches": ["TODO-ref"] },
+      "verified": false,
+      "notes": "FAIL-BY-DESIGN pred fázou C. Over: properties::text ilike '%SerialNumber%' — vyber reálne sériové číslo z dát."
+    },
+    {
+      "id": "pc-material",
+      "category": "psets_custom",
+      "question": "Ktoré prvky majú vo vlastnostiach uvedený materiál TODO-material?",
+      "expect": { "answer_matches": ["TODO-ref-alebo-pocet"] },
+      "verified": false,
+      "notes": "FAIL-BY-DESIGN pred fázou C. Vyber materiál vyskytujúci sa v pset hodnotách (pozink, oceľ…): properties::text ilike '%<material>%'."
+    },
+    {
+      "id": "pc-keyword",
+      "category": "psets_custom",
+      "question": "Nájdi všetky prvky, ktoré majú vo vlastnostiach spomenutú rekuperáciu.",
+      "expect": { "answer_matches": ["TODO-ref-alebo-pocet"] },
+      "verified": false,
+      "notes": "FAIL-BY-DESIGN pred fázou C. Over: properties::text ilike '%rekuper%' or ilike '%HeatRecovery%' — uprav kľúčové slovo podľa reálnych dát."
+    },
+    {
+      "id": "cls-code-of",
+      "category": "classifications",
+      "question": "Aký klasifikačný kód má prvok DD01.06.03?",
+      "expect": {
+        "answer_matches": ["TODO-kod"],
+        "sources_any_ref": ["DD01.06.03"]
+      },
+      "verified": false,
+      "notes": "Over: v_asset_classifications + classification_references pre daný prvok (vrátane kódov zdedených z typu — union, D-023)."
+    },
+    {
+      "id": "cls-elements-of",
+      "category": "classifications",
+      "question": "Ktoré prvky majú klasifikáciu TODO-kod?",
+      "expect": { "answer_matches": ["TODO-ref"] },
+      "verified": false,
+      "notes": "Vyber reálny kód: select identification, count(*) from classification_references cr join relationships r on r.to_id=cr.id group by 1 order by 2 desc;"
+    },
+    {
+      "id": "cls-systems",
+      "category": "classifications",
+      "question": "Aké klasifikačné systémy v projekte používame?",
+      "expect": { "answer_matches": ["TODO-nazov-systemu"] },
+      "verified": false,
+      "notes": "Over: select name from classification_systems; — očakávaj všetky názvy v odpovedi."
+    },
+    {
+      "id": "rel-system-members",
+      "category": "relations",
+      "question": "Ktoré prvky patria do systému TODO-nazov-systemu?",
+      "expect": { "answer_matches": ["TODO-ref"], "source_types": ["system"] },
+      "verified": false,
+      "notes": "Vyber reálny systém: select name from objects where object_type='system'; členstvo cez rel_assigns_to_group (smer člen→systém, D-047)."
+    },
+    {
+      "id": "rel-actor",
+      "category": "relations",
+      "question": "Kto je zodpovedný za prvok DD01.06.03?",
+      "expect": { "answer_matches": ["TODO-meno"] },
+      "verified": false,
+      "notes": "Over: rel_assigns_to_actor to_id=<id prvku> (aktor→objekt). Ak prvok nemá zodpovednosť, vyber iný uzol (napr. budovu/dokument zo seedu zodpovedností)."
+    },
+    {
+      "id": "rel-type-occurrences",
+      "category": "relations",
+      "question": "Koľko výskytov má typ TODO-nazov-typu?",
+      "expect": { "answer_matches": ["\\bTODO\\b"], "source_types": ["asset_type"] },
+      "verified": false,
+      "notes": "Vyber typ s viacerými výskytmi: select to_id, count(*) from rel_defines_by_type group by 1 order by 2 desc limit 5;"
+    },
+    {
+      "id": "rel-doc-assoc",
+      "category": "relations",
+      "question": "Ktoré dokumenty sú priradené k prvku DD01.06.03?",
+      "expect": { "answer_matches": ["TODO-nazov-dokumentu"] },
+      "verified": false,
+      "notes": "Over: rel_associates_document from_id=<id prvku> (vrátane E4 väzieb source='pdf_link (E4)')."
+    },
+    {
+      "id": "doc-drawings-of",
+      "category": "documents",
+      "question": "Na ktorých výkresoch je zobrazený prvok DD01.06.03?",
+      "expect": {
+        "answer_matches": ["TODO-nazov-vykresu"],
+        "sources_any_ref": ["DD01.06.03"]
+      },
+      "verified": false,
+      "notes": "Over: find_in_drawings — E4 väzby + čísla strán z _drawing_links (D-042). Očakávaj názov výkresu, ideálne aj stranu."
+    },
+    {
+      "id": "doc-meta",
+      "category": "documents",
+      "question": "Aké výkresy pôdorysov máme v projekte?",
+      "expect": { "answer_matches": ["TODO-nazov-vykresu"] },
+      "verified": false,
+      "notes": "Over: select name from objects where object_type='document' and name ilike '%pudorys%' (CDE popis, D-036)."
+    },
+    {
+      "id": "neg-valves",
+      "category": "negative",
+      "question": "Koľko uzatváracích ventilov je v budove?",
+      "expect": {
+        "answer_not_matches": ["\\b[1-9][0-9]*\\s*(uzatvárac|ventil)"],
+        "no_facts": true
+      },
+      "verified": true,
+      "notes": "V dátach je 0 IfcValve (len ARCH+VZT modely, D-049/D-056). Model musí povedať, že žiadne nenašiel — NIE vymyslieť počet. POZOR: po importe ÚK/ZTI (ventilový use-case) túto otázku preveď na verified count."
+    },
+    {
+      "id": "neg-nonexistent-ref",
+      "category": "negative",
+      "question": "Čo je prvok ZZZ99.99.99?",
+      "expect": { "no_facts": true },
+      "verified": true,
+      "notes": "Neexistujúci object_ref — model musí priznať, že uzol nenašiel, žiadne vymyslené fakty."
+    },
+    {
+      "id": "neg-lifts",
+      "category": "negative",
+      "question": "Koľko výťahov je v budove?",
+      "expect": { "no_facts": true },
+      "verified": false,
+      "notes": "Over: select count(*) from objects where ifc_type ilike '%transport%' or name ilike '%výťah%'; — ak 0, prepni verified=true; ak existujú, preveď na verified count otázku."
+    }
+  ]
+}

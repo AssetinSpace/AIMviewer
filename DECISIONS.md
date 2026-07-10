@@ -1595,6 +1595,36 @@ Dock prestavaný na **voľné okno**: drag za hlavičku, resize za pravý dolný
 320×300, clamp do viewportu aj pri resize okna prehliadača), geometria v sessionStorage;
 default ostáva ukotvené pri spodku v strede.
 
+### D-057 — Eval harness pre LLM rozhranie (zlaté otázky)
+**Rozhodnutie:** Presnosť `/api/ask` sa meria **deterministickou eval sadou**, nie pocitom —
+každá zmena LLM vrstvy (tools, prompt, model) sa pred commitom overí behom evalov a výsledok
+sa porovná s baseline. Prvý krok programu presnosti (analýza 2026-07-10: schéma je pre LLM
+dotazovanie správna, limituje grounding/agregácie/model — D-058 až D-063 stavajú na meraní
+odtiaľto).
+
+**Implementácia:**
+- **`eval/questions.json`** — ~32 zlatých otázok v kategóriách counts / location /
+  psets_standard / psets_custom (fail-by-design pred D-059 — metrika úspechu fulltextu) /
+  classifications / relations / documents / negative (anti-konfabulácia) + 2 `smoke`
+  (mock-only, mechanika slučky). Skórovanie deterministické, bez LLM-judge (v1):
+  regex asercie nad `answer` (`answer_matches`/`answer_not_matches`), kontrola trust-loop
+  **`sources`** (`sources_any_ref`/`source_types` — dôkazy zbiera server, nezávisí od
+  formulácie modelu) a `no_facts` pre negatívne otázky (musí zaznieť „nenašiel som",
+  žiadne viacciferné čísla, a beh so všetkými zlyhanými tools sa nepočíta — fallback
+  pri výpadku DB nie je dôkaz).
+- **`scripts/eval-ask.ts`** (`npm run eval`, tsx) — POST na bežiaci dev server
+  (`--base-url`), `--runs N` (variancia), `--label` (porovnanie modelov), `--filter`
+  (kategória/id). Výstup: tabuľka per kategória + JSON `eval/results/<ts>_<label>.json`;
+  baseline runy sa commitujú.
+- **`verified` workflow:** otázky písané na prod dataset (Office centrum Brno) majú
+  v `notes` verifikačný dopyt; kým sa očakávaná hodnota neoverí proti prod DB, otázka má
+  `verified=false` a runner ju preskakuje (spustí ju `--include-unverified` — odpovede sa
+  vypíšu na doplnenie očakávaní, do headline pass-rate sa nerátajú). Vyplnenie hodnôt =
+  prvý krok pri behu s prod prístupom; potom sa commitne baseline.
+
+**Overené:** mock smoke (`--filter smoke`) 2/2 — mechanika runnera, tool slučka aj
+anti-konfabulačná vetva bez API kľúča a bez DB.
+
 ---
 
 ## 8. Budúce rozhodnutia (D-037+)
@@ -1684,6 +1714,7 @@ polí pasport↔Odoo, metóda zamerania (3D scan/Matterport/ručne — zatiaľ n
 > Kompaktný reverse-chrono log pridaných/zmenených rozhodnutí. Plný kontext = príslušný
 > D-záznam vyššie.
 
+- **2026-07-10** — **D-057 (eval harness):** zlaté otázky `eval/questions.json` + runner `scripts/eval-ask.ts` (`npm run eval`) — deterministické skórovanie answer/sources/no_facts, verified workflow nad prod datasetom, mock smoke overený. Štart programu presnosti LLM dotazov (→ D-058…D-063).
 - **2026-07-09** — **D-056 kadencia 1 (F6 — LLM rozhranie):** provider vrstva `lib/llm/` (Anthropic cez fetch + mock, API-pluggable), read-only tools nad whitelist views s row-capom, agentická slučka `/api/ask`, trust-loop zdroje zbierané deterministicky serverom (deep-linky karta/3D/výkres), UI `/ask`.
 - **2026-07-09** — **D-050 (3D vrstva federácie):** multi-model render ASR+VZT v jednej scéne, identita cez IFC GUID, floor filter cez normalizované podlažie.
 - **2026-07-09** — **Výkon preklikávania, kolo 2 (dodatok 2 D-030):** spinner na kliknutom

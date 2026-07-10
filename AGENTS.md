@@ -207,3 +207,8 @@ normalizuje na spoločný label (`1NP_VZT`→`1NP`, D-049).
 ## ETL — spustenie
 Python 3.9+ (`py -3.9`), `PYTHONUTF8=1` na Windows (cp1250 konzola). Vždy z koreňa repa:
 `python -m etl.main --file <ifc> [--dry-run|--reset|--federate]`. Detaily v `etl/README.md`.
+
+## LLM rozhranie — eval kadencia (D-057)
+Zmena LLM vrstvy (tools, system prompt, model/provider) ⇒ pred commitom spusti evaly
+(`npm run eval` proti bežiacemu dev serveru) a porovnaj s baseline; výsledok patrí do
+ROADMAP changelogu. Detail → `DECISIONS.md` D-057.
