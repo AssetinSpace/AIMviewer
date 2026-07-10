@@ -9,7 +9,6 @@ import {
   ChevronRight,
   Cuboid,
   FileText,
-  Sparkles,
   User,
   Waypoints,
   type LucideIcon,
@@ -113,18 +112,6 @@ export function SidebarNav({ nav }: { nav: SidebarNavData }) {
       >
         <Cuboid className="size-4 shrink-0" />
         <span>3D Model</span>
-      </Link>
-      <Link
-        href="/ask"
-        className={cn(
-          "mt-1 flex items-center gap-2 rounded-md px-2 py-1.5 text-sm",
-          pathname === "/ask"
-            ? "bg-sidebar-accent text-sidebar-accent-foreground"
-            : "text-muted-foreground hover:bg-sidebar-accent/60 hover:text-foreground"
-        )}
-      >
-        <Sparkles className="size-4 shrink-0" />
-        <span>Opýtaj sa (AI)</span>
       </Link>
       {!empty && (
         <>

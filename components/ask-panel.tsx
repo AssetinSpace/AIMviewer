@@ -1,8 +1,9 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { Box, Cuboid, FileText, Loader2, Send, Sparkles } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { ArrowUpRight, Box, Cuboid, FileText, Loader2, Send, Sparkles } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 
@@ -30,20 +31,42 @@ interface AskToolTrace {
   summary: string;
 }
 
+/** UI akcia zo servera (show_in_3d…) — klient na ňu naviguje (D-056). */
+interface AskUiAction {
+  type: "navigate";
+  url: string;
+  label: string;
+}
+
 interface ChatTurn {
   role: "user" | "assistant";
   content: string;
   sources?: AskSource[];
   trace?: AskToolTrace[];
+  actions?: AskUiAction[];
   error?: boolean;
 }
 
 const SUGGESTIONS = [
+  "Koľko VZT jednotiek je v budove a na akých podlažiach?",
+  "Zobraz VZT jednotku v 3D",
   "V ktorej miestnosti sú dvere DD01.06.03?",
-  "Na ktorých výkresoch je typ steny SN11.01?",
-  "Aké systémy vzduchotechniky sú v budove?",
   "Kto zodpovedá za budovu?",
 ];
+
+/** Vlákno prežije navigáciu aj reload (dock je globálny, D-056). */
+const TURNS_STORAGE_KEY = "aim-ask-turns";
+
+function loadStoredTurns(): ChatTurn[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = window.sessionStorage.getItem(TURNS_STORAGE_KEY);
+    const parsed = raw ? (JSON.parse(raw) as ChatTurn[]) : [];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
 
 /** Max zdrojov zobrazených bez rozbalenia. */
 const SOURCE_CAP = 8;
@@ -104,13 +127,29 @@ function AssistantMeta({ turn }: { turn: ChatTurn }) {
   const [showAll, setShowAll] = useState(false);
   const sources = turn.sources ?? [];
   const trace = turn.trace ?? [];
-  if (sources.length === 0 && trace.length === 0) return null;
+  const actions = turn.actions ?? [];
+  if (sources.length === 0 && trace.length === 0 && actions.length === 0) return null;
 
   const { primary, rest } = splitSources(sources, turn.content);
   const visible = showAll ? [...primary, ...rest] : primary;
 
   return (
     <div className="mt-2 space-y-1.5">
+      {actions.length > 0 && (
+        <div className="flex flex-wrap items-center gap-1">
+          {actions.map((a, i) => (
+            <Link
+              key={i}
+              href={a.url}
+              prefetch={false}
+              className="inline-flex items-center gap-1 rounded-md border bg-primary/10 px-2 py-0.5 text-xs font-medium hover:bg-primary/20"
+            >
+              <ArrowUpRight className="size-3" />
+              {a.label}
+            </Link>
+          ))}
+        </div>
+      )}
       {sources.length > 0 && (
         <div className="flex flex-wrap items-center gap-1">
           <span className="text-[0.7rem] font-medium uppercase tracking-wide text-muted-foreground">
@@ -151,11 +190,20 @@ function AssistantMeta({ turn }: { turn: ChatTurn }) {
 }
 
 export function AskPanel() {
-  const [turns, setTurns] = useState<ChatTurn[]>([]);
+  const router = useRouter();
+  const [turns, setTurns] = useState<ChatTurn[]>(loadStoredTurns);
   const [input, setInput] = useState("");
   const [pending, setPending] = useState(false);
   const [unconfigured, setUnconfigured] = useState<string | null>(null);
   const endRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    try {
+      window.sessionStorage.setItem(TURNS_STORAGE_KEY, JSON.stringify(turns.slice(-30)));
+    } catch {
+      // plné/nedostupné storage vlákno neláme
+    }
+  }, [turns]);
 
   async function send(text: string) {
     const question = text.trim();
@@ -179,6 +227,7 @@ export function AskPanel() {
         answer?: string;
         sources?: AskSource[];
         trace?: AskToolTrace[];
+        actions?: AskUiAction[];
         error?: string;
         configured?: boolean;
       };
@@ -201,8 +250,17 @@ export function AskPanel() {
       }
       setTurns([
         ...history,
-        { role: "assistant", content: data.answer, sources: data.sources, trace: data.trace },
+        {
+          role: "assistant",
+          content: data.answer,
+          sources: data.sources,
+          trace: data.trace,
+          actions: data.actions,
+        },
       ]);
+      // UI akcia zo servera (show_in_3d…) — dock ostáva, naviguje sa pod ním.
+      const nav = (data.actions ?? []).find((a) => a.type === "navigate");
+      if (nav) router.push(nav.url);
     } catch {
       setTurns([
         ...history,
@@ -215,7 +273,7 @@ export function AskPanel() {
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-col rounded-lg border bg-card">
+    <div className="flex h-full min-h-0 flex-col bg-card">
       <div className="flex-1 space-y-3 overflow-y-auto p-4">
         {unconfigured && (
           <div className="rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-sm">
