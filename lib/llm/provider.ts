@@ -10,6 +10,8 @@ import "server-only";
 export interface TextBlock {
   type: "text";
   text: string;
+  /** Opaque provider dáta (napr. Gemini `thoughtSignature`) — round-trip v slučke. */
+  providerMeta?: Record<string, unknown>;
 }
 
 /** Model žiada zavolať tool s argumentami. */
@@ -19,6 +21,8 @@ export interface ToolUseBlock {
   id: string;
   name: string;
   input: Record<string, unknown>;
+  /** Opaque provider dáta (Gemini 3 vyžaduje vrátiť `thoughtSignature` + `id`). */
+  providerMeta?: Record<string, unknown>;
 }
 
 /** Výsledok toolu, ktorý posielame späť modelu. */
@@ -70,9 +74,23 @@ export interface LlmProvider {
 /** Chyba konfigurácie (chýbajúci kľúč…) — API ju mapuje na 503 s návodom. */
 export class LlmConfigError extends Error {}
 
+/** Bez explicitného LLM_PROVIDER sa provider odvodí z dostupného kľúča. */
+function detectProvider(): string {
+  if (process.env.GEMINI_API_KEY) return "gemini";
+  if (process.env.ANTHROPIC_API_KEY) return "anthropic";
+  throw new LlmConfigError(
+    "LLM rozhranie nie je nakonfigurované — doplň GEMINI_API_KEY alebo " +
+      "ANTHROPIC_API_KEY do .env.local (lokálne) / Vercel env (deploy)."
+  );
+}
+
 export async function getLlmProvider(): Promise<LlmProvider> {
-  const provider = process.env.LLM_PROVIDER ?? "anthropic";
+  const provider = process.env.LLM_PROVIDER ?? detectProvider();
   switch (provider) {
+    case "gemini": {
+      const { createGeminiProvider } = await import("./gemini");
+      return createGeminiProvider();
+    }
     case "anthropic": {
       const { createAnthropicProvider } = await import("./anthropic");
       return createAnthropicProvider();
@@ -83,7 +101,7 @@ export async function getLlmProvider(): Promise<LlmProvider> {
     }
     default:
       throw new LlmConfigError(
-        `Neznámy LLM_PROVIDER '${provider}' — podporované: anthropic, mock.`
+        `Neznámy LLM_PROVIDER '${provider}' — podporované: gemini, anthropic, mock.`
       );
   }
 }

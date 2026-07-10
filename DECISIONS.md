@@ -1521,6 +1521,18 @@ D-049: 0 `IfcValve`) a spôsob určenia „najbližší" (topológia portov cez 
   (bez SDK — žiadna nová dependency, server-only), `mock.ts` = deterministický provider
   pre devtest/e2e bez API kľúča (trvalá súčasť — umožňuje overiť celú slučku offline).
   Model z env `LLM_MODEL` (default `claude-sonnet-5`; výber pre demo = otvorený bod D-047).
+- **Dodatok (2026-07-10) — Gemini ako štartovací provider (free tier):** pridaný
+  `gemini.ts` (generateContent API cez fetch); demo beží na **Gemini free tier**
+  (rozhodnutie používateľa), API-pluggability tým dostala okamžitý dôkaz. Default model
+  `gemini-flash-lite-latest` (alias — konkrétne modely Google vypína pre nové kontá,
+  napr. `gemini-2.5-flash` už nejde; plný flash na free tieri často 503). Bez explicitného
+  `LLM_PROVIDER` sa provider **auto-detekuje z dostupného kľúča** (`GEMINI_API_KEY` má
+  prednosť pred `ANTHROPIC_API_KEY`) — na Verceli stačí pridať kľúč. Gemini 3.x špecifiká:
+  functionCall parts nesú `thoughtSignature` + natívne `id` a API ich **vyžaduje vrátiť**
+  → neutrálne bloky dostali opaque `providerMeta` (round-trip bez presakovania do route);
+  `functionResponse` sa páruje cez `name`/`id` dohľadané z predošlých správ; 429/503
+  retry s backoffom. Overené live proti reálnemu API (2-kolová slučka, tool error vetva,
+  slovenská odpoveď).
 - **Tools = read-only executory nad whitelistom** (`lib/llm/tools.ts`), NIE text-to-SQL:
   `search_objects`, `get_object`, `get_asset_details` (`v_asset_effective` +
   `v_asset_classifications`), `list_relations` (LEN 8 kanonických `rel_*` views, D-051),
