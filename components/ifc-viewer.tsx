@@ -21,6 +21,8 @@ interface Props {
   models: IfcModel[];
   guidMap: GuidMap;
   focus?: string;
+  /** Nonce akcie AI docku — nová hodnota vynúti re-aplikáciu focusu (D-056). */
+  focusNonce?: string;
   apiRef?: React.RefObject<ViewerApi | null>;
   onSelect?: (element: SelectedElement) => void;
   onPickedElement?: (objectId: string, guid: string) => void;
@@ -30,6 +32,7 @@ export function IFCViewer({
   models,
   guidMap,
   focus,
+  focusNonce,
   apiRef,
   onSelect,
   onPickedElement,
@@ -65,10 +68,12 @@ export function IFCViewer({
 
   // ── Focus — reaguj aj na SOFT zmenu ?focus= (AI dock pushne novú URL bez
   // remountu; hlavný efekt beží len na [modelsKey], takže focus rieši tento).
+  // `focusNonce` v deps: každá AI akcia nesie nový nonce, takže focus sa
+  // re-aplikuje aj pri identickej množine prvkov (opakované „zobraz…").
   // Pri prvom mounte je ref ešte null — vtedy focus aplikuje load efekt sám.
   useEffect(() => {
     if (focus) applyFocusRef.current?.(focus);
-  }, [focus]);
+  }, [focus, focusNonce]);
 
   // ── Hlavný IFC effect ───────────────────────────────────────────────────
   useEffect(() => {

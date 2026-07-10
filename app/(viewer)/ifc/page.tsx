@@ -7,9 +7,11 @@ export const dynamic = "force-dynamic";
 export default async function IFCPage({
   searchParams,
 }: {
-  searchParams: Promise<{ focus?: string }>;
+  /** `focus` = IFC GUID(y) na zvýraznenie (čiarkou oddelené); `r` = nonce
+   *  akcie AI docku — nová hodnota vynúti re-aplikáciu focusu (D-056). */
+  searchParams: Promise<{ focus?: string; r?: string }>;
 }) {
-  const { focus } = await searchParams;
+  const { focus, r } = await searchParams;
 
   const [models, guidMap] = await Promise.all([
     Promise.resolve(getIfcModels()),
@@ -30,7 +32,7 @@ export default async function IFCPage({
         </p>
       </header>
 
-      <IFCWorkspace models={models} guidMap={guidMap} focus={focus} />
+      <IFCWorkspace models={models} guidMap={guidMap} focus={focus} focusNonce={r} />
     </div>
   );
 }
