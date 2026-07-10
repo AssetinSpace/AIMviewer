@@ -1584,6 +1584,17 @@ z whitelistu, nikdy model) a klient na prvú naviguje; dock pritom ostáva otvor
 „zobraz VZT jednotku v 3D" otvorí 3D pod bežiacou konverzáciou. `/ask` stránka a sidebar
 odkaz odstránené (dock ich nahrádza).
 
+**Dodatok (2026-07-10) — multi-focus 3D + voľné okno (spätná väzba):** „zobraz ich v 3D"
+pre 3 prvky zvýraznilo len jeden — klient vykonáva len prvú navigáciu a `/ifc?focus=`
+bral jediný GUID. Oprava v celom reťazci: (1) `focus` podporuje **viac GUIDov oddelených
+čiarkou** — viewer zvýrazní všetky, zoomne na spoločný bounding box a floor filter prepne
+len keď sú všetky na jednom podlaží (inak by skryl zvyšok); (2) `show_in_3d` prijíma
+`ids_or_refs` pole (viac prvkov = jeden call); (3) server v `finalActions()` **zlúči**
+viacero 3D akcií do jednej multi-focus URL (model občas volá per prvok napriek inštrukcii).
+Dock prestavaný na **voľné okno**: drag za hlavičku, resize za pravý dolný roh (min
+320×300, clamp do viewportu aj pri resize okna prehliadača), geometria v sessionStorage;
+default ostáva ukotvené pri spodku v strede.
+
 ---
 
 ## 8. Budúce rozhodnutia (D-037+)
