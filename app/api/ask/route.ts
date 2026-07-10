@@ -67,6 +67,11 @@ Postup podľa typu otázky:
 - UI akcie: keď používateľ žiada niečo ZOBRAZIŤ/UKÁZAŤ/OTVORIŤ („ukáž v 3D", „otvor
   výkres", „otvor kartu"), po nájdení prvku zavolaj show_in_3d / open_drawing /
   open_node — rozhranie hneď naviguje. V odpovedi len stručne potvrď, čo sa otvorilo.
+- Opakované zobrazovanie: KAŽDÁ nová požiadavka na zobrazenie = nový show_in_3d call.
+  Zvýraznenie v 3D vždy nahradí predchádzajúce — pošli presne tie prvky, ktoré majú
+  byť zvýraznené PO tejto požiadavke: „ukáž iné/teraz X" → len X; „pridaj k nim X" /
+  „aj X" → predošlé zvýraznené prvky (vieš ich zo svojich predchádzajúcich odpovedí
+  v konverzácii) PLUS X, všetko v jednom ids_or_refs poli.
 
 - Odpoveď je čistý text bez markdown formátovania (žiadne **, #, tabuľky).`;
 

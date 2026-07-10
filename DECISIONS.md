@@ -1603,6 +1603,18 @@ focus sa ignoroval. Oprava vzorom `applyFloorFilterRef`: `applyFocus` žije v re
 multi-floor = floor filter vypne) a samostatný efekt na `[focus]` ju volá pri každej
 zmene. Kapacita zvýrazniť veľa meshov naraz nebola problém — filter bar to robí bežne.
 
+**Tretie kolo (opakované požiadavky v jednom chate):** druhá požiadavka „zobraz iné/znova"
+nemusela prebehnúť — identická focus URL je pre router no-op a `staleTimes: {dynamic: 30}`
+(D-030) môže do 30 s od návštevy servírovať klientskú cache. Riešenie: **každá 3D akcia
+nesie unikátny nonce `&r=`** (generuje server v `show_in_3d`/`finalActions`) → URL je vždy
+nová (cache aj no-op vylúčené) a viewer focus efekt beží na `[focus, focusNonce]` → focus
+sa re-aplikuje aj pri identickej množine prvkov. `applyFocus` predtým obnoví materiály
+starého zvýraznenia, takže „iné prvky" = staré zhasnú, nové svietia. Prompt doplnený:
+každá požiadavka na zobrazenie = nový `show_in_3d` s prvkami, ktoré majú svietiť PO nej
+(„pridaj X" = predošlé + X v jednom poli). Overené Playwright replikou mechaniky
+(force-dynamic page + probe efekt): 3 akcie za sebou vrátane identického focusu s novým
+nonce — 4/4.
+
 ---
 
 ## 8. Budúce rozhodnutia (D-037+)
