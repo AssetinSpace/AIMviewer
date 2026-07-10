@@ -61,6 +61,10 @@ Postup podľa typu otázky:
 - Systémy (VZT vetvy, ÚK…): uzly object_type='system', členstvo cez rel_assigns_to_group
   (smer člen→systém); rel_contained_in_spatial_structure = prvok v priestore/podlaží;
   rel_aggregates = dekompozícia štruktúry; rel_assigns_to_actor = zodpovednosť.
+- Otázky na vlastnosti/psety: NAJPRV query_view relation=v_property_dictionary
+  (slovník psetov z reálnych dát — pset, property, typ hodnoty, vzorky, vrátane
+  custom psetov; filtruj podľa ifc_type) → presná cesta properties->Pset->>Key,
+  až potom filter/detail. Nikdy nehádaj názvy psetov ani properties.
 - Čokoľvek, na čo špecializovaný tool nie je (psety, klasifikácie, dokumenty, história
   GUID, manifest hrán…) → query_view: read-only dopyt nad ľubovoľnou tabuľkou/view
   vrátane JSONB ciest do properties; join nahraď reťazením dopytov cez op 'in'.

@@ -42,6 +42,7 @@ const QUERY_RELATIONS = new Set([
   "v_asset_classifications",
   "v_floors",
   "v_actors",
+  "v_property_dictionary",
   "rel_aggregates",
   "rel_contained_in_spatial_structure",
   "rel_defines_by_type",
@@ -134,9 +135,12 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
   {
     name: "get_model_stats",
     description:
-      "Slovník modelu: počty uzlov podľa object_type + zoznam IFC tried assetov " +
-      "(ifc_type × predefined_type) s počtami. Zavolaj, keď nevieš, aké triedy/podtypy " +
-      "v projekte existujú, alebo keď search_objects nič nenašiel — zistíš správne hodnoty filtrov.",
+      "Slovník modelu: počty uzlov podľa object_type, zoznam IFC tried assetov " +
+      "(ifc_type × predefined_type) s počtami, zoznam psetov (názvy + počet properties), " +
+      "podlažia, systémy, klasifikačné systémy a dokumenty. Zavolaj, keď nevieš, aké " +
+      "triedy/podtypy/psety v projekte existujú, alebo keď search nič nenašiel — zistíš " +
+      "správne hodnoty filtrov. Presné JSONB cesty (pset × property × typ hodnoty × " +
+      "vzorky hodnôt) → query_view relation=v_property_dictionary (D-058).",
     inputSchema: { type: "object", properties: {} },
   },
   {
@@ -201,7 +205,9 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
       "user_defined_type, properties JSONB s psetmi), floors (elevation), documents, persons, " +
       "classification_systems/references, ifc_guid_history, relationship_types (manifest hrán), " +
       "v_asset_effective (properties s dedičnosťou type→occurrence), v_asset_classifications, " +
-      "v_floors, v_actors a hrany rel_aggregates, rel_contained_in_spatial_structure, " +
+      "v_floors, v_actors, v_property_dictionary (slovník psetov z dát: object_type, ifc_type, " +
+      "pset, property, value_type, object_count, sample_values, min/max_number — presné JSONB " +
+      "cesty zisti TU, nehádaj ich) a hrany rel_aggregates, rel_contained_in_spatial_structure, " +
       "rel_defines_by_type, rel_associates_document, rel_associates_classification, " +
       "rel_assigns_to_actor, rel_assigns_to_group, rel_member_of (všetky: from_id→to_id, " +
       "valid_until null = aktívna). JSONB cesty fungujú v select aj filtri: " +
@@ -727,10 +733,21 @@ export class AskToolRuntime {
   /** Slovník modelu — grounding pre filtre (model nemusí hádať hodnoty). */
   private async getModelStats() {
     const supabase = getSupabaseAdmin();
-    const { data, error } = await supabase
-      .from("objects")
-      .select("object_type, ifc_type, predefined_type")
-      .limit(10000);
+    // Jadro (objects) je povinné; grounding bloky (psety, podlažia, systémy,
+    // klasifikácie, dokumenty — D-058) sú best-effort: ich výpadok nezhodí tool.
+    const [objRes, psetRes, floorsRes, systemsRes, clsSysRes, docsRes] = await Promise.all([
+      supabase.from("objects").select("object_type, ifc_type, predefined_type").limit(10000),
+      supabase.from("v_property_dictionary").select("pset, property").limit(5000),
+      supabase
+        .from("v_floors")
+        .select("name, elevation")
+        .order("elevation", { ascending: true })
+        .limit(50),
+      supabase.from("objects").select("name").eq("object_type", "system").limit(50),
+      supabase.from("classification_systems").select("name").limit(20),
+      supabase.from("objects").select("name").eq("object_type", "document").limit(50),
+    ]);
+    const { data, error } = objRes;
     if (error) throw new Error(error.message);
 
     const byObjectType = new Map<string, number>();
@@ -754,6 +771,22 @@ export class AskToolRuntime {
       }
     }
 
+    // Psety: názov → počet properties (presné cesty žijú vo v_property_dictionary).
+    const psetProps = new Map<string, Set<string>>();
+    for (const r of (psetRes.error ? [] : (psetRes.data ?? [])) as {
+      pset: string;
+      property: string;
+    }[]) {
+      let set = psetProps.get(r.pset);
+      if (!set) {
+        set = new Set();
+        psetProps.set(r.pset, set);
+      }
+      set.add(r.property);
+    }
+    const names = (res: { error: unknown; data: { name: string | null }[] | null }) =>
+      res.error ? [] : (res.data ?? []).map((r) => r.name).filter(Boolean);
+
     return {
       object_types: Object.fromEntries(byObjectType),
       // Len occurrence triedy (asset) — typy by duplikovali slovník.
@@ -762,6 +795,17 @@ export class AskToolRuntime {
         .map(([, v]) => v)
         .sort((a, b) => b.count - a.count)
         .slice(0, 150),
+      psets: [...psetProps.entries()]
+        .map(([pset, props]) => ({ pset, properties: props.size }))
+        .sort((a, b) => b.properties - a.properties)
+        .slice(0, 100),
+      psets_hint:
+        "Presné cesty properties->Pset->>Key, typy hodnôt a vzorky: " +
+        "query_view relation=v_property_dictionary (filtruj ifc_type/pset).",
+      floors: floorsRes.error ? [] : (floorsRes.data ?? []),
+      systems: names(systemsRes),
+      classification_systems: names(clsSysRes),
+      documents: names(docsRes),
     };
   }
 

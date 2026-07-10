@@ -268,6 +268,24 @@ create view v_asset_classifications as
 create view v_floors as select o.*, f.elevation from objects o join floors f using (id);
 create view v_actors as select * from objects where object_type in ('person','organization');
 -- v_documents, v_assets, v_spaces… analogicky
+
+-- Slovník psetov z reálnych dát (D-058) — grounding pre LLM: ktoré psety × property
+-- existujú (štandardné AJ custom), typ hodnoty, počty, vzorky, min/max numeriky.
+-- Rezervované _kľúče (D-022) vynechané. Presné DDL: migrácia 20260711120000.
+create view v_property_dictionary as
+select o.object_type, o.ifc_type, p.key as pset, a.key as property,
+       jsonb_typeof(a.value) as value_type, count(*)::int as object_count,
+       count(distinct a.value)::int as distinct_values,
+       (array_agg(distinct left(a.value #>> '{}', 60)))[1:5] as sample_values,
+       min(case when jsonb_typeof(a.value) = 'number'
+                then (a.value #>> '{}')::numeric end) as min_number,
+       max(case when jsonb_typeof(a.value) = 'number'
+                then (a.value #>> '{}')::numeric end) as max_number
+from objects o
+cross join lateral jsonb_each(o.properties) p
+cross join lateral jsonb_each(p.value) a
+where p.key !~ '^_' and jsonb_typeof(p.value) = 'object'
+group by o.object_type, o.ifc_type, p.key, a.key, jsonb_typeof(a.value);
 ```
 
 ### 2.8 Triggery `updated_at`

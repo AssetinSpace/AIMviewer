@@ -1625,6 +1625,27 @@ odtiaľto).
 **Overené:** mock smoke (`--filter smoke`) 2/2 — mechanika runnera, tool slučka aj
 anti-konfabulačná vetva bez API kľúča a bez DB.
 
+### D-058 — Runtime slovník psetov (`v_property_dictionary`)
+**Rozhodnutie:** LLM nemá hádať JSONB cesty do `properties` — **grounding slovník sa
+generuje z reálnych dát** ako SQL view `v_property_dictionary` (migrácia
+`20260711120000`): per `object_type × ifc_type × pset × property` vracia typ hodnoty,
+počet objektov, počet distinct hodnôt, 5 vzoriek a min/max numeriky. Pokrýva štandardné
+**aj custom** psety (D-022 vrstva 3) — presne to, čo statická IFC schéma nevie (custom
+psety, reálna vyplnenosť); statický IFC slovník definícií je komplementárny D-061.
+Rezervované `_kľúče` (D-022) vynechané.
+
+**Prečo view a nie výpočet v TS:** whitelistovaná relácia = model si ju sám filtruje cez
+`query_view` (`where ifc_type='IfcValve'`), jeden zdroj pravdy použiteľný neskôr aj v UI,
+a flattening robí Postgres jedným lateral scanom. Pri ~10³ objektoch full scan v ms;
+pri raste nad ~10⁵ prejsť na materialized view s refreshom po ETL loade (definícia sa
+nemení).
+
+**Napojenie:** `v_property_dictionary` vo whiteliste `QUERY_RELATIONS`;
+`get_model_stats` rozšírený o grounding bloky (zoznam psetov s počtom properties,
+podlažia, systémy, klasifikačné systémy, dokumenty — best-effort, výpadok bloku nezhodí
+tool); system prompt: „otázky na vlastnosti → najprv v_property_dictionary, nikdy
+nehádaj názvy psetov."
+
 ---
 
 ## 8. Budúce rozhodnutia (D-037+)
@@ -1714,6 +1735,7 @@ polí pasport↔Odoo, metóda zamerania (3D scan/Matterport/ručne — zatiaľ n
 > Kompaktný reverse-chrono log pridaných/zmenených rozhodnutí. Plný kontext = príslušný
 > D-záznam vyššie.
 
+- **2026-07-10** — **D-058 (runtime slovník psetov):** view `v_property_dictionary` (pset × property × typ × vzorky z reálnych dát, aj custom psety) + rozšírený `get_model_stats` (psety, podlažia, systémy, klasifikácie, dokumenty) + prompt „nehádaj názvy psetov". Migrácia `20260711120000`.
 - **2026-07-10** — **D-057 (eval harness):** zlaté otázky `eval/questions.json` + runner `scripts/eval-ask.ts` (`npm run eval`) — deterministické skórovanie answer/sources/no_facts, verified workflow nad prod datasetom, mock smoke overený. Štart programu presnosti LLM dotazov (→ D-058…D-063).
 - **2026-07-09** — **D-056 kadencia 1 (F6 — LLM rozhranie):** provider vrstva `lib/llm/` (Anthropic cez fetch + mock, API-pluggable), read-only tools nad whitelist views s row-capom, agentická slučka `/api/ask`, trust-loop zdroje zbierané deterministicky serverom (deep-linky karta/3D/výkres), UI `/ask`.
 - **2026-07-09** — **D-050 (3D vrstva federácie):** multi-model render ASR+VZT v jednej scéne, identita cez IFC GUID, floor filter cez normalizované podlažie.
