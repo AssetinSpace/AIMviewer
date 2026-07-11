@@ -1835,7 +1835,36 @@ automaticky.
 v PDF výkrese — eliminuje manuálnu prácu pri párovaní.
 **Závislosť:** Vyžaduje D-038 (split-screen), ideálne `IfcGridAxis` v ETL pipeline.
 
-### D-045 — Pasportizácia existujúcich budov + posun k dynamike *(kandidát)*
+### D-064 — Multi-projekt / multi-model pripravenosť LLM vrstvy *(kandidát)*
+**Status:** brainstorm — inventúra pripravenosti spísaná, rozhodnutie padne pri 2. projekte
+(línia D-033: multi-projekt = aditívne, keď príde).
+
+**Kontext:** Program presnosti D-057–D-063 je stavaný na demo budove; otázka je, čo z neho
+je viazané na projekt a čo prežije ľubovoľnú budúcu budovu/disciplínu.
+
+**Inventúra (2026-07-11):**
+- **Generické (data-driven, bez zmeny):** `v_property_dictionary`, `search_text` +
+  `search_everything`, `aggregate_objects`, `document_pages`/`search_documents`,
+  `get_model_stats` — všetko sa počíta z dát, nič nepozná konkrétnu budovu. Schéma
+  IFC-kanonická (D-046/D-051), klasifikácia referenčná (D-011), kódovacie schémy
+  pluggable per projekt (D-033/D-036). LLM provider vrstva API-pluggable (D-056),
+  výber modelu eval-driven (D-062).
+- **Per-projekt (z povahy veci):** `eval/questions.json` — verified hodnoty patria
+  datasetu; runner má `--questions <cesta>` → per-projekt sady (napr.
+  `eval/<projekt>/questions.json`). Verifikačný SQL vzor je opakovateľný (viď D-057
+  workflow).
+- **Per-projekt (dnes v kóde, pri 2. projekte presunúť do konfigurácie):** príklady
+  v system prompte `/api/ask` (SNIM `DD01.06.03`, doménové preklady) — kandidát na
+  per-projekt prompt segment; `DEFAULT_CLASSES` v `etl/pset_manifest.py` (rieši
+  `--classes-from-db`).
+- **Chýba (aditívne pri 2. projekte, už rozhodnuté v D-033):** `project` dimenzia
+  v DB — dva projekty by sa dnes miešali (kolízie `object_ref`, dve podlažia „1NP",
+  LLM dopyty naprieč budovami). Dôsledok pre LLM vrstvu: tools dostanú project scope
+  (filter), `get_model_stats`/slovníky per projekt — všetko aditívne, žiadna prestavba.
+
+**Záver:** dlhodobo neobmedzuje nič štrukturálne; jediná skutočná prerekvizita
+multi-projektu je `project` entita (D-033) + scoping v tools. Eval sady a prompt
+segmenty sa škálujú súbormi/konfiguráciou.
 **Status:** brainstorm — strategické smery rozhodnuté, konkrétna zákazka nepotvrdená.
 
 **Kontext:** Nový use-case — pasportizácia existujúcej budovy pre prevádzku a údržbu
@@ -1883,6 +1912,7 @@ polí pasport↔Odoo, metóda zamerania (3D scan/Matterport/ručne — zatiaľ n
 > Kompaktný reverse-chrono log pridaných/zmenených rozhodnutí. Plný kontext = príslušný
 > D-záznam vyššie.
 
+- **2026-07-11** — **D-057 verified hodnoty + D-064 kandidát:** eval sada overená proti prod datasetu (42/44 verified; verifikačný SQL cez Supabase SQL editor); runner `--questions <cesta>` pre per-projekt sady; D-064 = inventúra multi-projekt pripravenosti LLM vrstvy (grounding vrstvy data-driven; jediná prerekvizita = `project` entita z D-033).
 - **2026-07-10** — **D-063 (obsah dokumentov):** `document_pages` (text PDF strán, `etl/pdf_text.py` cez PyMuPDF, idempotentné) + RPC/tool `search_documents` (FTS + snippet + deep_link na stranu). OCR mimo scope. Migrácia `20260715120000`.
 - **2026-07-10** — **D-062 (výber produkčného modelu):** procedúra eval-driven výberu (kandidáti claude-sonnet-5 / claude-haiku-4-5 / claude-opus-4-8 / platený Gemini; ciele: negative 100 %, psets_custom ≥ 75 %, celkovo ≥ 85 %). Beh po nasadení D-058–D-060 a doplnení verified eval hodnôt; zmena čisto env.
 - **2026-07-10** — **D-061 (statický IFC slovník psetov):** `etl/pset_manifest.py` (PsetQto šablóny z ifcopenshell, deterministický --sql) → tabuľka `ifc_property_definitions` (973 properties / 127 psetov pre triedy projektu; description/data_type/enum/applicable_classes) vo whiteliste. Migrácia `20260714120000`.

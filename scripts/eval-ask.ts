@@ -68,6 +68,8 @@ interface Args {
   label: string | null;
   includeUnverified: boolean;
   timeoutMs: number;
+  /** Cesta k sade otázok — per-projekt sady (multi-projekt, D-033 línia). */
+  questions: string;
 }
 
 function parseArgs(argv: string[]): Args {
@@ -78,10 +80,12 @@ function parseArgs(argv: string[]): Args {
     label: null,
     includeUnverified: false,
     timeoutMs: 90_000,
+    questions: "eval/questions.json",
   };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === "--base-url") args.baseUrl = argv[++i];
+    else if (a === "--questions") args.questions = argv[++i];
     else if (a === "--filter") args.filter = argv[++i];
     else if (a === "--runs") args.runs = Math.max(1, Number(argv[++i]) || 1);
     else if (a === "--label") args.label = argv[++i];
@@ -178,7 +182,7 @@ async function main() {
   const args = parseArgs(process.argv.slice(2));
   const root = process.cwd();
   const { questions } = JSON.parse(
-    readFileSync(join(root, "eval", "questions.json"), "utf8")
+    readFileSync(join(root, args.questions), "utf8")
   ) as { questions: Question[] };
 
   const matchesFilter = (q: Question) =>
