@@ -3,7 +3,17 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowUpRight, Box, Cuboid, FileText, Loader2, Send, Sparkles } from "lucide-react";
+import {
+  ArrowUpRight,
+  Box,
+  Cuboid,
+  FileText,
+  Loader2,
+  Plus,
+  Send,
+  Sparkles,
+  Trash2,
+} from "lucide-react";
 
 import { cn } from "@/lib/utils";
 
@@ -54,18 +64,75 @@ const SUGGESTIONS = [
   "Kto zodpovedá za budovu?",
 ];
 
-/** Vlákno prežije navigáciu aj reload (dock je globálny, D-056). */
-const TURNS_STORAGE_KEY = "aim-ask-turns";
+/**
+ * Konverzácie prežijú navigáciu aj reload (dock je globálny, D-056).
+ * Viac oddelených vlákien, aby dlhá história nekazila kontext nesúvisiacich
+ * dotazov — do `/api/ask` ide vždy len história aktívnej konverzácie.
+ */
+const CHATS_STORAGE_KEY = "aim-ask-chats";
+/** Pôvodný jednovláknový kľúč — migruje sa do prvej konverzácie. */
+const LEGACY_TURNS_KEY = "aim-ask-turns";
+const MAX_CHATS = 10;
+const MAX_TURNS = 30;
 
-function loadStoredTurns(): ChatTurn[] {
-  if (typeof window === "undefined") return [];
+interface ChatSession {
+  id: string;
+  title: string | null;
+  turns: ChatTurn[];
+  updatedAt: number;
+}
+
+interface ChatsState {
+  chats: ChatSession[];
+  activeId: string;
+}
+
+function createChat(): ChatSession {
+  const id =
+    typeof crypto !== "undefined" && "randomUUID" in crypto
+      ? crypto.randomUUID()
+      : Math.random().toString(36).slice(2);
+  return { id, title: null, turns: [], updatedAt: Date.now() };
+}
+
+/** Názov konverzácie = prvá otázka (skrátená). */
+function chatTitle(turns: ChatTurn[]): string | null {
+  const first = turns.find((t) => t.role === "user")?.content.trim();
+  if (!first) return null;
+  return first.length > 48 ? `${first.slice(0, 48)}…` : first;
+}
+
+function loadStoredChats(): ChatsState {
+  const fresh = () => {
+    const chat = createChat();
+    return { chats: [chat], activeId: chat.id };
+  };
+  if (typeof window === "undefined") return fresh();
   try {
-    const raw = window.sessionStorage.getItem(TURNS_STORAGE_KEY);
-    const parsed = raw ? (JSON.parse(raw) as ChatTurn[]) : [];
-    return Array.isArray(parsed) ? parsed : [];
+    const raw = window.sessionStorage.getItem(CHATS_STORAGE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw) as ChatsState;
+      if (Array.isArray(parsed?.chats) && parsed.chats.length > 0) {
+        const activeId = parsed.chats.some((c) => c.id === parsed.activeId)
+          ? parsed.activeId
+          : parsed.chats[0].id;
+        return { chats: parsed.chats, activeId };
+      }
+    }
+    // Migrácia pôvodného jedného vlákna (aim-ask-turns).
+    const legacy = window.sessionStorage.getItem(LEGACY_TURNS_KEY);
+    if (legacy) {
+      window.sessionStorage.removeItem(LEGACY_TURNS_KEY);
+      const turns = JSON.parse(legacy) as ChatTurn[];
+      if (Array.isArray(turns) && turns.length > 0) {
+        const chat = { ...createChat(), turns, title: chatTitle(turns) };
+        return { chats: [chat], activeId: chat.id };
+      }
+    }
   } catch {
-    return [];
+    // nevalidné storage → čerstvá konverzácia
   }
+  return fresh();
 }
 
 /** Max zdrojov zobrazených bez rozbalenia. */
@@ -191,26 +258,80 @@ function AssistantMeta({ turn }: { turn: ChatTurn }) {
 
 export function AskPanel() {
   const router = useRouter();
-  const [turns, setTurns] = useState<ChatTurn[]>(loadStoredTurns);
+  const [{ chats, activeId }, setChats] = useState<ChatsState>(loadStoredChats);
   const [input, setInput] = useState("");
   const [pending, setPending] = useState(false);
   const [unconfigured, setUnconfigured] = useState<string | null>(null);
   const endRef = useRef<HTMLDivElement>(null);
 
+  const active = chats.find((c) => c.id === activeId) ?? chats[0];
+  const turns = active.turns;
+
   useEffect(() => {
     try {
-      window.sessionStorage.setItem(TURNS_STORAGE_KEY, JSON.stringify(turns.slice(-30)));
+      window.sessionStorage.setItem(
+        CHATS_STORAGE_KEY,
+        JSON.stringify({
+          activeId,
+          chats: chats.map((c) => ({ ...c, turns: c.turns.slice(-MAX_TURNS) })),
+        })
+      );
     } catch {
       // plné/nedostupné storage vlákno neláme
     }
-  }, [turns]);
+  }, [chats, activeId]);
+
+  // Prepnutie konverzácie → skok na koniec vlákna.
+  useEffect(() => {
+    endRef.current?.scrollIntoView();
+  }, [activeId]);
+
+  /** Zapíše vlákno konkrétnej konverzácie (id fixné — prepnutie počas fetchu nevadí). */
+  const setChatTurns = (chatId: string, nextTurns: ChatTurn[]) => {
+    setChats((s) => ({
+      ...s,
+      chats: s.chats.map((c) =>
+        c.id === chatId
+          ? {
+              ...c,
+              turns: nextTurns,
+              // Rollback na prázdno (503) zruší aj názov z odvolanej otázky.
+              title: nextTurns.length === 0 ? null : (c.title ?? chatTitle(nextTurns)),
+              updatedAt: Date.now(),
+            }
+          : c
+      ),
+    }));
+  };
+
+  const startNewChat = () => {
+    setChats((s) => {
+      // Prázdna aktívna konverzácia sa recykluje namiesto duplicity.
+      const current = s.chats.find((c) => c.id === s.activeId);
+      if (current && current.turns.length === 0) return s;
+      const chat = createChat();
+      return { chats: [chat, ...s.chats].slice(0, MAX_CHATS), activeId: chat.id };
+    });
+  };
+
+  const deleteActiveChat = () => {
+    setChats((s) => {
+      const rest = s.chats.filter((c) => c.id !== s.activeId);
+      if (rest.length === 0) {
+        const chat = createChat();
+        return { chats: [chat], activeId: chat.id };
+      }
+      return { chats: rest, activeId: rest[0].id };
+    });
+  };
 
   async function send(text: string) {
     const question = text.trim();
     if (!question || pending) return;
 
+    const chatId = active.id;
     const history = [...turns, { role: "user" as const, content: question }];
-    setTurns(history);
+    setChatTurns(chatId, history);
     setInput("");
     setPending(true);
     queueMicrotask(() => endRef.current?.scrollIntoView({ behavior: "smooth" }));
@@ -234,11 +355,11 @@ export function AskPanel() {
 
       if (res.status === 503 && data.configured === false) {
         setUnconfigured(data.error ?? "LLM rozhranie nie je nakonfigurované.");
-        setTurns(history.slice(0, -1));
+        setChatTurns(chatId, history.slice(0, -1));
         return;
       }
       if (!res.ok || !data.answer) {
-        setTurns([
+        setChatTurns(chatId, [
           ...history,
           {
             role: "assistant",
@@ -248,7 +369,7 @@ export function AskPanel() {
         ]);
         return;
       }
-      setTurns([
+      setChatTurns(chatId, [
         ...history,
         {
           role: "assistant",
@@ -262,7 +383,7 @@ export function AskPanel() {
       const nav = (data.actions ?? []).find((a) => a.type === "navigate");
       if (nav) router.push(nav.url);
     } catch {
-      setTurns([
+      setChatTurns(chatId, [
         ...history,
         { role: "assistant", content: "Sieťová chyba — skús to znova.", error: true },
       ]);
@@ -274,6 +395,39 @@ export function AskPanel() {
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-card">
+      <div className="flex shrink-0 items-center gap-1.5 border-b px-3 py-1.5">
+        <select
+          value={active.id}
+          onChange={(e) => setChats((s) => ({ ...s, activeId: e.target.value }))}
+          className="h-7 min-w-0 flex-1 truncate rounded-md border bg-background px-2 text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          aria-label="Konverzácia"
+        >
+          {chats.map((c) => (
+            <option key={c.id} value={c.id}>
+              {c.title ?? "Nová konverzácia"}
+            </option>
+          ))}
+        </select>
+        <button
+          type="button"
+          onClick={startNewChat}
+          className="inline-flex size-7 shrink-0 items-center justify-center rounded-md border text-muted-foreground hover:bg-accent hover:text-foreground"
+          title="Nová konverzácia"
+          aria-label="Nová konverzácia"
+        >
+          <Plus className="size-3.5" />
+        </button>
+        <button
+          type="button"
+          onClick={deleteActiveChat}
+          disabled={pending}
+          className="inline-flex size-7 shrink-0 items-center justify-center rounded-md border text-muted-foreground hover:bg-accent hover:text-destructive disabled:opacity-50"
+          title="Zmazať konverzáciu"
+          aria-label="Zmazať konverzáciu"
+        >
+          <Trash2 className="size-3.5" />
+        </button>
+      </div>
       <div className="flex-1 space-y-3 overflow-y-auto p-4">
         {unconfigured && (
           <div className="rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-sm">
