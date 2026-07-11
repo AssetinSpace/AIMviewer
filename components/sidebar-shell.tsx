@@ -61,27 +61,36 @@ export function SidebarShell({ children }: { children: React.ReactNode }) {
   const collapsed = usePersistedCollapsed();
   const draggingRef = useRef(false);
 
-  const startResize = useCallback((e: React.MouseEvent) => {
+  const startResize = useCallback((e: React.PointerEvent) => {
     e.preventDefault();
+    const handle = e.currentTarget as HTMLElement;
+    // Pointer capture — mouse eventy zanikajú nad iframom 3D vieweru (iný
+    // dokument), takže mouseup pustený nad ním by drag nikdy neukončil a panel
+    // by potom naveky skákal za kurzorom. Capture drží eventy na úchyte.
+    handle.setPointerCapture(e.pointerId);
     draggingRef.current = true;
     document.body.style.cursor = "col-resize";
     document.body.style.userSelect = "none";
 
-    const onMove = (ev: MouseEvent) => {
-      if (!draggingRef.current) return;
-      // Aside začína na x=0, takže clientX = požadovaná šírka.
-      const next = Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, ev.clientX));
-      writePersisted(WIDTH_KEY, String(next));
-    };
     const onUp = () => {
       draggingRef.current = false;
       document.body.style.cursor = "";
       document.body.style.userSelect = "";
-      window.removeEventListener("mousemove", onMove);
-      window.removeEventListener("mouseup", onUp);
+      handle.removeEventListener("pointermove", onMove);
+      handle.removeEventListener("pointerup", onUp);
+      handle.removeEventListener("pointercancel", onUp);
     };
-    window.addEventListener("mousemove", onMove);
-    window.addEventListener("mouseup", onUp);
+    const onMove = (ev: PointerEvent) => {
+      if (!draggingRef.current) return;
+      // Poistka: keby mouseup predsa len zapadol, prvý pohyb bez tlačidla drag ukončí.
+      if (ev.buttons === 0) return onUp();
+      // Aside začína na x=0, takže clientX = požadovaná šírka.
+      const next = Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, ev.clientX));
+      writePersisted(WIDTH_KEY, String(next));
+    };
+    handle.addEventListener("pointermove", onMove);
+    handle.addEventListener("pointerup", onUp);
+    handle.addEventListener("pointercancel", onUp);
   }, []);
 
   if (collapsed) {
@@ -130,9 +139,9 @@ export function SidebarShell({ children }: { children: React.ReactNode }) {
         role="separator"
         aria-orientation="vertical"
         aria-label="Zmeniť šírku panela"
-        onMouseDown={startResize}
+        onPointerDown={startResize}
         className={cn(
-          "absolute right-0 top-0 h-full w-1.5 cursor-col-resize",
+          "absolute right-0 top-0 h-full w-1.5 cursor-col-resize touch-none",
           "hover:bg-sidebar-accent active:bg-sidebar-accent"
         )}
       />

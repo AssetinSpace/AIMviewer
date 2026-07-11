@@ -100,20 +100,28 @@ export default function AskDockInner() {
     apply: (start: DockGeom, dx: number, dy: number) => DockGeom
   ) => {
     e.preventDefault();
+    // Pointer capture — dock pláva nad iframom 3D vieweru (iný dokument);
+    // pointerup pustený nad ním by k nám nikdy nedorazil a dock by naveky
+    // nasledoval kurzor. Capture drží eventy na úchyte.
+    const handle = e.currentTarget as HTMLElement;
+    handle.setPointerCapture(e.pointerId);
     const start = geomRef.current;
     const px = e.clientX;
     const py = e.clientY;
-    const onMove = (ev: PointerEvent) =>
-      setGeom(clampGeom(apply(start, ev.clientX - px, ev.clientY - py)));
     const onUp = () => {
-      window.removeEventListener("pointermove", onMove);
-      window.removeEventListener("pointerup", onUp);
-      window.removeEventListener("pointercancel", onUp);
+      handle.removeEventListener("pointermove", onMove);
+      handle.removeEventListener("pointerup", onUp);
+      handle.removeEventListener("pointercancel", onUp);
       persistGeom();
     };
-    window.addEventListener("pointermove", onMove);
-    window.addEventListener("pointerup", onUp);
-    window.addEventListener("pointercancel", onUp);
+    const onMove = (ev: PointerEvent) => {
+      // Poistka: keby pointerup predsa len zapadol, prvý pohyb bez tlačidla drag ukončí.
+      if (ev.buttons === 0) return onUp();
+      setGeom(clampGeom(apply(start, ev.clientX - px, ev.clientY - py)));
+    };
+    handle.addEventListener("pointermove", onMove);
+    handle.addEventListener("pointerup", onUp);
+    handle.addEventListener("pointercancel", onUp);
   };
 
   const beginMove = (e: React.PointerEvent) => {
