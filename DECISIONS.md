@@ -1260,6 +1260,17 @@ federácia v 3D je čisto view-side záležitosť. GUID-centrická identita je j
 prežije ľubovoľný počet modelov, a zároveň zjednodušila kód (picking/highlight bez
 scene-traverse per selection).
 
+**Dodatok (2026-07-11) — georeferencovanie federácie:** `exportGlb` recentruje každý
+súbor podľa vlastného RTC/bbox, čím sa strácal vzájomný georeferencovaný posun disciplín
+(ASR vs VZT ~2,5 m E / ~31 m N; v iných prehliadačoch modely sedeli). Viewer preto
+prešiel na IFClite low-level pipeline (`buildPrePassOnce` → `processGeometryBatch`
+so **zdieľaným RTC offsetom prvého modelu** → `exportGlbFromMeshes`) — rovnaký princíp
+ako federácia v IFClite viewri — a navyše aplikuje **deltu `IfcMapConversion`**
+(EPSG:5514) ako transformáciu skupiny modelu (translácia + rotácia grid north + mierka
+voči frame-u prvého modelu). Dôvod dvoch vrstiev: staršie exporty nesú georeferenciu
+vo veľkých súradniciach site placementu (rieši zdieľané RTC), aktuálne Storage IFC
+v `IfcMapConversion` s lokálnymi súradnicami na nule (RTC=0, rieši map delta).
+
 ---
 
 ## 7c. Meta-model vzťahov a program dema (D-051+)
@@ -1604,6 +1615,9 @@ polí pasport↔Odoo, metóda zamerania (3D scan/Matterport/ručne — zatiaľ n
 > Kompaktný reverse-chrono log pridaných/zmenených rozhodnutí. Plný kontext = príslušný
 > D-záznam vyššie.
 
+- **2026-07-11** — **Dodatok D-050 (georeferencovanie federácie):** viewer prešiel z `exportGlb`
+  na IFClite low-level pipeline so zdieľaným RTC offsetom prvého modelu + delta `IfcMapConversion`
+  ako group transform — modely federácie už sedia na sebe ako v iných prehliadačoch.
 - **2026-07-09** — **D-050 (3D vrstva federácie):** multi-model render ASR+VZT v jednej scéne, identita cez IFC GUID, floor filter cez normalizované podlažie.
 - **2026-07-09** — **Výkon preklikávania, kolo 2 (dodatok 2 D-030):** spinner na kliknutom
   odkaze (`useLinkStatus`), priestorový graf ako jeden zdieľaný cache záznam (prvý klik na
