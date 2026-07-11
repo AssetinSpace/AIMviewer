@@ -1595,6 +1595,26 @@ Dock prestavaný na **voľné okno**: drag za hlavičku, resize za pravý dolný
 320×300, clamp do viewportu aj pri resize okna prehliadača), geometria v sessionStorage;
 default ostáva ukotvené pri spodku v strede.
 
+**Druhé kolo (root cause):** ani multi-focus URL nepomohla — hlavný efekt viewera beží
+len na `[modelsKey]` a focus aplikoval **iba pri načítaní modelu**. AI dock ale mení
+`?focus=` **soft navigáciou** (komponent sa neremountuje, model sa nereloadne) → nový
+focus sa ignoroval. Oprava vzorom `applyFloorFilterRef`: `applyFocus` žije v ref-e
+(obnoví materiály predchádzajúceho focusu, zvýrazní nové meshe, zoomne na spoločný bbox,
+multi-floor = floor filter vypne) a samostatný efekt na `[focus]` ju volá pri každej
+zmene. Kapacita zvýrazniť veľa meshov naraz nebola problém — filter bar to robí bežne.
+
+**Tretie kolo (opakované požiadavky v jednom chate):** druhá požiadavka „zobraz iné/znova"
+nemusela prebehnúť — identická focus URL je pre router no-op a `staleTimes: {dynamic: 30}`
+(D-030) môže do 30 s od návštevy servírovať klientskú cache. Riešenie: **každá 3D akcia
+nesie unikátny nonce `&r=`** (generuje server v `show_in_3d`/`finalActions`) → URL je vždy
+nová (cache aj no-op vylúčené) a viewer focus efekt beží na `[focus, focusNonce]` → focus
+sa re-aplikuje aj pri identickej množine prvkov. `applyFocus` predtým obnoví materiály
+starého zvýraznenia, takže „iné prvky" = staré zhasnú, nové svietia. Prompt doplnený:
+každá požiadavka na zobrazenie = nový `show_in_3d` s prvkami, ktoré majú svietiť PO nej
+(„pridaj X" = predošlé + X v jednom poli). Overené Playwright replikou mechaniky
+(force-dynamic page + probe efekt): 3 akcie za sebou vrátane identického focusu s novým
+nonce — 4/4.
+
 ### D-057 — Eval harness pre LLM rozhranie (zlaté otázky)
 **Rozhodnutie:** Presnosť `/api/ask` sa meria **deterministickou eval sadou**, nie pocitom —
 každá zmena LLM vrstvy (tools, prompt, model) sa pred commitom overí behom evalov a výsledok

@@ -1342,9 +1342,14 @@ export class AskToolRuntime {
       throw new Error(`Žiadny z prvkov sa nedá zobraziť v 3D: ${skipped.join(", ")}.`);
     }
 
+    // Nonce `r`: každá akcia = unikátna URL → viewer focus efekt sa spustí aj
+    // pri identickej množine prvkov a klientská router cache (staleTimes)
+    // nikdy neservíruje starý render tej istej cesty (D-056).
     this.actions.push({
       type: "navigate",
-      url: `/ifc?focus=${encodeURIComponent(shown.map((s) => s.guid).join(","))}`,
+      url:
+        `/ifc?focus=${encodeURIComponent(shown.map((s) => s.guid).join(","))}` +
+        `&r=${Date.now().toString(36)}`,
       label: shown.length === 1 ? `3D: ${shown[0].label}` : `3D: ${shown.length} prvkov`,
     });
     return {
@@ -1402,23 +1407,25 @@ export class AskToolRuntime {
    * len prvú navigáciu, bez zlúčenia by sa zvýraznil jediný prvok.
    */
   finalActions(): AskAction[] {
-    const PREFIX = "/ifc?focus=";
-    const ifcActions = this.actions.filter((a) => a.url.startsWith(PREFIX));
+    const isIfc = (a: AskAction) => a.url.startsWith("/ifc?");
+    const ifcActions = this.actions.filter(isIfc);
     if (ifcActions.length <= 1) return this.actions;
 
-    const guids = [
-      ...new Set(
-        ifcActions.flatMap((a) =>
-          decodeURIComponent(a.url.slice(PREFIX.length)).split(",")
-        )
-      ),
-    ];
+    const guids: string[] = [];
+    for (const a of ifcActions) {
+      const params = new URLSearchParams(a.url.slice(a.url.indexOf("?") + 1));
+      for (const g of (params.get("focus") ?? "").split(",")) {
+        if (g && !guids.includes(g)) guids.push(g);
+      }
+    }
     const merged: AskAction = {
       type: "navigate",
-      url: `${PREFIX}${encodeURIComponent(guids.join(","))}`,
+      url:
+        `/ifc?focus=${encodeURIComponent(guids.join(","))}` +
+        `&r=${Date.now().toString(36)}`,
       label: `3D: ${guids.length} prvkov`,
     };
-    return [merged, ...this.actions.filter((a) => !a.url.startsWith(PREFIX))];
+    return [merged, ...this.actions.filter((a) => !isIfc(a))];
   }
 
   /**

@@ -25,10 +25,13 @@ export default function IFCWorkspace({
   models,
   guidMap,
   focus,
+  focusNonce,
 }: {
   models: IfcModel[];
   guidMap: GuidMap;
   focus?: string;
+  /** Nonce akcie AI docku — nová hodnota vynúti re-aplikáciu focusu (D-056). */
+  focusNonce?: string;
 }) {
   const viewerApiRef = useRef<ViewerApi | null>(null);
   const [selected, setSelected] = useState<SelectedElement | null>(null);
@@ -90,6 +93,7 @@ export default function IFCWorkspace({
             models={models}
             guidMap={guidMap}
             focus={focus}
+            focusNonce={focusNonce}
             apiRef={viewerApiRef}
             onSelect={setSelected}
             onPickedElement={handlePickedElement}
