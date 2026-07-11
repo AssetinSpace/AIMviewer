@@ -18,20 +18,10 @@ export default async function IFCPage({
     fetchGuidMap(),
   ]);
 
+  // Full-bleed: viewer zaberá celú plochu main-u (layout zruší padding aj
+  // scroll cez :has(.full-bleed)); navigácia a strom ostávajú v ľavom sidebari.
   return (
-    <div className="mx-auto max-w-[1500px]">
-      <header className="mb-4">
-        <span className="inline-block rounded-full bg-secondary px-2 py-0.5 text-xs font-medium text-secondary-foreground">
-          3D Model
-        </span>
-        <h1 className="mt-2 font-heading text-2xl font-semibold">
-          3D model budovy
-        </h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          {models.map((m) => m.label).join(" + ")} — federované (D-049)
-        </p>
-      </header>
-
+    <div className="full-bleed h-full">
       <IFCWorkspace models={models} guidMap={guidMap} focus={focus} focusNonce={r} />
     </div>
   );

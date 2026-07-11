@@ -4,13 +4,15 @@ import dynamic from "next/dynamic";
 import { useRef, useState } from "react";
 
 import { ElementInfoPanel } from "@/components/element-info-panel";
-import { FilterBar } from "@/components/filter-bar";
 import type { SelectedElement } from "@/lib/data/drawing";
 import type { GuidMap, IfcModel } from "@/lib/data/ifc";
 import type { ViewerApi } from "@/lib/viewer-api";
 
+// 3D viewer je embed-nutý ifc-lite viewer cez iframe (postMessage bridge),
+// nie in-process three.js. Rovnaké Props + ViewerApi, takže workspace je bez zmeny.
+// Starý three.js komponent (components/ifc-viewer.tsx) ostáva pre rollback.
 const IFCViewer = dynamic(
-  () => import("@/components/ifc-viewer").then((m) => m.IFCViewer),
+  () => import("@/components/ifc-viewer-embed").then((m) => m.IFCViewerEmbed),
   {
     ssr: false,
     loading: () => (
@@ -21,6 +23,11 @@ const IFCViewer = dynamic(
   }
 );
 
+/**
+ * Full-page 3D workspace: viewer vypĺňa celú plochu, panel s detailom prvku
+ * pláva ako overlay vpravo (len keď je niečo vybrané). IFC-typ FilterBar bol
+ * odstránený — filtrovanie beží cez AI dock a natívne nástroje embed viewera.
+ */
 export default function IFCWorkspace({
   models,
   guidMap,
@@ -35,24 +42,9 @@ export default function IFCWorkspace({
 }) {
   const viewerApiRef = useRef<ViewerApi | null>(null);
   const [selected, setSelected] = useState<SelectedElement | null>(null);
-  const [activeFilterLabel, setActiveFilterLabel] = useState<string | null>(null);
   const [siblingLoading, setSiblingLoading] = useState(false);
 
-  // ── Direction A: DB → 3D ──────────────────────────────────────────────────
-
-  function handleFilter(objectIds: string[]) {
-    if (!viewerApiRef.current) return;
-    viewerApiRef.current.highlightFilter(objectIds);
-    setActiveFilterLabel(objectIds.length > 0 ? `${objectIds.length} prvkov` : null);
-  }
-
-  function handleClearFilter() {
-    viewerApiRef.current?.clearFilter();
-    setActiveFilterLabel(null);
-  }
-
-  // ── Direction B: 3D → DB ──────────────────────────────────────────────────
-
+  // 3D → DB: po picku dotiahni súrodencov v priestore a zvýrazni ich.
   async function handlePickedElement(objectId: string) {
     setSiblingLoading(true);
     try {
@@ -71,39 +63,26 @@ export default function IFCWorkspace({
   }
 
   return (
-    <div className="flex flex-col gap-3 lg:flex-row lg:items-start">
-      {/* Left: viewer + filter bar */}
-      <div className="flex min-w-0 flex-1 flex-col gap-2">
-        <FilterBar onFilter={handleFilter} onClear={handleClearFilter} />
+    <div className="relative h-full w-full">
+      <IFCViewer
+        models={models}
+        guidMap={guidMap}
+        focus={focus}
+        focusNonce={focusNonce}
+        apiRef={viewerApiRef}
+        onSelect={setSelected}
+        onPickedElement={handlePickedElement}
+      />
 
-        {/* Active filter / sibling status badge */}
-        {(activeFilterLabel || siblingLoading) && (
-          <div className="flex items-center gap-2 text-xs text-muted-foreground">
-            {activeFilterLabel && (
-              <span className="rounded-full bg-blue-100 px-2 py-0.5 font-medium text-blue-700 dark:bg-blue-900/40 dark:text-blue-300">
-                Filter: {activeFilterLabel}
-              </span>
-            )}
-            {siblingLoading && <span>Načítavam priestorový kontext…</span>}
-          </div>
-        )}
-
-        <div style={{ height: "72vh" }}>
-          <IFCViewer
-            models={models}
-            guidMap={guidMap}
-            focus={focus}
-            focusNonce={focusNonce}
-            apiRef={viewerApiRef}
-            onSelect={setSelected}
-            onPickedElement={handlePickedElement}
-          />
+      {siblingLoading && (
+        <div className="pointer-events-none absolute left-3 top-3 z-10 rounded-full bg-background/80 px-3 py-1 text-xs text-muted-foreground shadow backdrop-blur-sm">
+          Načítavam priestorový kontext…
         </div>
-      </div>
+      )}
 
-      {/* Right: element info panel */}
+      {/* Detail vybraného prvku — plávajúci panel nad viewerom vpravo */}
       {selected && (
-        <aside className="shrink-0 lg:w-80">
+        <aside className="absolute bottom-3 right-3 top-3 z-10 w-80 max-w-[calc(100%-1.5rem)] overflow-y-auto rounded-md border bg-background/95 shadow-lg backdrop-blur-sm">
           <ElementInfoPanel
             selected={selected}
             onBack={() => setSelected(null)}

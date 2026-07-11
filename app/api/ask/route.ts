@@ -19,8 +19,9 @@ import { AskToolRuntime, TOOL_DEFINITIONS } from "@/lib/llm/tools";
 
 /** Max kôl tool-callov na jednu otázku (ochrana nákladov aj slučiek). */
 const MAX_TOOL_ROUNDS = 8;
-/** Max tokenov odpovede modelu. */
-const MAX_TOKENS = 1500;
+/** Max tokenov odpovede modelu. 4000: tool call show_in_3d s desiatkami UUID
+ *  má 1000+ tokenov — pri 1500 sa odsekol uprostred a odpoveď ostala prázdna. */
+const MAX_TOKENS = 4000;
 /** Koľko posledných správ histórie posielame modelu. */
 const MAX_HISTORY = 20;
 /** Max dĺžka jednej user správy. */
@@ -87,6 +88,10 @@ Postup podľa typu otázky:
 - UI akcie: keď používateľ žiada niečo ZOBRAZIŤ/UKÁZAŤ/OTVORIŤ („ukáž v 3D", „otvor
   výkres", „otvor kartu"), po nájdení prvku zavolaj show_in_3d / open_drawing /
   open_node — rozhranie hneď naviguje. V odpovedi len stručne potvrď, čo sa otvorilo.
+- Hromadné zobrazenie podľa typu („ukáž všetky dvere/okná/schody v 3D"): zavolaj
+  show_in_3d PRIAMO s filtrom (ifc_type='IfcDoor', prípadne query/predefined_type)
+  BEZ vymenúvania ids_or_refs — server prvky dohľadá sám. Ids vymenúvaj len pri
+  konkrétnej množine prvkov.
 - Opakované zobrazovanie: KAŽDÁ nová požiadavka na zobrazenie = nový show_in_3d call.
   Zvýraznenie v 3D vždy nahradí predchádzajúce — pošli presne tie prvky, ktoré majú
   byť zvýraznené PO tejto požiadavke: „ukáž iné/teraz X" → len X; „pridaj k nim X" /

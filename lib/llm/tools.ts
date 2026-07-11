@@ -17,7 +17,9 @@ import type { ToolDefinition } from "./provider";
  */
 
 const DEFAULT_LIMIT = 20;
-const MAX_LIMIT = 50;
+const MAX_LIMIT = 100;
+/** Koľko prvkov naraz zvládne show_in_3d (embed viewer unesie aj stovky GUIDov). */
+const SHOW_3D_CAP = 100;
 /** Max dĺžka JSON payloadu tool výsledku (ochrana kontextu). */
 const MAX_RESULT_CHARS = 12_000;
 /** Koľko prvkov naraz zvládne lokalizácia (locate_objects). */
@@ -396,8 +398,9 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
     name: "show_in_3d",
     description:
       "UI AKCIA: otvorí 3D model so zvýraznenými a priblíženými prvkami. Zavolaj, keď " +
-      "používateľ žiada prvky UKÁZAŤ/ZOBRAZIŤ v 3D. Najprv prvky nájdi (search/locate), " +
-      "potom pošli VŠETKY naraz v ids_or_refs (viac prvkov = JEDEN call, nie viac callov). " +
+      "používateľ žiada prvky UKÁZAŤ/ZOBRAZIŤ v 3D. Hromadné zobrazenie podľa typu " +
+      "(napr. všetky dvere) = pošli PRIAMO filter (ifc_type/query/predefined_type), server " +
+      "prvky dohľadá sám. Konkrétnu množinu prvkov pošli v ids_or_refs (JEDEN call). " +
       "Funguje len pre prvky s IFC GUID (sú z IFC modelu).",
     inputSchema: {
       type: "object",
@@ -405,9 +408,16 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
         ids_or_refs: {
           type: "array",
           items: { type: "string" },
-          description: "objects.id (UUID) alebo object_ref prvkov na zvýraznenie (1–20)",
+          description: `objects.id (UUID) alebo object_ref prvkov na zvýraznenie (1–${SHOW_3D_CAP})`,
         },
         id_or_ref: { type: "string", description: "Alternatíva pre jediný prvok" },
+        ifc_type: {
+          type: "string",
+          description: "Filter namiesto ids: IFC typ (IfcDoor, IfcWindow…) — zobrazí všetky zhody",
+        },
+        predefined_type: { type: "string", description: "Filter namiesto ids: PredefinedType" },
+        query: { type: "string", description: "Filter namiesto ids: fulltext (názov/ref/typ)" },
+        object_type: { type: "string", description: "Filter namiesto ids: objects.object_type" },
       },
     },
   },
@@ -1316,27 +1326,88 @@ export class AskToolRuntime {
     }
     const single = String(input.id_or_ref ?? "").trim();
     if (single) refs.push(single);
-    if (refs.length === 0) throw new Error("Zadaj ids_or_refs (pole) alebo id_or_ref.");
+    const hasFilters = Boolean(
+      sanitizeQuery(input.query) ||
+        sanitizeQuery(input.ifc_type) ||
+        sanitizeQuery(input.predefined_type) ||
+        (typeof input.object_type === "string" && input.object_type)
+    );
+    if (refs.length === 0 && !hasFilters) {
+      throw new Error("Zadaj ids_or_refs / id_or_ref, alebo filter (ifc_type, query…).");
+    }
+
+    // Dva režimy: explicitné ids/refs (dávkové `.in()` — pri SHOW_3D_CAP prvkoch
+    // by per-prvok slučka znamenala stovky round-tripov), alebo filter — model
+    // pošle len `ifc_type:'IfcDoor'` a prvky dohľadá server (obrovský zoznam
+    // UUID v tool calle narážal na MAX_TOKENS a odpoveď sa odsekla).
+    const unique = [...new Set(refs.map((r) => r.trim()))].slice(0, SHOW_3D_CAP);
+    const rows: ObjectRow[] = [];
+    if (unique.length > 0) {
+      for (const [col, vals] of [
+        ["id", unique.filter(isUuid)],
+        ["object_ref", unique.filter((r) => !isUuid(r))],
+      ] as const) {
+        for (let i = 0; i < vals.length; i += IN_CHUNK) {
+          const { data, error } = await supabase
+            .from("objects")
+            .select("id, object_type, object_ref, name, ifc_type, predefined_type")
+            .in(col, vals.slice(i, i + IN_CHUNK));
+          if (error) throw new Error(error.message);
+          rows.push(...((data ?? []) as ObjectRow[]));
+        }
+      }
+    } else {
+      const q = this.applyObjectFilters(
+        supabase
+          .from("objects")
+          .select("id, object_type, object_ref, name, ifc_type, predefined_type"),
+        input
+      );
+      const { data, error } = await q.order("object_ref").limit(SHOW_3D_CAP);
+      if (error) throw new Error(error.message);
+      rows.push(...((data ?? []) as ObjectRow[]));
+      if (rows.length === 0) {
+        throw new Error("Filtru nezodpovedá žiadny prvok — skús search_objects.");
+      }
+    }
+    const byId = new Map(rows.map((r) => [r.id, r]));
+    const byRef = new Map(
+      rows.filter((r) => r.object_ref).map((r) => [r.object_ref as string, r])
+    );
+
+    const guidByObjectId = new Map<string, string>();
+    const ids = rows.map((r) => r.id);
+    for (let i = 0; i < ids.length; i += IN_CHUNK) {
+      const { data, error } = await supabase
+        .from("ifc_guid_history")
+        .select("object_id, ifc_guid")
+        .in("object_id", ids.slice(i, i + IN_CHUNK))
+        .is("valid_until", null);
+      if (error) throw new Error(error.message);
+      for (const row of data ?? []) {
+        if (row.object_id && row.ifc_guid && !guidByObjectId.has(row.object_id as string)) {
+          guidByObjectId.set(row.object_id as string, row.ifc_guid as string);
+        }
+      }
+    }
 
     const shown: { label: string; guid: string }[] = [];
     const skipped: string[] = [];
-    for (const ref of [...new Set(refs)].slice(0, 20)) {
-      const obj = await this.resolveObject(ref);
-      if (!obj) {
-        skipped.push(`${ref} (neexistuje)`);
-        continue;
-      }
-      const { data, error } = await supabase
-        .from("ifc_guid_history")
-        .select("ifc_guid")
-        .eq("object_id", obj.id)
-        .is("valid_until", null)
-        .limit(1);
-      if (error) throw new Error(error.message);
-      const guid = data?.[0]?.ifc_guid as string | undefined;
+    const addRow = (obj: ObjectRow) => {
+      this.addSource(obj);
       const label = obj.object_ref ?? obj.name ?? obj.id.slice(0, 8);
+      const guid = guidByObjectId.get(obj.id);
       if (!guid) skipped.push(`${label} (bez IFC GUID — nie je v 3D)`);
       else shown.push({ label, guid });
+    };
+    if (unique.length > 0) {
+      for (const ref of unique) {
+        const obj = isUuid(ref) ? byId.get(ref) : byRef.get(ref);
+        if (!obj) skipped.push(`${ref} (neexistuje)`);
+        else addRow(obj);
+      }
+    } else {
+      for (const obj of rows) addRow(obj);
     }
     if (shown.length === 0) {
       throw new Error(`Žiadny z prvkov sa nedá zobraziť v 3D: ${skipped.join(", ")}.`);
