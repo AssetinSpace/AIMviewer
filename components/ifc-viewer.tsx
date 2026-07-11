@@ -116,6 +116,8 @@ interface Props {
   models: IfcModel[];
   guidMap: GuidMap;
   focus?: string;
+  /** Nonce akcie AI docku — nová hodnota vynúti re-aplikáciu focusu (D-056). */
+  focusNonce?: string;
   apiRef?: React.RefObject<ViewerApi | null>;
   onSelect?: (element: SelectedElement) => void;
   onPickedElement?: (objectId: string, guid: string) => void;
@@ -125,6 +127,7 @@ export function IFCViewer({
   models,
   guidMap,
   focus,
+  focusNonce,
   apiRef,
   onSelect,
   onPickedElement,
@@ -139,6 +142,7 @@ export function IFCViewer({
   // Imperatívne refs — prístupné z useEffect-ov aj keyboard handlerov
   const applyFloorFilterRef = useRef<((floor: string | null) => void) | null>(null);
   const clearSelectionRef = useRef<(() => void) | null>(null);
+  const applyFocusRef = useRef<((focus: string) => void) | null>(null);
 
   // Stabilný kľúč efektu — modely sa menia len keď sa zmenia ich URL.
   const modelsKey = models.map((m) => m.url).join("|");
@@ -157,6 +161,15 @@ export function IFCViewer({
     applyFloorFilterRef.current?.(activeFloor);
   }, [activeFloor]);
 
+  // ── Focus — reaguj aj na SOFT zmenu ?focus= (AI dock pushne novú URL bez
+  // remountu; hlavný efekt beží len na [modelsKey], takže focus rieši tento).
+  // `focusNonce` v deps: každá AI akcia nesie nový nonce, takže focus sa
+  // re-aplikuje aj pri identickej množine prvkov (opakované „zobraz…").
+  // Pri prvom mounte je ref ešte null — vtedy focus aplikuje load efekt sám.
+  useEffect(() => {
+    if (focus) applyFocusRef.current?.(focus);
+  }, [focus, focusNonce]);
+
   // ── Hlavný IFC effect ───────────────────────────────────────────────────
   useEffect(() => {
     const container = containerRef.current;
@@ -167,6 +180,7 @@ export function IFCViewer({
     setActiveFloor(null);
     applyFloorFilterRef.current = null;
     clearSelectionRef.current = null;
+    applyFocusRef.current = null;
 
     let cancelled = false;
     let animId = 0;
@@ -382,19 +396,47 @@ export function IFCViewer({
         }
         applyFloorFilterRef.current = applyFloorFilter;
 
-        // ── Focus param (karta → 3D) ────────────────────────────────
-        if (focus) {
-          const meshes = guidToMeshes.get(focus);
-          if (meshes && meshes.length > 0) {
-            highlightMeshes(meshes);
-            zoomToMeshes(meshes, camera, orbitControls);
-            const fl = meshToFloor.get(meshes[0]);
-            if (fl && !cancelled) {
-              setActiveFloor(fl);
-              applyFloorFilter(fl);
-            }
+        // ── Focus param (karta/AI → 3D) ─────────────────────────────
+        // Viac GUIDov oddelených čiarkou (AI akcia „zobraz ich v 3D", D-056):
+        // zvýrazni všetky a zoomni na ich spoločný bounding box. Floor filter
+        // sa prepne len keď sú všetky na jednom podlaží (multi-floor = ukáž
+        // všetko — filter z minulého focusu by časť prvkov skryl). Žije ako
+        // znovupoužiteľná funkcia v ref-e: focus sa mení SOFT navigáciou
+        // (dock pushne /ifc?focus=…) bez remountu — efekt nižšie na [focus]
+        // ju volá aj po načítaní modelu, nie len pri ňom.
+        const focusMaterials = new Map<THREE.Mesh, THREE.Material | THREE.Material[]>();
+        function applyFocus(f: string): void {
+          // Obnov materiály predchádzajúceho focusu (opakované „zobraz…").
+          focusMaterials.forEach((mat, mesh) => { mesh.material = mat; });
+          focusMaterials.clear();
+
+          const meshes = f
+            .split(",")
+            .filter(Boolean)
+            .flatMap((g) => guidToMeshes.get(g) ?? []);
+          if (meshes.length === 0 || !camera || !orbitControls) return;
+
+          for (const mesh of meshes) {
+            if (!focusMaterials.has(mesh)) focusMaterials.set(mesh, mesh.material);
+          }
+          highlightMeshes(meshes);
+          zoomToMeshes(meshes, camera, orbitControls);
+
+          const floors = new Set(
+            meshes.map((m) => meshToFloor.get(m)).filter((f2): f2 is string => !!f2)
+          );
+          if (cancelled) return;
+          if (floors.size === 1) {
+            const fl = [...floors][0];
+            setActiveFloor(fl);
+            applyFloorFilter(fl);
+          } else {
+            setActiveFloor(null);
+            applyFloorFilter(null);
           }
         }
+        applyFocusRef.current = applyFocus;
+        if (focus) applyFocus(focus);
 
         // ── Filter materials (DB→3D, Query Bridging) ────────────────
         const filterMaterials = new Map<THREE.Mesh, THREE.Material | THREE.Material[]>();

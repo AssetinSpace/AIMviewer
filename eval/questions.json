@@ -1,0 +1,415 @@
+{
+  "note": "Zlatá eval sada pre /api/ask (D-057). Otázky sú overené proti prod datasetu (Polyfunkčný objekt, verifikačný SQL beh 2026-07-11 cez Supabase SQL editor — fakty: 97 dverí, 3 VZT jednotky, 139 vyústok, 0 ventilátorov, 0 ventilov, 89 miestností, 5 podlaží (1NP–5NP), 13 dokumentov, klasifikačný systém Uniformat, budova 'Polyfunkčný objekt'). Polia expect.* vyhodnocuje scripts/eval-ask.ts (answer, sources, trace). verified=false = hodnota ešte neoverená (runner preskakuje; --include-unverified). Regexy case-insensitive. Po ETL reloade dát treba hodnoty preveriť znova (notes nesú verifikačný dopyt).",
+  "questions": [
+    {
+      "id": "smoke-notool",
+      "category": "smoke",
+      "mock_only": true,
+      "question": "notool:ping",
+      "expect": { "answer_matches": ["Mock odpoveď bez toolu: ping"] },
+      "verified": true,
+      "notes": "Mechanika runnera + priama odpoveď mock providera (lib/llm/mock.ts). Beží len s LLM_PROVIDER=mock."
+    },
+    {
+      "id": "smoke-tool-loop",
+      "category": "smoke",
+      "mock_only": true,
+      "question": "test vyhľadania dverí",
+      "expect": {
+        "answer_matches": ["Mock odpoveď: tool dobehol|Dáta sa nepodarilo načítať"]
+      },
+      "verified": true,
+      "notes": "Tool slučka end-to-end: s DB prejde search_objects, bez DB anti-konfabulačná poistka. Oba výsledky = mechanika OK."
+    },
+    {
+      "id": "counts-doors",
+      "category": "counts",
+      "question": "Koľko dverí je v budove?",
+      "expect": { "answer_matches": ["\\b97\\b"] },
+      "verified": true,
+      "notes": "Overené 2026-07-11: count objects object_type=asset, ifc_type=IfcDoor = 97."
+    },
+    {
+      "id": "counts-vzt",
+      "category": "counts",
+      "question": "Koľko vzduchotechnických jednotiek máme v projekte?",
+      "expect": { "answer_matches": ["\\b3\\b"] },
+      "verified": true,
+      "notes": "Overené: IfcUnitaryEquipment = 3 (Reference 'DUPLEX 4500 Multi Eco-V')."
+    },
+    {
+      "id": "counts-spaces",
+      "category": "counts",
+      "question": "Koľko miestností je v budove?",
+      "expect": { "answer_matches": ["\\b89\\b"] },
+      "verified": true,
+      "notes": "Overené: object_type=space = 89."
+    },
+    {
+      "id": "counts-floors",
+      "category": "counts",
+      "question": "Koľko podlaží má budova a ako sa volajú?",
+      "expect": { "answer_matches": ["\\b5\\b", "1NP", "5NP"] },
+      "verified": true,
+      "notes": "Overené: 5 podlaží — 1NP, 2NP, 3NP, 4NP, 5NP."
+    },
+    {
+      "id": "counts-airterminals",
+      "category": "counts",
+      "question": "Koľko vyústok vzduchotechniky je v projekte?",
+      "expect": { "answer_matches": ["\\b139\\b"] },
+      "verified": true,
+      "notes": "Overené: IfcAirTerminal = 139."
+    },
+    {
+      "id": "counts-documents",
+      "category": "counts",
+      "question": "Koľko dokumentov evidujeme?",
+      "expect": { "answer_matches": ["\\b13\\b"] },
+      "verified": true,
+      "notes": "Overené: object_type=document = 13."
+    },
+    {
+      "id": "counts-lifts",
+      "category": "counts",
+      "question": "Koľko výťahov je v budove?",
+      "expect": { "answer_matches": ["\\b2\\b"] },
+      "verified": true,
+      "notes": "Overené: 2 prvky (ifc_type ilike %transport% alebo názov s 'výťah'). Ak model poctivo popíše 2 výťahové prvky, prejde."
+    },
+    {
+      "id": "loc-ref-floor",
+      "category": "location",
+      "question": "Na ktorom podlaží je prvok DD01.06.03?",
+      "expect": {
+        "answer_matches": ["1NP"],
+        "sources_any_ref": ["DD01.06.03"]
+      },
+      "verified": true,
+      "notes": "Overené: spatial path DD01.06.03 → floor 1NP (contained priamo na podlaží, nie v miestnosti)."
+    },
+    {
+      "id": "loc-vzt-floors",
+      "category": "location",
+      "question": "Na ktorých podlažiach sú vzduchotechnické jednotky?",
+      "expect": { "answer_matches": ["1NP", "2NP", "3NP"] },
+      "verified": true,
+      "notes": "Overené: 3 jednotky, rodičia = podlažia 1NP, 2NP, 3NP (MEP contained priamo na podlaží, D-049)."
+    },
+    {
+      "id": "loc-fans",
+      "category": "location",
+      "question": "Kde sa nachádzajú ventilátory a koľko ich je?",
+      "expect": {
+        "answer_matches": ["žiadn|nenaš|\\b0\\b|nie sú|neevidujeme"],
+        "answer_not_matches": ["\\b[1-9][0-9]*\\s*ventilátor"]
+      },
+      "verified": true,
+      "notes": "Overené: IfcFan = 0 — model musí povedať, že ventilátory v modeli nie sú, NIE vymyslieť počet."
+    },
+    {
+      "id": "loc-ref-space",
+      "category": "location",
+      "question": "V ktorej miestnosti je prvok DD01.06.03?",
+      "expect": {
+        "answer_matches": ["1NP"],
+        "sources_any_ref": ["DD01.06.03"]
+      },
+      "verified": true,
+      "notes": "Overené: prvok NIE JE v miestnosti — je contained priamo na podlaží 1NP. Správna odpoveď to uvedie (spomenie 1NP)."
+    },
+    {
+      "id": "loc-spatial-path",
+      "category": "location",
+      "question": "Ukáž celé priestorové zaradenie prvku DD01.06.03 — od areálu po miestnosť.",
+      "expect": {
+        "answer_matches": ["Polyfunkčn", "1NP"],
+        "sources_any_ref": ["DD01.06.03"]
+      },
+      "verified": true,
+      "notes": "Overené: asset → floor 1NP → building 'Polyfunkčný objekt' → site 'Default'."
+    },
+    {
+      "id": "ps-std-isexternal",
+      "category": "psets_standard",
+      "question": "Koľko dverí je exteriérových (IsExternal)?",
+      "expect": { "answer_matches": ["\\b17\\b"] },
+      "verified": true,
+      "notes": "Overené: v_asset_effective, IfcDoor s Pset_DoorCommon.IsExternal=true = 17."
+    },
+    {
+      "id": "ps-std-isexternal-one",
+      "category": "psets_standard",
+      "question": "Sú dvere DD01.06.03 exteriérové?",
+      "expect": {
+        "answer_matches": ["áno|extern|true"],
+        "sources_any_ref": ["DD01.06.03"]
+      },
+      "verified": true,
+      "notes": "Overené: Pset_DoorCommon.IsExternal = true, Reference 'Exteriér_Retail'. (Pôvodná otázka na FireRating zrušená — dvere v dátach FireRating nemajú.)"
+    },
+    {
+      "id": "ps-std-vzt-type",
+      "category": "psets_standard",
+      "question": "Aké typové označenie majú vzduchotechnické jednotky?",
+      "expect": { "answer_matches": ["DUPLEX"] },
+      "verified": true,
+      "notes": "Overené: Pset_UnitaryEquipmentTypeCommon.Reference = 'DUPLEX 4500 Multi Eco-V'."
+    },
+    {
+      "id": "ps-std-doorwidth",
+      "category": "psets_standard",
+      "question": "Akú šírku majú dvere DD01.06.03?",
+      "expect": {
+        "answer_matches": ["1[ ]?650|1[.,]65"],
+        "sources_any_ref": ["DD01.06.03"]
+      },
+      "verified": true,
+      "notes": "Overené: Qto_DoorBaseQuantities.Width = 1650 (mm)."
+    },
+    {
+      "id": "ps-std-spacearea",
+      "category": "psets_standard",
+      "question": "Aká je podlahová plocha miestnosti 2.01?",
+      "expect": { "answer_matches": ["230[.,]9|\\b231\\b"] },
+      "verified": true,
+      "notes": "Overené: space 2.01 'Openspace - Západ', Qto_SpaceBaseQuantities.NetFloorArea = 230,95 m²."
+    },
+    {
+      "id": "pc-manufacturer",
+      "category": "psets_custom",
+      "question": "Ktoré zariadenia sú od výrobcu Lindab?",
+      "expect": {
+        "answer_matches": ["Lindab"],
+        "answer_not_matches": ["nenaš|neexist|žiadn"]
+      },
+      "verified": true,
+      "notes": "FAIL-BY-DESIGN pred D-059 (hodnota žije v pset Manufacturer). Overené: Lindab sa v dátach vyskytuje (ďalší: TOPWET, VITRA, Waterloo). Model musí niečo nájsť, nie poprieť."
+    },
+    {
+      "id": "pc-reference-value",
+      "category": "psets_custom",
+      "question": "Nájdi zariadenie s označením DUPLEX 4500 Multi Eco-V.",
+      "expect": {
+        "answer_matches": ["DUPLEX|VZT|jednotk"],
+        "answer_not_matches": ["nenaš|neexist|žiadn"]
+      },
+      "verified": true,
+      "notes": "FAIL-BY-DESIGN pred D-059: hodnota žije len v pset Reference. (Pôvodná otázka na sériové čísla zrušená — v dátach nie sú.)"
+    },
+    {
+      "id": "pc-material",
+      "category": "psets_custom",
+      "question": "Ktoré miestnosti majú slučkový záťažový koberec?",
+      "expect": {
+        "answer_matches": ["kobere"],
+        "answer_not_matches": ["nenaš|neexist|žiadn"]
+      },
+      "verified": true,
+      "notes": "FAIL-BY-DESIGN pred D-059: Pset_SpaceCoveringRequirements.FloorCovering = 'PD03.30 - Slučkový záťažový koberec' (napr. miestnosť 2.01)."
+    },
+    {
+      "id": "pc-keyword",
+      "category": "psets_custom",
+      "question": "Ktoré prvky majú vo vlastnostiach hodnotu Exteriér_Retail?",
+      "expect": {
+        "answer_matches": ["DD01"],
+        "answer_not_matches": ["nenaš|neexist|žiadn"]
+      },
+      "verified": true,
+      "notes": "FAIL-BY-DESIGN pred D-059: 'Exteriér_Retail' žije v Pset_DoorCommon.Reference exteriérových dverí DD01.*."
+    },
+    {
+      "id": "fuzzy-diacritics",
+      "category": "psets_custom",
+      "question": "Najdi vzduchotechnicke jednotky",
+      "expect": {
+        "answer_matches": ["DUPLEX|VZT|jednotk|IfcUnitaryEquipment"],
+        "answer_not_matches": ["nenaš|neexist|žiadn"]
+      },
+      "verified": true,
+      "notes": "Dopyt bez diakritiky (D-059 fuzzy/normalizácia) — musí nájsť 3 VZT jednotky."
+    },
+    {
+      "id": "fuzzy-typo",
+      "category": "psets_custom",
+      "question": "Ktoré prvky vyrába Lindap?",
+      "expect": {
+        "answer_matches": ["Lindab"],
+        "answer_not_matches": ["nenaš|neexist|žiadn"]
+      },
+      "verified": true,
+      "notes": "Zámerný preklep (Lindap→Lindab) — trigram fuzzy vetva search_everything (threshold 0.4)."
+    },
+    {
+      "id": "cls-code-of",
+      "category": "classifications",
+      "question": "Aký klasifikačný kód má prvok DD01.06.03?",
+      "expect": {
+        "answer_matches": ["DD01"],
+        "sources_any_ref": ["DD01.06.03"]
+      },
+      "verified": true,
+      "notes": "Overené: klasifikácia (union vlastných + zdedených, D-023) = DD01."
+    },
+    {
+      "id": "cls-elements-of",
+      "category": "classifications",
+      "question": "Koľko prvkov má klasifikáciu SN07?",
+      "expect": { "answer_matches": ["\\b69\\b"] },
+      "verified": true,
+      "notes": "Overené: SN07 (Basic Wall:Stěna_SDK_250) = 69 väzieb. Top kódy: ST01 92, SN02 73, SN07 69, SL02 52, PD02 46."
+    },
+    {
+      "id": "cls-systems",
+      "category": "classifications",
+      "question": "Aké klasifikačné systémy v projekte používame?",
+      "expect": { "answer_matches": ["Uniformat"] },
+      "verified": true,
+      "notes": "Overené: jediný systém 'Uniformat'."
+    },
+    {
+      "id": "rel-system-members",
+      "category": "relations",
+      "question": "Koľko prvkov patrí do systému Nasávanie?",
+      "expect": { "answer_matches": ["\\b41\\b"] },
+      "verified": true,
+      "notes": "Overené: rel_assigns_to_group → systém 'Nasávanie' = 41 členov. Ďalšie: Odvod-3NP 275, Odvod-2NP 275, Prívod-2NP 190, Výfuk 29."
+    },
+    {
+      "id": "rel-actor",
+      "category": "relations",
+      "question": "Kto je zodpovedný za prvok DD01.06.03?",
+      "expect": { "no_facts": true },
+      "verified": true,
+      "notes": "Overené: prvok NEMÁ žiadnu rel_assigns_to_actor väzbu — model musí priznať, že zodpovednosť nie je priradená, nie vymyslieť meno."
+    },
+    {
+      "id": "rel-type-occurrences",
+      "category": "relations",
+      "question": "Koľko výskytov má typ PO.02.02?",
+      "expect": {
+        "answer_matches": ["\\b299\\b"],
+        "sources_any_ref": ["PO.02.02"]
+      },
+      "verified": true,
+      "notes": "Overené: rel_defines_by_type → typ PO.02.02 = 299 výskytov (najpočetnejší typ)."
+    },
+    {
+      "id": "rel-doc-assoc",
+      "category": "relations",
+      "question": "Ktoré dokumenty sú priradené k prvku DD01.06.03?",
+      "expect": { "answer_matches": ["Pudorys 1NP"] },
+      "verified": true,
+      "notes": "Overené: rel_associates_document → 'Pudorys 1NP'."
+    },
+    {
+      "id": "doc-drawings-of",
+      "category": "documents",
+      "question": "Na ktorých výkresoch je zobrazený prvok DD01.06.03?",
+      "expect": {
+        "answer_matches": ["Pudorys 1NP"],
+        "sources_any_ref": ["DD01.06.03"]
+      },
+      "verified": true,
+      "notes": "Overené: E4 väzba (source 'pdf_link (E4)') → 'Pudorys 1NP'."
+    },
+    {
+      "id": "doc-meta",
+      "category": "documents",
+      "question": "Aké výkresy pôdorysov máme v projekte?",
+      "expect": { "answer_matches": ["Pudorys 1NP", "Pudorys 2NP", "Pudorys 3NP"] },
+      "verified": true,
+      "notes": "Overené: Pudorys 1NP, 2NP, 3NP, strechy, 1NP PBR (celkom 13 dokumentov)."
+    },
+    {
+      "id": "agg-sum",
+      "category": "aggregation",
+      "question": "Aký je celkový prietok vzduchu (AirFlowRate) všetkých vyústok?",
+      "expect": { "answer_matches": ["11[.,]4"] },
+      "verified": true,
+      "notes": "Overené: sum Pset_AirTerminalOccurrence.AirFlowRate cez 139 vyústok = 11,43 (m³/s). Vyžaduje aggregate_objects (D-060)."
+    },
+    {
+      "id": "agg-avg",
+      "category": "aggregation",
+      "question": "Aká je priemerná šírka dverí v budove?",
+      "expect": { "answer_matches": ["1[ ]?000|\\b1\\s?m\\b"] },
+      "verified": true,
+      "notes": "Overené: avg Qto_DoorBaseQuantities.Width cez 97 dverí = 1000 mm presne."
+    },
+    {
+      "id": "agg-groupby",
+      "category": "aggregation",
+      "question": "Koľko prvkov je od jednotlivých výrobcov?",
+      "expect": {
+        "answer_matches": ["Lindab"],
+        "answer_not_matches": ["nenaš|neexist|žiadn"]
+      },
+      "verified": true,
+      "notes": "Overené: výrobcovia v dátach Lindab, TOPWET, VITRA, Waterloo, 'Výrobce'. group_by_path cez pset Manufacturer (D-060)."
+    },
+    {
+      "id": "agg-numeric-filter",
+      "category": "aggregation",
+      "question": "Ktoré miestnosti majú podlahovú plochu väčšiu ako 200 m²?",
+      "expect": {
+        "answer_matches": ["2\\.01"],
+        "answer_not_matches": ["nenaš|neexist|žiadn"]
+      },
+      "verified": true,
+      "notes": "Overené: 2.01 (Openspace - Západ) má 230,95 m² → musí byť vo výsledku. Číselné porovnanie psetu = aggregate_objects return_rows (D-060); query_view by porovnal text."
+    },
+    {
+      "id": "doc-content-phrase",
+      "category": "documents_content",
+      "question": "V ktorom dokumente sa spomína TODO-fraza-z-legendy?",
+      "expect": { "answer_matches": ["TODO-nazov-dokumentu"] },
+      "verified": false,
+      "notes": "Po behu etl/pdf_text.py: vyber frázu z extrahovaného textu (select * from search_documents('<fraza>')). D-063."
+    },
+    {
+      "id": "doc-content-spec",
+      "category": "documents_content",
+      "question": "Na ktorej strane výpisu skladieb je skladba TODO-oznacenie?",
+      "expect": { "answer_matches": ["\\bTODO\\b"] },
+      "verified": false,
+      "notes": "Po behu etl/pdf_text.py: over proti dokumentu 'Vypis skladieb' (D-043)."
+    },
+    {
+      "id": "doc-content-negative",
+      "category": "documents_content",
+      "question": "V ktorom dokumente sa píše o vzduchoplavbe?",
+      "expect": { "no_facts": true },
+      "verified": true,
+      "notes": "Nezmyselný pojem — model musí priznať, že v obsahu dokumentov nič nenašiel. Funguje aj pred behom pdf_text (prázdna tabuľka)."
+    },
+    {
+      "id": "neg-valves",
+      "category": "negative",
+      "question": "Koľko uzatváracích ventilov je v budove?",
+      "expect": {
+        "answer_not_matches": ["\\b[1-9][0-9]*\\s*(uzatvárac|ventil)"],
+        "no_facts": true
+      },
+      "verified": true,
+      "notes": "Overené 2026-07-11: 0 prvkov s ifc_type ilike %valve% (ARCH+VZT modely, D-049). Model musí povedať, že žiadne nenašiel — NIE vymyslieť počet. Po importe ÚK/ZTI preveď na verified count."
+    },
+    {
+      "id": "neg-nonexistent-ref",
+      "category": "negative",
+      "question": "Čo je prvok ZZZ99.99.99?",
+      "expect": { "no_facts": true },
+      "verified": true,
+      "notes": "Neexistujúci object_ref — model musí priznať, že uzol nenašiel, žiadne vymyslené fakty."
+    },
+    {
+      "id": "neg-nonexistent-manufacturer",
+      "category": "negative",
+      "question": "Ktoré zariadenia sú od výrobcu Siemens?",
+      "expect": { "no_facts": true },
+      "verified": true,
+      "notes": "Overené: Siemens sa vo výrobcoch nevyskytuje (sú tam Lindab, TOPWET, VITRA, Waterloo) — model nesmie výskyt vymyslieť."
+    }
+  ]
+}

@@ -49,6 +49,24 @@ python -m etl.manifest --check   # validácia rel_type proti IFC schéme
 python -m etl.manifest --sql     # INSERT do relationship_types (do migrácie)
 ```
 
+### Manifest IFC pset definícií (D-061)
+Statický slovník štandardných psetov (význam/typ/enum properties) pre LLM grounding —
+generuje sa z bSDD/psd šablón `ifcopenshell` LEN pre triedy projektu:
+```bash
+python -m etl.pset_manifest --check            # validácia + súhrn
+python -m etl.pset_manifest --classes-from-db  # triedy z objects.ifc_type
+python -m etl.pset_manifest --sql              # INSERT do ifc_property_definitions (do NOVEJ migrácie)
+```
+
+### Extrakcia textu PDF (D-063)
+Text všetkých PDF z `docs.csv` per strana → `document_pages` (fulltext v obsahu
+dokumentov pre LLM tool `search_documents`). Spúšťaj po E3 uploade dokumentov, tam kde
+sú PDF lokálne (`podklady/FINAL`, rovnaký kontrakt ako E4):
+```bash
+python -m etl.pdf_text --dry-run   # extrakcia + report, bez zápisu
+python -m etl.pdf_text             # idempotentný zápis (delete+insert per dokument)
+```
+
 ### `--reset` (nahradenie seedu, E2)
 `--reset` pred loadom `TRUNCATE ... CASCADE` vyprázdni AIM dáta (riadky, nie schému) —
 použité raz pri výmene ručného seedu za reálne ETL dáta. Seed je reprodukovateľný

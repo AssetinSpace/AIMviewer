@@ -81,6 +81,12 @@ create index on objects (ifc_guid);
 create index on objects (predefined_type);
 ```
 
+**Dodatok (D-059, migrácia 20260712120000):** `objects` má navyše STORED generated
+stĺpec `search_text` = `f_object_search_text(name, object_ref, ifc_type,
+predefined_type, user_defined_type, properties)` — normalizovaný (unaccent + lower)
+flattening identity a všetkých psetov (rezervované `_kľúče` vynechané) pre fulltext.
+Indexy a RPC → §2.9.
+
 ### 2.2 Typové prípony (1:1 k `objects`)
 
 ```sql
@@ -268,6 +274,24 @@ create view v_asset_classifications as
 create view v_floors as select o.*, f.elevation from objects o join floors f using (id);
 create view v_actors as select * from objects where object_type in ('person','organization');
 -- v_documents, v_assets, v_spaces… analogicky
+
+-- Slovník psetov z reálnych dát (D-058) — grounding pre LLM: ktoré psety × property
+-- existujú (štandardné AJ custom), typ hodnoty, počty, vzorky, min/max numeriky.
+-- Rezervované _kľúče (D-022) vynechané. Presné DDL: migrácia 20260711120000.
+create view v_property_dictionary as
+select o.object_type, o.ifc_type, p.key as pset, a.key as property,
+       jsonb_typeof(a.value) as value_type, count(*)::int as object_count,
+       count(distinct a.value)::int as distinct_values,
+       (array_agg(distinct left(a.value #>> '{}', 60)))[1:5] as sample_values,
+       min(case when jsonb_typeof(a.value) = 'number'
+                then (a.value #>> '{}')::numeric end) as min_number,
+       max(case when jsonb_typeof(a.value) = 'number'
+                then (a.value #>> '{}')::numeric end) as max_number
+from objects o
+cross join lateral jsonb_each(o.properties) p
+cross join lateral jsonb_each(p.value) a
+where p.key !~ '^_' and jsonb_typeof(p.value) = 'object'
+group by o.object_type, o.ifc_type, p.key, a.key, jsonb_typeof(a.value);
 ```
 
 ### 2.8 Triggery `updated_at`
@@ -276,6 +300,81 @@ create view v_actors as select * from objects where object_type in ('person','or
 create trigger trg_objects_updated before update on objects
   for each row execute function set_updated_at();
 -- + classification_systems, classification_references
+```
+
+### 2.9 Fulltext vyhľadávanie (D-059, migrácia 20260712120000)
+
+Parita s človekom skenujúcim panel vlastností — kľúčové slovo sa nájde kdekoľvek
+v obsahu uzla vrátane custom psetov. Presné DDL v migrácii.
+
+```sql
+create extension if not exists unaccent;   -- + pg_trgm
+create function f_unaccent(text) …          -- IMMUTABLE wrapper (indexovateľné)
+create function f_object_search_text(…) …   -- IMMUTABLE flattening uzla (bez _kľúčov)
+-- objects.search_text = generated stored stĺpec (viď §2.1 dodatok)
+create index idx_objects_search_tsv  on objects using gin (to_tsvector('simple', search_text));
+create index idx_objects_search_trgm on objects using gin (search_text gin_trgm_ops);
+
+-- RPC pre LLM tool (parametrizované, row-cap 50):
+-- search_everything(q, object_types[], max_rows) → id, object_type, object_ref, name,
+--   ifc_type, predefined_type, score, match_kind (fulltext|fuzzy), headline,
+--   matched_properties (dôkaz: pset/property/hodnota so zásahom)
+```
+
+### 2.10 Agregácie nad psetmi (D-060, migrácia 20260713120000)
+
+PostgREST filter nad JSONB cestou porovnáva gt/lt ako **text** a agregovať nevie —
+súčty/priemery/číselné porovnania hodnôt psetov robí RPC `aggregate_objects`
+(read-only, `stable`, `set search_path`; interné whitelisty relation/agg/op/stĺpcov,
+identifikátory `format('%I')`, literály `format('%L')` — presné DDL v migrácii).
+
+```sql
+-- aggregate_objects(relation objects|v_asset_effective, agg count|sum|avg|min|max,
+--   prop_path text[],                -- numerická hodnota psetu (guarded cast,
+--                                    --  nenumerické → skipped_non_numeric)
+--   group_by | group_by_path,        -- stĺpec z whitelistu / pset cesta ako kľúč
+--   filters jsonb,                   -- AND; {column|path, op, value};
+--                                    --  gt/gte/lt/lte nad path = NUMERICKY
+--   ids uuid[],                      -- reťazenie (napr. z locate_objects)
+--   max_groups ≤ 50, return_rows)    -- rows režim: top 50 riadkov s hodnotou
+```
+
+### 2.11a Obsah dokumentov (D-063, migrácia 20260715120000)
+
+Extrahovaný text PDF strán (`etl/pdf_text.py`, PyMuPDF) — fulltext nad obsahom
+dokumentov. OCR mimo scope; vektorové výkresy majú riedky text (očakávané).
+
+```sql
+create table document_pages (
+  document_id uuid not null references objects(id) on delete cascade,
+  page        int  not null check (page >= 1),
+  text        text not null,
+  primary key (document_id, page)
+);
+create index idx_document_pages_tsv on document_pages
+  using gin (to_tsvector('simple', lower(f_unaccent(text))));
+
+-- RPC pre LLM tool: search_documents(q, max_rows) → document_id, document_ref,
+--   document_name, page, rank, snippet (ts_headline)
+```
+
+### 2.11 Statický IFC slovník psetov (D-061, migrácia 20260714120000)
+
+Referenčné dáta (vzor `relationship_types`): definície štandardných psetov z bSDD/psd
+šablón IFC4X3, generované `python -m etl.pset_manifest --sql` — LEN triedy projektu.
+Význam/typ/enum properties (grounding LLM); skutočný výskyt v dátach → `v_property_dictionary` (§2.7).
+
+```sql
+create table ifc_property_definitions (
+  pset                text not null,      -- 'Pset_DoorCommon'
+  property            text not null,      -- 'FireRating'
+  data_type           text,               -- PrimaryMeasureType (IfcLabel, IfcAreaMeasure…)
+  template_type       text,               -- P_SINGLEVALUE | P_ENUMERATEDVALUE | Q_*…
+  enum_values         text[] not null default array[]::text[],
+  description         text,               -- orezané na 200 znakov
+  applicable_classes  text[] not null,    -- triedy projektu
+  primary key (pset, property)
+);
 ```
 
 ---

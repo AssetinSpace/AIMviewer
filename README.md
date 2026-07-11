@@ -24,6 +24,12 @@ rozhodnutia: [`DECISIONS.md`](DECISIONS.md), plán: [`ROADMAP.md`](ROADMAP.md).
    Supabase → *Project Settings → API*:
    - `SUPABASE_URL` = `https://acwoupricatirhlfkhvk.supabase.co`
    - `SUPABASE_SERVICE_ROLE_KEY` = service_role kľúč (tajný)
+   - `GEMINI_API_KEY` = kľúč pre LLM rozhranie `/ask` (D-056; free tier stačí.
+     Bez kľúča stránka zobrazí, že AI asistent nie je nakonfigurovaný — zvyšok
+     appky beží). Alternatíva: `ANTHROPIC_API_KEY` — provider sa auto-detekuje.
+   - voliteľné: `LLM_PROVIDER` (`gemini` | `anthropic` | `mock` — mock je pre
+     vývoj/testy bez kľúča), `LLM_MODEL` (default `gemini-flash-lite-latest`,
+     resp. `claude-sonnet-5` pri Anthropicu)
 
    > `.env.local` je gitignored — **nikdy** ho necommituj. `service_role`
    > kľúč sa číta len server-side a nikdy sa nedostane do prehliadača.
@@ -45,8 +51,9 @@ rozhodnutia: [`DECISIONS.md`](DECISIONS.md), plán: [`ROADMAP.md`](ROADMAP.md).
    Variables* alebo v import obrazovke):
    - `SUPABASE_URL` = `https://acwoupricatirhlfkhvk.supabase.co`
    - `SUPABASE_SERVICE_ROLE_KEY` = service_role kľúč
-   - Scope: Production + Preview + Development. Kľúč je **secret** (nie je
-     `NEXT_PUBLIC_*`, takže sa nedostane do client bundle).
+   - `GEMINI_API_KEY` = kľúč pre LLM rozhranie `/ask` (D-056; free tier)
+   - Scope: Production + Preview + Development. Kľúče sú **secret** (nie sú
+     `NEXT_PUBLIC_*`, takže sa nedostanú do client bundle).
 3. **Deploy** → appka beží na `*.vercel.app`. Push do `main` = auto-deploy.
 
 Vlastná doména sa rieši až keď je demo verejné (po S3, D-026).

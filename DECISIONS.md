@@ -1526,6 +1526,305 @@ najbližší uzatvárací ventil" má **dátovú prerekvizitu = import vodného 
 D-049: 0 `IfcValve`) a spôsob určenia „najbližší" (topológia portov cez `IfcRelNests`/
 `IfcRelConnectsPorts` vs geometrická vzdialenosť) — **doriešime neskôr**.
 
+**Kadencia 1 (2026-07-09) — implementácia jadra:**
+- **Provider vrstva `lib/llm/`** — neutrálne typy správ/tool-callov (`provider.ts`) +
+  factory z env `LLM_PROVIDER`; `anthropic.ts` = Anthropic Messages API cez čistý `fetch`
+  (bez SDK — žiadna nová dependency, server-only), `mock.ts` = deterministický provider
+  pre devtest/e2e bez API kľúča (trvalá súčasť — umožňuje overiť celú slučku offline).
+  Model z env `LLM_MODEL` (default `claude-sonnet-5`; výber pre demo = otvorený bod D-047).
+- **Dodatok (2026-07-10) — Gemini ako štartovací provider (free tier):** pridaný
+  `gemini.ts` (generateContent API cez fetch); demo beží na **Gemini free tier**
+  (rozhodnutie používateľa), API-pluggability tým dostala okamžitý dôkaz. Default model
+  `gemini-flash-lite-latest` (alias — konkrétne modely Google vypína pre nové kontá,
+  napr. `gemini-2.5-flash` už nejde; plný flash na free tieri často 503). Bez explicitného
+  `LLM_PROVIDER` sa provider **auto-detekuje z dostupného kľúča** (`GEMINI_API_KEY` má
+  prednosť pred `ANTHROPIC_API_KEY`) — na Verceli stačí pridať kľúč. Gemini 3.x špecifiká:
+  functionCall parts nesú `thoughtSignature` + natívne `id` a API ich **vyžaduje vrátiť**
+  → neutrálne bloky dostali opaque `providerMeta` (round-trip bez presakovania do route);
+  `functionResponse` sa páruje cez `name`/`id` dohľadané z predošlých správ; 429/503
+  retry s backoffom. Overené live proti reálnemu API (2-kolová slučka, tool error vetva,
+  slovenská odpoveď).
+- **Tools = read-only executory nad whitelistom** (`lib/llm/tools.ts`), NIE text-to-SQL:
+  `search_objects`, `get_object`, `get_asset_details` (`v_asset_effective` +
+  `v_asset_classifications`), `list_relations` (LEN 8 kanonických `rel_*` views, D-051),
+  `get_spatial_path`, `find_in_drawings` (`_drawing_links`). Guardraily D-005: každý tool
+  má tvrdý row-cap (≤ 50, default 20), dotazuje len whitelistované views/tabuľky cez
+  `service_role` server-side (D-026), žiadny zápis.
+- **Agentická slučka v `app/api/ask/route.ts`** — max 8 kôl tool-callov, orezaná história,
+  `max_tokens` cap; bez nakonfigurovaného kľúča vráti 503 s návodom (UI to zobrazí ako
+  empty-state, nie crash). Chyba toolu (napr. výpadok DB) sa vracia modelu ako tool error —
+  slučka nespadne.
+- **Trust loop deterministicky zo servera, nie z formátovania modelu:** server pri behu
+  slučky **automaticky zbiera „zdroje" zo všetkých tool výsledkov** (id → meta + aktívny
+  IFC GUID + výkresové regióny) a vracia ich štruktúrovane popri odpovedi. UI z nich
+  renderuje deep-linky: karta `/node|/type/[id]`, 3D `/ifc?focus=<guid>`, výkres
+  `/drawing/[docId]?focus=<id>&page=<n>`. Model je inštruovaný citovať `object_ref`,
+  ale dohľadateľnosť nestojí na jeho poslušnosti.
+- **UI `/ask`** (`components/ask-panel.tsx`, klient) + položka v sidebari; vlákno správ,
+  collapsible „Ako som hľadal" (tool trace), zdroje ako chips s deep-linkami.
+- **Odložené (ďalšie kadencie):** streaming odpovede, highlight regiónu vo výkrese priamo
+  z odpovede, ventilový dotaz (čaká na import ÚK/ZTI), výber produkčného modelu.
+
+**Dodatok (2026-07-10) — celá DB + spoľahlivosť (spätná väzba z prevádzky):** prvá
+prevádzka odhalila dve slabiny: (1) model nemal ako nájsť „AIRCONDITIONINGUNIT" — je to
+`predefined_type` enum, nie `ifc_type`, a search hľadal len name/object_ref; (2) na „koľko X
+a kde" nemal count ani batch lokalizáciu, tak hádal — a lite modely si po zlyhaní toolov
+**vymysleli čísla** napriek promptu. Riešenie:
+- **`query_view`** — generický read-only dopyt nad **celou dátovou vrstvou** (whitelist
+  všetkých tabuliek + views vrátane JSONB ciest do properties, AND filtre, in-reťazenie
+  namiesto joinov, count_only). Base `relationships` ostáva mimo (D-051). Nie je to surové
+  text-to-SQL — štruktúrovaný dopyt drží guardraily D-005 (whitelist, read-only, row-cap).
+- **`locate_objects`** — batch „koľko a kde": filtre/ids → presný count + rozpad po
+  podlažiach (containment element→space|floor, space→floor, dávkované po 100).
+- **`count_objects`**, **`get_model_stats`** (slovník tried modelu = grounding filtrov),
+  `search_objects` query rozšírené aj na `ifc_type`/`predefined_type` + nový filter.
+- **Doménový preklad v prompte** (VZT→IfcUnitaryEquipment/AIRCONDITIONINGUNIT, vyústka→
+  IfcAirTerminal…) + postup podľa typu otázky.
+- **Anti-konfabulačná poistka v route:** keď všetky tool cally zlyhajú, odpoveď modelu sa
+  zahodí a vráti sa deterministická chybová hláška (overené live: flash-lite si inak vymyslel
+  „12 jednotiek s rozpadom po podlažiach").
+
+**Dodatok (2026-07-10) — globálny dock + UI akcie:** chat presunutý zo samostatnej `/ask`
+stránky na **plávajúci dock pri spodku Viewera** (`ask-dock.tsx` vo `(viewer)` layoute;
+zbalený = pilulka vpravo dole, rozbalený = panel; stav aj vlákno prežívajú navigáciu aj
+reload cez sessionStorage; `ssr:false` cez `next/dynamic` — storage sa číta v useState
+initializeri bez hydration mismatchu). **UI akcie cez tools:** `show_in_3d` (id/ref →
+aktívny GUID → `/ifc?focus=`), `open_drawing` (`/drawing/[id]?focus&page`), `open_node`
+(karta podľa object_type) — server ich vracia ako `actions` (URL stavia výhradne server
+z whitelistu, nikdy model) a klient na prvú naviguje; dock pritom ostáva otvorený, takže
+„zobraz VZT jednotku v 3D" otvorí 3D pod bežiacou konverzáciou. `/ask` stránka a sidebar
+odkaz odstránené (dock ich nahrádza).
+
+**Dodatok (2026-07-10) — multi-focus 3D + voľné okno (spätná väzba):** „zobraz ich v 3D"
+pre 3 prvky zvýraznilo len jeden — klient vykonáva len prvú navigáciu a `/ifc?focus=`
+bral jediný GUID. Oprava v celom reťazci: (1) `focus` podporuje **viac GUIDov oddelených
+čiarkou** — viewer zvýrazní všetky, zoomne na spoločný bounding box a floor filter prepne
+len keď sú všetky na jednom podlaží (inak by skryl zvyšok); (2) `show_in_3d` prijíma
+`ids_or_refs` pole (viac prvkov = jeden call); (3) server v `finalActions()` **zlúči**
+viacero 3D akcií do jednej multi-focus URL (model občas volá per prvok napriek inštrukcii).
+Dock prestavaný na **voľné okno**: drag za hlavičku, resize za pravý dolný roh (min
+320×300, clamp do viewportu aj pri resize okna prehliadača), geometria v sessionStorage;
+default ostáva ukotvené pri spodku v strede.
+
+**Druhé kolo (root cause):** ani multi-focus URL nepomohla — hlavný efekt viewera beží
+len na `[modelsKey]` a focus aplikoval **iba pri načítaní modelu**. AI dock ale mení
+`?focus=` **soft navigáciou** (komponent sa neremountuje, model sa nereloadne) → nový
+focus sa ignoroval. Oprava vzorom `applyFloorFilterRef`: `applyFocus` žije v ref-e
+(obnoví materiály predchádzajúceho focusu, zvýrazní nové meshe, zoomne na spoločný bbox,
+multi-floor = floor filter vypne) a samostatný efekt na `[focus]` ju volá pri každej
+zmene. Kapacita zvýrazniť veľa meshov naraz nebola problém — filter bar to robí bežne.
+
+**Tretie kolo (opakované požiadavky v jednom chate):** druhá požiadavka „zobraz iné/znova"
+nemusela prebehnúť — identická focus URL je pre router no-op a `staleTimes: {dynamic: 30}`
+(D-030) môže do 30 s od návštevy servírovať klientskú cache. Riešenie: **každá 3D akcia
+nesie unikátny nonce `&r=`** (generuje server v `show_in_3d`/`finalActions`) → URL je vždy
+nová (cache aj no-op vylúčené) a viewer focus efekt beží na `[focus, focusNonce]` → focus
+sa re-aplikuje aj pri identickej množine prvkov. `applyFocus` predtým obnoví materiály
+starého zvýraznenia, takže „iné prvky" = staré zhasnú, nové svietia. Prompt doplnený:
+každá požiadavka na zobrazenie = nový `show_in_3d` s prvkami, ktoré majú svietiť PO nej
+(„pridaj X" = predošlé + X v jednom poli). Overené Playwright replikou mechaniky
+(force-dynamic page + probe efekt): 3 akcie za sebou vrátane identického focusu s novým
+nonce — 4/4.
+
+### D-057 — Eval harness pre LLM rozhranie (zlaté otázky)
+**Rozhodnutie:** Presnosť `/api/ask` sa meria **deterministickou eval sadou**, nie pocitom —
+každá zmena LLM vrstvy (tools, prompt, model) sa pred commitom overí behom evalov a výsledok
+sa porovná s baseline. Prvý krok programu presnosti (analýza 2026-07-10: schéma je pre LLM
+dotazovanie správna, limituje grounding/agregácie/model — D-058 až D-063 stavajú na meraní
+odtiaľto).
+
+**Implementácia:**
+- **`eval/questions.json`** — ~32 zlatých otázok v kategóriách counts / location /
+  psets_standard / psets_custom (fail-by-design pred D-059 — metrika úspechu fulltextu) /
+  classifications / relations / documents / negative (anti-konfabulácia) + 2 `smoke`
+  (mock-only, mechanika slučky). Skórovanie deterministické, bez LLM-judge (v1):
+  regex asercie nad `answer` (`answer_matches`/`answer_not_matches`), kontrola trust-loop
+  **`sources`** (`sources_any_ref`/`source_types` — dôkazy zbiera server, nezávisí od
+  formulácie modelu) a `no_facts` pre negatívne otázky (musí zaznieť „nenašiel som",
+  žiadne viacciferné čísla, a beh so všetkými zlyhanými tools sa nepočíta — fallback
+  pri výpadku DB nie je dôkaz).
+- **`scripts/eval-ask.ts`** (`npm run eval`, tsx) — POST na bežiaci dev server
+  (`--base-url`), `--runs N` (variancia), `--label` (porovnanie modelov), `--filter`
+  (kategória/id). Výstup: tabuľka per kategória + JSON `eval/results/<ts>_<label>.json`;
+  baseline runy sa commitujú.
+- **`verified` workflow:** otázky písané na prod dataset (Office centrum Brno) majú
+  v `notes` verifikačný dopyt; kým sa očakávaná hodnota neoverí proti prod DB, otázka má
+  `verified=false` a runner ju preskakuje (spustí ju `--include-unverified` — odpovede sa
+  vypíšu na doplnenie očakávaní, do headline pass-rate sa nerátajú). Vyplnenie hodnôt =
+  prvý krok pri behu s prod prístupom; potom sa commitne baseline.
+
+**Overené:** mock smoke (`--filter smoke`) 2/2 — mechanika runnera, tool slučka aj
+anti-konfabulačná vetva bez API kľúča a bez DB.
+
+### D-058 — Runtime slovník psetov (`v_property_dictionary`)
+**Rozhodnutie:** LLM nemá hádať JSONB cesty do `properties` — **grounding slovník sa
+generuje z reálnych dát** ako SQL view `v_property_dictionary` (migrácia
+`20260711120000`): per `object_type × ifc_type × pset × property` vracia typ hodnoty,
+počet objektov, počet distinct hodnôt, 5 vzoriek a min/max numeriky. Pokrýva štandardné
+**aj custom** psety (D-022 vrstva 3) — presne to, čo statická IFC schéma nevie (custom
+psety, reálna vyplnenosť); statický IFC slovník definícií je komplementárny D-061.
+Rezervované `_kľúče` (D-022) vynechané.
+
+**Prečo view a nie výpočet v TS:** whitelistovaná relácia = model si ju sám filtruje cez
+`query_view` (`where ifc_type='IfcValve'`), jeden zdroj pravdy použiteľný neskôr aj v UI,
+a flattening robí Postgres jedným lateral scanom. Pri ~10³ objektoch full scan v ms;
+pri raste nad ~10⁵ prejsť na materialized view s refreshom po ETL loade (definícia sa
+nemení).
+
+**Napojenie:** `v_property_dictionary` vo whiteliste `QUERY_RELATIONS`;
+`get_model_stats` rozšírený o grounding bloky (zoznam psetov s počtom properties,
+podlažia, systémy, klasifikačné systémy, dokumenty — best-effort, výpadok bloku nezhodí
+tool); system prompt: „otázky na vlastnosti → najprv v_property_dictionary, nikdy
+nehádaj názvy psetov."
+
+### D-059 — Fulltext nad všetkým (`search_text` + `search_everything`)
+**Rozhodnutie:** Cieľ = **parita s človekom skenujúcim panel vlastností**: LLM musí nájsť
+kľúčové slovo kdekoľvek v obsahu uzla — vrátane **custom psetov**, ktoré `search_objects`
+(identita/typológia) principiálne nevidí. Recall rieši DB, úsudok nad nájdeným ostáva na
+modeli (dôkazovo — viď trust loop nižšie). Migrácia `20260712120000`.
+
+**Mechanika:**
+- **`f_unaccent`** — IMMUTABLE wrapper nad `unaccent` (extension funkcia je STABLE, do
+  generated column/indexu nesmie); poradie `lower(f_unaccent(…))` — unaccent najprv
+  (Ú→U je ASCII, `lower` potom funguje bez ohľadu na DB locale).
+- **`f_object_search_text`** — IMMUTABLE flattener: `name + object_ref + ifc_type +
+  predefined_type + user_defined_type + všetky psety` (názov psetu + celý JSON = kľúče aj
+  hodnoty), deterministické poradie; rezervované `_kľúče` (D-022) vynechané —
+  `_drawing_links` (stovky regiónov) by utopili signál.
+- **`objects.search_text`** — STORED generated stĺpec (pri ~10³ riadkoch bloat
+  irelevantný) + GIN indexy: `to_tsvector('simple', …)` (fulltext) a `gin_trgm_ops`
+  (preklepy/podreťazce). Zmena konvencie `_kľúčov` ⇒ regenerácia stĺpca novou migráciou.
+  ETL/seed insertujú explicitné stĺpce → kompatibilné bez zmeny.
+- **RPC `search_everything(q, object_types[], max_rows)`** — prvé `.rpc()` v repe,
+  čisto parametrizované; kombinuje FTS (`websearch_to_tsquery('simple')` — slovenský
+  stemmer neexistuje, morfológiu aproximuje trigram) s fuzzy vetvou (`word_similarity`,
+  threshold 0.4 cez SET na funkcii — default 0.6 nechytal bežné preklepy). FTS zásah
+  vždy ranked nad čisto fuzzy (+1.0). Vracia `score`, `match_kind`, `headline`
+  (ts_headline úryvok) a **`matched_properties`** — v ktorom psete/property match nastal
+  (lateral len nad vrátenými riadkami; dôkaz pre trust loop). Row-cap 50 (D-005).
+- **Tool `search_everything`** + prompt: hľadanie podľa obsahu → search_everything,
+  skúsiť aj anglický ekvivalent (kľúče psetov bývajú anglické), citovať
+  matched_properties ako dôkaz, záver z fuzzy zhody formulovať ako odvodenie.
+
+**Overené na lokálnom PG 16 (migrácie + seed):** diakritika („cerpadlo" → „Obehové
+čerpadlo ÚK-01"), custom pset hodnota („daikin" → matched_properties
+`VZT_Parametre.Manufacturer`), preklep („carpadlo" → fuzzy 0.56), multiword
+(„vzduchotechnicka jednotka" → VZT uzly), prázdny dopyt → 0 riadkov, object_types filter.
+Eval metrika: kategória psets_custom (fail-by-design pred D-059) → cieľ ≥ 75 %.
+
+### D-060 — Agregácie + numericky bezpečné filtre (`aggregate_objects`)
+**Rozhodnutie:** Súčty/priemery/min/max a **každé číselné porovnanie** hodnoty psetu počíta
+**databáza**, nie model z orezaných riadkov (row-cap 50 → vymyslené čísla — pozorované
+v prevádzke D-056). Dôvod v koreni: PostgREST filter nad JSONB cestou porovnáva gt/lt ako
+**text** (lexikograficky `'9' > '10'`) a `::numeric` cast sa v ňom vyjadriť nedá → RPC.
+Migrácia `20260713120000`.
+
+**RPC `aggregate_objects`** (plpgsql, `stable`, `set search_path`, read-only):
+- `agg count|sum|avg|min|max` nad `prop_path` (cesta v properties); **guarded numeric
+  cast** (regex) — nenumerické hodnoty sa preskočia a reportujú v `skipped_non_numeric`
+  (poctivosť voči modelu).
+- `group_by` (stĺpec z whitelistu) alebo `group_by_path` (pset cesta, napr. výrobca),
+  skupiny capped ≤ 50, radené podľa hodnoty.
+- AND `filters` `{column|path, op, value}` — `gt/gte/lt/lte` nad path porovnáva
+  **numericky** (nečíselná value → raise); `ids uuid[]` na reťazenie (locate → agregácia).
+- `return_rows=true` = escape hatch: top 50 riadkov s hodnotou (implicitný not-null),
+  vrátane `object_type` pre trust-loop zdroje.
+- **Bezpečnosť dynamického SQL** (jediné miesto v repe): whitelisty relation
+  (objects|v_asset_effective) / agg / op / stĺpcov, identifikátory `format('%I')`,
+  literály `format('%L')`, JSONB cesty ako pole `%L` literálov. Injection pokusy
+  (relation, group_by, filter column, quote breakout vo value, path prvok) overené —
+  raise alebo neškodný literál.
+
+**Napojenie:** tool `aggregate_objects`; **guidance guard v `query_view`** — pokus
+o gt/gte/lt/lte nad JSONB cestou vyhodí chybu s presným návodom na aggregate_objects
+(viditeľné v trace; lepšie než tiché zlé výsledky aj než neviditeľný re-routing);
+prompt: „súčty a číselné porovnania psetov → aggregate_objects, nikdy nepočítaj
+z orezaných riadkov."
+
+**Overené na lokálnom PG 16:** sum s dedičnosťou type→occurrence (9800 = 4800 + 5000
+zdedených), count group by ifc_type, numerický filter gt 4900 (vráti len 5000, text
+porovnanie by zlyhalo), rows režim s object_type, injection sada.
+
+### D-061 — Statický IFC slovník psetov (`ifc_property_definitions`)
+**Rozhodnutie:** Definície **štandardných** psetov (Pset_/Qto_) žijú v DB ako referenčná
+tabuľka `ifc_property_definitions` — LLM grounding **významu**: description, dátový typ
+(PrimaryMeasureType), enum hodnoty (PEnum_*), aplikovateľné triedy. Zrkadlo vzoru
+`relationship_types` (D-051): zdroj pravdy = Python modul **`etl/pset_manifest.py`**,
+ktorý číta bSDD/psd šablóny zabudované v `ifcopenshell`
+(`ifcopenshell.util.pset.PsetQto("IFC4X3")`), `--sql` generuje deterministické INSERTy
+commitované do migrácie `20260714120000`. Komplementárne k `v_property_dictionary`
+(D-058): statický slovník = čo property ZNAMENÁ; runtime slovník = čo v dátach reálne JE
+(vrátane custom psetov, ktoré statická schéma z princípu nepozná).
+
+**Rozsah:** LEN triedy prítomné/plánované v projekte (kurátorovaný `DEFAULT_CLASSES` —
+ARCH+VZT demo model + ÚK/ZTI triedy pre ventilový use-case; 25 tried → 973 properties
+v 127 psetoch), nie celý IFC4.3 katalóg. Description orezané na 200 znakov (grounding,
+nie špecifikácia). Enum hodnoty rozbalené na čisté stringy (wrappedValue). Regenerácia
+po zmene dát: `--classes-from-db` (distinct `objects.ifc_type`) → nová migrácia; trieda
+bez šablón sa reportuje, nezhodí generovanie. PK `(pset, property)` +
+`applicable_classes text[]` (žiadna class×pset×property explózia).
+
+**Napojenie:** tabuľka vo whiteliste `QUERY_RELATIONS` (dedikovaný tool netreba —
+`query_view` stačí); prompt: „význam/jednotku/enum štandardnej property →
+ifc_property_definitions; skutočný výskyt → v_property_dictionary."
+
+### D-062 — Výber produkčného modelu (eval-driven)
+**Rozhodnutie (procedúra):** Produkčný model pre `/api/ask` sa vyberá **meraním na eval
+sade (D-057), nie pocitom** — používateľ rozhodol prejsť z free tieru (gemini-flash-lite,
+zdokumentovaná konfabulácia D-056) na platený model. Zmena je čisto konfiguračná
+(`LLM_PROVIDER`/`LLM_MODEL` env, provider vrstva D-056 je pluggable); anti-konfabulačná
+poistka v route ostáva bez ohľadu na model.
+
+**Procedúra výberu (spustiť po nasadení D-058–D-060 na prod a doplnení verified hodnôt
+v eval sade):**
+1. Pre každého kandidáta: plný eval run `npm run eval -- --runs 3 --label <model>`
+   (variancia; lokálny dev + prod Supabase).
+2. Porovnať: pass-rate celkovo aj per kategória (kritické: negative/anti-konfabulácia,
+   psets_custom, aggregation), priemerný počet tool kôl, latenciu, cenu na otázku
+   (vstup ~5–15k tokenov/otázku pri tool slučke).
+3. Víťaza zapísať sem ako dodatok (tabuľka výsledkov) + commitnúť results JSON +
+   nastaviť `LLM_MODEL` vo Vercel env; ROADMAP changelog.
+
+**Kandidáti (model ID a ceny overené 2026-07-10, claude-api referencia; pri behu znova
+overiť proti aktuálnym cenníkom):**
+- `claude-sonnet-5` (Anthropic) — $3/$15 za MTok (intro $2/$10 do 2026-08-31), 1M kontext;
+  near-Opus kvalita na agentic/tool-calling — **primárny kandidát** (je aj default
+  v `lib/llm/anthropic.ts`). Pozn.: adaptívne myslenie je pri ňom default — provider
+  vrstva posiela čisté Messages API cez fetch, netreba nič meniť.
+- `claude-haiku-4-5` (Anthropic) — $1/$5, 200k kontext; dolná hranica ceny — zmerať, či
+  po D-058/D-059/D-060 groundingu stačí (deterministické tools kompenzujú slabší úsudok).
+- `claude-opus-4-8` (Anthropic) — $5/$25; horná hranica kvality, pravdepodobne overkill
+  pre demo Q&A — merať len ak sonnet-5 nesplní cieľ na psets_custom/aggregation.
+- platený Gemini tier (flash) — provider už existuje (`gemini.ts`); konkrétne ID/cenu
+  overiť pri behu (Google modely sa menia rýchlo, viď D-056 dodatok).
+
+**Cieľ:** negative kategória 100 % (žiadna konfabulácia), psets_custom ≥ 75 % (metrika
+D-059), celkový pass-rate ≥ 85 % pri akceptovateľnej cene na otázku.
+
+### D-063 — Obsah dokumentov (`document_pages` + `search_documents`)
+**Rozhodnutie:** Otázky na **obsah** dokumentov („v ktorom dokumente sa píše o X") boli
+principiálne nezodpovedateľné — dokumenty boli len metadáta (D-036) + E4 regióny. Text sa
+extrahuje z PDF per strana do tabuľky `document_pages` a vyhľadáva RPC `search_documents`
+(FTS, rovnaká normalizácia lower+f_unaccent ako D-059). Migrácia `20260715120000`.
+
+**Implementácia:**
+- **`etl/pdf_text.py`** — rovnaký vstupný kontrakt ako E4 (`docs.csv`: `source_path` pod
+  `podklady/FINAL`, `container_name` = object_ref dokumentu), ale VŠETKY PDF (nie len
+  výkresy VD). PyMuPDF (už ETL závislosť, D-041), `page.get_text("text")` + normalizácia
+  bielych znakov, prázdne strany von. Idempotentné (delete+insert per dokument v jednej
+  transakcii). Dokument mimo DB → warning, beh nezhodí. `--dry-run` = report.
+- **RPC `search_documents(q, max_rows)`** — websearch FTS + ts_rank + ts_headline snippet,
+  join na objects (identita dokumentu v jednom calle), row-cap 50, guardraily podľa
+  AGENTS pravidla (stable, search_path, parametrizované).
+- **Tool `search_documents`** — vracia dokument/stranu/snippet + `deep_link
+  /drawing/<id>?page=<n>` (stavia server); dokumenty idú do trust-loop zdrojov. Prompt:
+  obsah → search_documents, metadáta → query_view.
+
+**Poctivé očakávanie:** výkresy sú prevažne vektorová grafika — text je riedky (legendy,
+rohové pečiatky, špecifikácie); OCR zámerne mimo scope. Dokument bez lokálneho zdrojového
+PDF stránky nemá a tool to v hinte povie. Extrakcia sa spúšťa tam, kde sú PDF lokálne
+(rovnaký workflow ako E4), po E3 uploade dokumentov.
+
 ---
 
 ## 8. Budúce rozhodnutia (D-037+)
@@ -1567,7 +1866,36 @@ automaticky.
 v PDF výkrese — eliminuje manuálnu prácu pri párovaní.
 **Závislosť:** Vyžaduje D-038 (split-screen), ideálne `IfcGridAxis` v ETL pipeline.
 
-### D-045 — Pasportizácia existujúcich budov + posun k dynamike *(kandidát)*
+### D-064 — Multi-projekt / multi-model pripravenosť LLM vrstvy *(kandidát)*
+**Status:** brainstorm — inventúra pripravenosti spísaná, rozhodnutie padne pri 2. projekte
+(línia D-033: multi-projekt = aditívne, keď príde).
+
+**Kontext:** Program presnosti D-057–D-063 je stavaný na demo budove; otázka je, čo z neho
+je viazané na projekt a čo prežije ľubovoľnú budúcu budovu/disciplínu.
+
+**Inventúra (2026-07-11):**
+- **Generické (data-driven, bez zmeny):** `v_property_dictionary`, `search_text` +
+  `search_everything`, `aggregate_objects`, `document_pages`/`search_documents`,
+  `get_model_stats` — všetko sa počíta z dát, nič nepozná konkrétnu budovu. Schéma
+  IFC-kanonická (D-046/D-051), klasifikácia referenčná (D-011), kódovacie schémy
+  pluggable per projekt (D-033/D-036). LLM provider vrstva API-pluggable (D-056),
+  výber modelu eval-driven (D-062).
+- **Per-projekt (z povahy veci):** `eval/questions.json` — verified hodnoty patria
+  datasetu; runner má `--questions <cesta>` → per-projekt sady (napr.
+  `eval/<projekt>/questions.json`). Verifikačný SQL vzor je opakovateľný (viď D-057
+  workflow).
+- **Per-projekt (dnes v kóde, pri 2. projekte presunúť do konfigurácie):** príklady
+  v system prompte `/api/ask` (SNIM `DD01.06.03`, doménové preklady) — kandidát na
+  per-projekt prompt segment; `DEFAULT_CLASSES` v `etl/pset_manifest.py` (rieši
+  `--classes-from-db`).
+- **Chýba (aditívne pri 2. projekte, už rozhodnuté v D-033):** `project` dimenzia
+  v DB — dva projekty by sa dnes miešali (kolízie `object_ref`, dve podlažia „1NP",
+  LLM dopyty naprieč budovami). Dôsledok pre LLM vrstvu: tools dostanú project scope
+  (filter), `get_model_stats`/slovníky per projekt — všetko aditívne, žiadna prestavba.
+
+**Záver:** dlhodobo neobmedzuje nič štrukturálne; jediná skutočná prerekvizita
+multi-projektu je `project` entita (D-033) + scoping v tools. Eval sady a prompt
+segmenty sa škálujú súbormi/konfiguráciou.
 **Status:** brainstorm — strategické smery rozhodnuté, konkrétna zákazka nepotvrdená.
 
 **Kontext:** Nový use-case — pasportizácia existujúcej budovy pre prevádzku a údržbu
@@ -1618,6 +1946,15 @@ polí pasport↔Odoo, metóda zamerania (3D scan/Matterport/ručne — zatiaľ n
 - **2026-07-11** — **Dodatok D-050 (georeferencovanie federácie):** viewer prešiel z `exportGlb`
   na IFClite low-level pipeline so zdieľaným RTC offsetom prvého modelu + delta `IfcMapConversion`
   ako group transform — modely federácie už sedia na sebe ako v iných prehliadačoch.
+- **2026-07-11** — **D-057 verified hodnoty + D-064 kandidát:** eval sada overená proti prod datasetu (42/44 verified; verifikačný SQL cez Supabase SQL editor); runner `--questions <cesta>` pre per-projekt sady; D-064 = inventúra multi-projekt pripravenosti LLM vrstvy (grounding vrstvy data-driven; jediná prerekvizita = `project` entita z D-033).
+- **2026-07-10** — **D-063 (obsah dokumentov):** `document_pages` (text PDF strán, `etl/pdf_text.py` cez PyMuPDF, idempotentné) + RPC/tool `search_documents` (FTS + snippet + deep_link na stranu). OCR mimo scope. Migrácia `20260715120000`.
+- **2026-07-10** — **D-062 (výber produkčného modelu):** procedúra eval-driven výberu (kandidáti claude-sonnet-5 / claude-haiku-4-5 / claude-opus-4-8 / platený Gemini; ciele: negative 100 %, psets_custom ≥ 75 %, celkovo ≥ 85 %). Beh po nasadení D-058–D-060 a doplnení verified eval hodnôt; zmena čisto env.
+- **2026-07-10** — **D-061 (statický IFC slovník psetov):** `etl/pset_manifest.py` (PsetQto šablóny z ifcopenshell, deterministický --sql) → tabuľka `ifc_property_definitions` (973 properties / 127 psetov pre triedy projektu; description/data_type/enum/applicable_classes) vo whiteliste. Migrácia `20260714120000`.
+- **2026-07-10** — **D-060 (agregácie + numerika):** RPC `aggregate_objects` (sum/avg/min/max/count + group_by + numericky bezpečné filtre nad psetmi, guarded cast + skipped_non_numeric, interné whitelisty) + tool + guidance guard v query_view (gt/lt nad JSONB = text). Migrácia `20260713120000`.
+- **2026-07-10** — **D-059 (fulltext nad všetkým):** `objects.search_text` (generated, unaccent+lower flattening psetov) + GIN tsvector/trgm indexy + RPC `search_everything` (FTS + fuzzy, matched_properties ako dôkaz) + tool a prompt. Custom psety sú prvýkrát vyhľadateľné. Migrácia `20260712120000`.
+- **2026-07-10** — **D-058 (runtime slovník psetov):** view `v_property_dictionary` (pset × property × typ × vzorky z reálnych dát, aj custom psety) + rozšírený `get_model_stats` (psety, podlažia, systémy, klasifikácie, dokumenty) + prompt „nehádaj názvy psetov". Migrácia `20260711120000`.
+- **2026-07-10** — **D-057 (eval harness):** zlaté otázky `eval/questions.json` + runner `scripts/eval-ask.ts` (`npm run eval`) — deterministické skórovanie answer/sources/no_facts, verified workflow nad prod datasetom, mock smoke overený. Štart programu presnosti LLM dotazov (→ D-058…D-063).
+- **2026-07-09** — **D-056 kadencia 1 (F6 — LLM rozhranie):** provider vrstva `lib/llm/` (Anthropic cez fetch + mock, API-pluggable), read-only tools nad whitelist views s row-capom, agentická slučka `/api/ask`, trust-loop zdroje zbierané deterministicky serverom (deep-linky karta/3D/výkres), UI `/ask`.
 - **2026-07-09** — **D-050 (3D vrstva federácie):** multi-model render ASR+VZT v jednej scéne, identita cez IFC GUID, floor filter cez normalizované podlažie.
 - **2026-07-09** — **Výkon preklikávania, kolo 2 (dodatok 2 D-030):** spinner na kliknutom
   odkaze (`useLinkStatus`), priestorový graf ako jeden zdieľaný cache záznam (prvý klik na
