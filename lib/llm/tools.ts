@@ -441,6 +441,23 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
     },
   },
   {
+    name: "search_documents",
+    description:
+      "Fulltextové vyhľadávanie v OBSAHU dokumentov/výkresov (extrahovaný text PDF strán — " +
+      "legendy, špecifikácie, popisky, pečiatky). Vracia dokument, stranu, snippet a " +
+      "deep_link na otvorenie výkresu na danej strane. Použi na otázky 'v ktorom dokumente " +
+      "sa píše o X'. POZOR: výkresy sú prevažne grafika — text býva riedky; ak dokument " +
+      "nemá extrahovaný text, nenájde sa tu (metadáta dokumentov hľadá query_view/search).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        q: { type: "string", description: "Hľadaný text (min 2 znaky)" },
+        limit: { type: "number", description: "Max výsledkov (default 10, strop 50)" },
+      },
+      required: ["q"],
+    },
+  },
+  {
     name: "find_in_drawings",
     description:
       "Výkresy, v ktorých je prvok (asset/asset_type) zobrazený (E4 auto-linking) vrátane " +
@@ -546,6 +563,8 @@ export class AskToolRuntime {
         return this.getSpatialPath(input);
       case "find_in_drawings":
         return this.findInDrawings(input);
+      case "search_documents":
+        return this.searchDocuments(input);
       case "show_in_3d":
         return this.showIn3d(input);
       case "open_drawing":
@@ -1220,6 +1239,52 @@ export class AskToolRuntime {
       };
     });
     return { drawings: out };
+  }
+
+  /**
+   * Fulltext v obsahu dokumentov (D-063) — RPC `search_documents` nad
+   * `document_pages` (text extrahuje etl/pdf_text.py). Deep-link stavia server.
+   */
+  private async searchDocuments(input: Record<string, unknown>) {
+    const supabase = getSupabaseAdmin();
+    const q = String(input.q ?? "").trim().slice(0, 200);
+    if (q.length < 2) throw new Error("q musí mať aspoň 2 znaky.");
+
+    const { data, error } = await supabase.rpc("search_documents", {
+      q,
+      max_rows: clampLimit(input.limit),
+    });
+    if (error) throw new Error(error.message);
+
+    const rows = (data ?? []) as {
+      document_id: string;
+      document_ref: string | null;
+      document_name: string | null;
+      page: number;
+      rank: number;
+      snippet: string | null;
+    }[];
+    if (rows.length === 0) {
+      return {
+        rows,
+        hint:
+          "Žiadna zhoda v extrahovanom texte — dokument nemusí mať textovú vrstvu " +
+          "(výkresy sú prevažne grafika). Metadáta dokumentov skús cez query_view " +
+          "relation=documents/objects alebo search_everything.",
+      };
+    }
+    for (const r of rows) {
+      this.addSource({
+        id: r.document_id,
+        object_type: "document",
+        object_ref: r.document_ref ?? null,
+        name: r.document_name ?? null,
+      });
+    }
+    return rows.map((r) => ({
+      ...r,
+      deep_link: `/drawing/${r.document_id}?page=${r.page}`,
+    }));
   }
 
   /** Uzol podľa UUID alebo object_ref — spoločné pre akčné tools. */

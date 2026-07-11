@@ -324,6 +324,30 @@
       "notes": "Číselné porovnanie psetu (D-060): aggregate_objects return_rows=true, filter path=<plocha>, op=gt. Hodnotu prahu vyber z prod dát tak, aby prešla len časť miestností — chytá lexikografickú chybu ('9'>'10')."
     },
     {
+      "id": "doc-content-phrase",
+      "category": "documents_content",
+      "question": "V ktorom dokumente sa spomína TODO-fraza-z-legendy?",
+      "expect": { "answer_matches": ["TODO-nazov-dokumentu"] },
+      "verified": false,
+      "notes": "Po behu etl/pdf_text.py: vyber frázu, ktorá sa reálne vyskytuje v extrahovanom texte (select * from search_documents('<fraza>')). D-063."
+    },
+    {
+      "id": "doc-content-spec",
+      "category": "documents_content",
+      "question": "Na ktorej strane výpisu skladieb je skladba TODO-oznacenie?",
+      "expect": { "answer_matches": ["\\bTODO\\b"] },
+      "verified": false,
+      "notes": "Očakávaj číslo strany zo search_documents; over proti Výpisu skladieb (D-043)."
+    },
+    {
+      "id": "doc-content-negative",
+      "category": "documents_content",
+      "question": "V ktorom dokumente sa píše o vzduchoplavbe?",
+      "expect": { "no_facts": true },
+      "verified": true,
+      "notes": "Nezmyselný pojem — model musí priznať, že v obsahu dokumentov nič nenašiel (nie vymyslieť dokument). Funguje aj pred behom pdf_text (prázdna tabuľka)."
+    },
+    {
       "id": "neg-valves",
       "category": "negative",
       "question": "Koľko uzatváracích ventilov je v budove?",
