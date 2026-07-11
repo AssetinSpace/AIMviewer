@@ -16,6 +16,101 @@ const FILTER_EMISSIVE = new THREE.Color(0x1e3a8a);
 
 const NP_RE = /\d+NP/; // normalizácia podlažia naprieč modelmi: "1NP_VZT" → "1NP" (D-049)
 
+// Typy geometrie vylúčené z renderu (voids sa aplikujú cez prePass void mapy).
+const HIDDEN_MESH_TYPES = new Set(["IfcOpeningElement", "IfcSpace"]);
+
+// ── IFClite low-level pipeline typy (dynamický import @ifc-lite/wasm) ──────
+interface PrePassData {
+  jobs: Uint32Array;
+  unitScale: number;
+  rtcOffset?: Float64Array;
+  needsShift: boolean;
+  voidKeys: Uint32Array;
+  voidCounts: Uint32Array;
+  voidValues: Uint32Array;
+  styleIds: Uint32Array;
+  styleColors: Uint8Array;
+  planeAngleToRadians?: number;
+  materialElementIds?: Uint32Array;
+  materialColorCounts?: Uint32Array;
+  materialColors?: Uint8Array;
+}
+
+interface WasmMesh {
+  readonly expressId: number;
+  readonly ifcType: string;
+  readonly vertexCount: number;
+  readonly positions: Float32Array;
+  readonly normals: Float32Array;
+  readonly indices: Uint32Array;
+  readonly color: Float32Array;
+  readonly origin: Float64Array;
+  free(): void;
+}
+
+interface WasmMeshCollection {
+  readonly length: number;
+  takeMesh(index: number): WasmMesh | undefined;
+  free(): void;
+}
+
+interface WasmIfcAPI {
+  buildPrePassOnce(data: Uint8Array): PrePassData;
+  processGeometryBatch(
+    data: Uint8Array,
+    jobsFlat: Uint32Array,
+    unitScale: number,
+    rtcX: number,
+    rtcY: number,
+    rtcZ: number,
+    needsShift: boolean,
+    voidKeys: Uint32Array,
+    voidCounts: Uint32Array,
+    voidValues: Uint32Array,
+    styleIds: Uint32Array,
+    styleColors: Uint8Array,
+    planeAngleToRadians?: number | null,
+    materialElementIds?: Uint32Array | null,
+    materialColorCounts?: Uint32Array | null,
+    materialColorsRgba?: Uint8Array | null
+  ): WasmMeshCollection;
+  exportGlbFromMeshes(
+    positions: Float32Array,
+    normals: Float32Array,
+    indices: Uint32Array,
+    vertexCounts: Uint32Array,
+    indexCounts: Uint32Array,
+    colors: Float32Array,
+    origins: Float64Array,
+    expressIds: Uint32Array,
+    includeMetadata: boolean
+  ): Uint8Array;
+  free(): void;
+}
+
+interface RtcOffset {
+  x: number;
+  y: number;
+  z: number;
+}
+
+/** IfcMapConversion — georeferencia local → CRS (E/N/H v metroch CRS). */
+interface MapConversion {
+  e: number;  // Eastings
+  n: number;  // Northings
+  h: number;  // OrthogonalHeight
+  xa: number; // XAxisAbscissa
+  xo: number; // XAxisOrdinate
+  s: number;  // Scale (file units → CRS units)
+}
+
+/** Referenčný frame federácie = frame prvého modelu. */
+interface FederationFrame {
+  rtc: RtcOffset;
+  map: MapConversion | null;
+  unitScale: number;
+}
+
 interface Props {
   /** Modely federácie (D-049) — renderované do jednej scény. */
   models: IfcModel[];
@@ -121,17 +216,9 @@ export function IFCViewer({
         setProgress("Inicializujem WASM…");
         const { default: initWasm, IfcAPI } = (await import(
           "@ifc-lite/wasm"
-        )) as {
+        )) as unknown as {
           default: (path?: string | URL | Request) => Promise<unknown>;
-          IfcAPI: new () => {
-            exportGlb(
-              content: string,
-              includeMetadata: boolean,
-              hidden: Uint32Array,
-              isolated: Uint32Array,
-              hiddenTypesCsv: string
-            ): Uint8Array;
-          };
+          IfcAPI: new () => WasmIfcAPI;
         };
         if (cancelled) return;
 
@@ -149,6 +236,14 @@ export function IFCViewer({
         const floorSet = new Set<string>();
         let firstBuffer: Uint8Array | null = null;
 
+        // Frame federácie (D-050) = frame PRVÉHO modelu. Dve vrstvy zarovnania:
+        //  1. zdieľaný RTC offset — súbory georeferencované veľkými súradnicami
+        //     v site placemente (per-model recentrovanie by stratilo vzájomný posun);
+        //  2. IfcMapConversion delta — súbory s malými lokálnymi súradnicami
+        //     a georeferenciou v map conversion (IFClite ju ignoruje, iné
+        //     prehliadače aplikujú → bez kompenzácie sa modely rozídu).
+        let fedFrame: FederationFrame | null = null;
+
         const rootGroup = new THREE.Group();
 
         // ── Načítaj a spracuj každý model ───────────────────────────
@@ -160,7 +255,8 @@ export function IFCViewer({
           if (!resp.ok) throw new Error(`${model.label} ${resp.status}: ${resp.statusText}`);
           const ifcText = await resp.text();
           if (cancelled) return;
-          if (mi === 0) firstBuffer = new TextEncoder().encode(ifcText);
+          const ifcBytes = new TextEncoder().encode(ifcText);
+          if (mi === 0) firstBuffer = ifcBytes;
 
           // expressId → ifc_guid (lokálne pre tento model)
           const exprToGuid = new Map<number, string>();
@@ -189,17 +285,32 @@ export function IFCViewer({
             }
           }
 
-          // GLB konverzia cez IFClite
+          // GLB konverzia cez IFClite low-level pipeline (prePass → geometry
+          // batch so zdieľaným RTC → GLB). exportGlb sa nedá použiť: recentruje
+          // každý súbor podľa vlastného RTC a federácia stráca vzájomný posun.
           setProgress(`Spracúvam geometriu (${model.label})…`);
           const api = new IfcAPI();
-          const empty = new Uint32Array(0);
-          const glbBytes = api.exportGlb(
-            ifcText,
-            true,
-            empty,
-            empty,
-            "IfcOpeningElement,IfcSpace"
-          );
+          const prePass = api.buildPrePassOnce(ifcBytes);
+          const mapConv = parseMapConversion(ifcText);
+          let glbBytes: Uint8Array;
+          if (fedFrame === null) {
+            // Prvý model definuje frame federácie.
+            fedFrame = {
+              rtc: prePass.needsShift
+                ? {
+                    x: prePass.rtcOffset?.[0] ?? 0,
+                    y: prePass.rtcOffset?.[1] ?? 0,
+                    z: prePass.rtcOffset?.[2] ?? 0,
+                  }
+                : { x: 0, y: 0, z: 0 },
+              map: mapConv,
+              unitScale: prePass.unitScale,
+            };
+            glbBytes = buildGlb(api, ifcBytes, prePass, fedFrame.rtc, prePass.needsShift);
+          } else {
+            glbBytes = buildGlb(api, ifcBytes, prePass, fedFrame.rtc, true);
+          }
+          api.free();
           if (cancelled) return;
 
           // GLB → Three.js
@@ -233,6 +344,11 @@ export function IFCViewer({
               }
             }
           });
+
+          // IfcMapConversion delta voči prvému modelu → transformácia skupiny.
+          if (mi > 0 && mapConv && fedFrame.map) {
+            applyMapDelta(gltf.scene, fedFrame, mapConv, prePass.unitScale);
+          }
 
           rootGroup.add(gltf.scene);
         }
@@ -499,6 +615,175 @@ export function IFCViewer({
 }
 
 // ── Pomocné funkcie ─────────────────────────────────────────────────────────
+
+/**
+ * Parsuj IfcMapConversion zo STEP textu:
+ * IFCMAPCONVERSION(#src,#tgt,Eastings,Northings,Height,XAbscissa,XOrdinate,Scale).
+ * Vracia null, keď entita chýba (súbor bez map-conversion georeferencie).
+ */
+function parseMapConversion(ifcText: string): MapConversion | null {
+  const m =
+    /IFCMAPCONVERSION\(#\d+,#\d+,([^,]+),([^,]+),([^,]+),([^,]+),([^,]+),([^,)]+)\)/.exec(
+      ifcText
+    );
+  if (!m) return null;
+  const num = (raw: string, fallback: number): number => {
+    const v = parseFloat(raw);
+    return Number.isFinite(v) ? v : fallback;
+  };
+  return {
+    e: num(m[1], 0),
+    n: num(m[2], 0),
+    h: num(m[3], 0),
+    xa: num(m[4], 1),
+    xo: num(m[5], 0),
+    s: num(m[6], 1),
+  };
+}
+
+/**
+ * Umiestni model do frame-u prvého modelu podľa delty IfcMapConversion.
+ * Transformácia T0⁻¹∘Ti je (pri zhodnej mierke) rotácia okolo zvislej osi
+ * + translácia; počíta sa v CRS metroch a prepočíta do render metrov frame-u.
+ * GL mapovanie: IFC (x, y, z-up) → three.js (x, z-up→y, −y).
+ */
+function applyMapDelta(
+  scene: THREE.Group,
+  frame: FederationFrame,
+  map: MapConversion,
+  unitScale: number
+): void {
+  const ref = frame.map;
+  if (!ref) return;
+
+  // Rotácia frame-u prvého modelu (normalizovaný X-axis vektor v CRS).
+  const refLen = Math.hypot(ref.xa, ref.xo) || 1;
+  const cos0 = ref.xa / refLen;
+  const sin0 = ref.xo / refLen;
+  // CRS metre → render metre frame-u (Scale je file-units → CRS units).
+  const ratio0 = frame.unitScale !== 0 ? ref.s / frame.unitScale : 1;
+
+  // Translácia: delta v CRS otočená do lokálneho frame-u prvého modelu.
+  const dE = map.e - ref.e;
+  const dN = map.n - ref.n;
+  const dH = map.h - ref.h;
+  const dx = (cos0 * dE + sin0 * dN) / ratio0;
+  const dy = (-sin0 * dE + cos0 * dN) / ratio0;
+  const dz = dH / ratio0;
+  scene.position.set(dx, dz, -dy); // IFC Z-up → GL Y-up
+
+  // Rotácia: rozdiel uhlov grid-north (θi − θ0) okolo zvislej osi.
+  const delta = Math.atan2(map.xo, map.xa) - Math.atan2(ref.xo, ref.xa);
+  if (Math.abs(delta) > 1e-9) scene.rotation.y = delta;
+
+  // Mierka: pomer render mierok (typicky 1 — obe strany v metroch).
+  const ratioI = unitScale !== 0 ? map.s / unitScale : 1;
+  const sRel = ratio0 !== 0 ? ratioI / ratio0 : 1;
+  if (Math.abs(sRel - 1) > 1e-9) scene.scale.setScalar(sRel);
+}
+
+/**
+ * IFC bytes → GLB cez IFClite low-level pipeline s explicitným RTC offsetom.
+ * Pri federácii dostávajú všetky modely RTC offset prvého modelu, takže ich
+ * geometria zostáva v spoločnom georeferencovanom frame (D-050).
+ */
+function buildGlb(
+  api: WasmIfcAPI,
+  ifcBytes: Uint8Array,
+  prePass: PrePassData,
+  rtc: RtcOffset,
+  needsShift: boolean
+): Uint8Array {
+  const collection = api.processGeometryBatch(
+    ifcBytes,
+    prePass.jobs,
+    prePass.unitScale,
+    rtc.x,
+    rtc.y,
+    rtc.z,
+    needsShift,
+    prePass.voidKeys,
+    prePass.voidCounts,
+    prePass.voidValues,
+    prePass.styleIds,
+    prePass.styleColors,
+    prePass.planeAngleToRadians,
+    prePass.materialElementIds,
+    prePass.materialColorCounts,
+    prePass.materialColors
+  );
+
+  // Flatten meshov pre exportGlbFromMeshes (skryté typy a prázdne meshe von).
+  // Gettery MeshDataJs kopírujú z WASM — každé pole čítame práve raz.
+  interface FlatMesh {
+    pos: Float32Array;
+    norm: Float32Array;
+    idx: Uint32Array;
+    color: Float32Array;
+    origin: Float64Array;
+    eid: number;
+  }
+  const kept: FlatMesh[] = [];
+  let vTot = 0;
+  let iTot = 0;
+  for (let i = 0; i < collection.length; i++) {
+    const mesh = collection.takeMesh(i);
+    if (!mesh) continue;
+    if (mesh.vertexCount === 0 || HIDDEN_MESH_TYPES.has(mesh.ifcType)) {
+      mesh.free();
+      continue;
+    }
+    const flat: FlatMesh = {
+      pos: mesh.positions,
+      norm: mesh.normals,
+      idx: mesh.indices,
+      color: mesh.color,
+      origin: mesh.origin,
+      eid: mesh.expressId,
+    };
+    mesh.free();
+    kept.push(flat);
+    vTot += flat.pos.length;
+    iTot += flat.idx.length;
+  }
+  collection.free();
+
+  const positions = new Float32Array(vTot);
+  const normals = new Float32Array(vTot);
+  const indices = new Uint32Array(iTot);
+  const vertexCounts = new Uint32Array(kept.length);
+  const indexCounts = new Uint32Array(kept.length);
+  const colors = new Float32Array(kept.length * 4);
+  const origins = new Float64Array(kept.length * 3);
+  const expressIds = new Uint32Array(kept.length);
+
+  let vOff = 0;
+  let iOff = 0;
+  kept.forEach((flat, k) => {
+    positions.set(flat.pos, vOff);
+    normals.set(flat.norm, vOff);
+    indices.set(flat.idx, iOff);
+    vertexCounts[k] = flat.pos.length / 3;
+    indexCounts[k] = flat.idx.length;
+    colors.set(flat.color, k * 4);
+    origins.set(flat.origin, k * 3);
+    expressIds[k] = flat.eid;
+    vOff += flat.pos.length;
+    iOff += flat.idx.length;
+  });
+
+  return api.exportGlbFromMeshes(
+    positions,
+    normals,
+    indices,
+    vertexCounts,
+    indexCounts,
+    colors,
+    origins,
+    expressIds,
+    true
+  );
+}
 
 /** Normalizuj názov podlažia naprieč modelmi: "1NP_VZT" → "1NP" (D-049). */
 function normalizeFloor(name: string | undefined): string | undefined {
