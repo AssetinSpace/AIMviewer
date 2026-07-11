@@ -26,8 +26,16 @@ import type { ViewerApi } from "@/lib/viewer-api";
 
 const SOURCE = "aim-bridge" as const;
 
-/** Deployed ifc-lite viewer (with AimBridge). Set on Vercel per environment. */
-const VIEWER_URL = process.env.NEXT_PUBLIC_VIEWER_URL;
+/**
+ * Deployed ifc-lite viewer (with AimBridge). The default is the stable
+ * scope-qualified production alias of the AssetinSpace/ifc-lite Vercel project
+ * (`ifc-lite-viewer` in `assetinspaces-projects`) — NOT ifclite.com, which is
+ * upstream without the bridge. `NEXT_PUBLIC_VIEWER_URL` overrides per
+ * environment (dev → http://localhost:3000 with ifc-lite `pnpm dev`).
+ */
+const VIEWER_URL =
+  process.env.NEXT_PUBLIC_VIEWER_URL ??
+  "https://ifc-lite-viewer-assetinspaces-projects.vercel.app";
 
 type ViewerToHost =
   | { source: typeof SOURCE; type: "READY" }
@@ -72,6 +80,14 @@ export function IFCViewerEmbed({
 }: Props) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const [status, setStatus] = useState<"loading" | "ready">("loading");
+  // Diagnostic: still no READY/MODELS_LOADED after 30 s → show a hint with the
+  // viewer URL, so a wrong NEXT_PUBLIC_VIEWER_URL is visible, not a blank spin.
+  const [slow, setSlow] = useState(false);
+  useEffect(() => {
+    if (status !== "loading") return;
+    const t = setTimeout(() => setSlow(true), 30_000);
+    return () => clearTimeout(t);
+  }, [status]);
 
   // Only the viewer's own origin may talk to us, and we only post to it.
   const viewerOrigin = useMemo(() => {
@@ -138,6 +154,7 @@ export function IFCViewerEmbed({
   if (src !== loadedSrc) {
     setLoadedSrc(src);
     setStatus("loading");
+    setSlow(false);
   }
 
   // Reset the postMessage bridge refs on reload. Kept in an effect (refs must
@@ -233,13 +250,22 @@ export function IFCViewerEmbed({
         src={src}
         title="IFC 3D prehliadač"
         className="h-full w-full border-0"
-        allow="fullscreen; xr-spatial-tracking"
+        allow="fullscreen; xr-spatial-tracking; cross-origin-isolated"
       />
 
       {status === "loading" && (
         <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-2 bg-muted/60 backdrop-blur-sm">
           <div className="h-5 w-5 animate-spin rounded-full border-2 border-primary border-t-transparent" />
           <span className="text-sm text-muted-foreground">Načítavam 3D model…</span>
+          {slow && (
+            <span className="max-w-sm text-center text-xs text-muted-foreground">
+              Trvá to dlhšie než zvyčajne. Ak sa model nezobrazí, skontrolujte
+              dostupnosť prehliadača na{" "}
+              <code className="rounded bg-muted px-1">{VIEWER_URL}</code>
+              {" "}a hodnotu{" "}
+              <code className="rounded bg-muted px-1">NEXT_PUBLIC_VIEWER_URL</code>.
+            </span>
+          )}
         </div>
       )}
     </div>
