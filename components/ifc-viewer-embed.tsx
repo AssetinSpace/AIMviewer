@@ -27,15 +27,16 @@ import type { ViewerApi } from "@/lib/viewer-api";
 const SOURCE = "aim-bridge" as const;
 
 /**
- * Deployed ifc-lite viewer (with AimBridge). The default is the stable
- * scope-qualified production alias of the AssetinSpace/ifc-lite Vercel project
- * (`ifc-lite-viewer` in `assetinspaces-projects`) — NOT ifclite.com, which is
- * upstream without the bridge. `NEXT_PUBLIC_VIEWER_URL` overrides per
- * environment (dev → http://localhost:3000 with ifc-lite `pnpm dev`).
+ * Deployed ifc-lite viewer (with AimBridge). The default is the PUBLIC
+ * production domain of the AssetinSpace/ifc-lite Vercel project — the plain
+ * `<project>.vercel.app` form (same pattern as this app's ai-mviewer.vercel.app).
+ * Scope-suffixed aliases (`…-assetinspaces-projects.vercel.app`) are "generated
+ * URLs" behind Vercel SSO by default, which renders a login page the iframe
+ * refuses to frame → endless spinner. NOT ifclite.com (upstream, no bridge).
+ * `NEXT_PUBLIC_VIEWER_URL` overrides per environment (dev → localhost:3000).
  */
 const VIEWER_URL =
-  process.env.NEXT_PUBLIC_VIEWER_URL ??
-  "https://ifc-lite-viewer-assetinspaces-projects.vercel.app";
+  process.env.NEXT_PUBLIC_VIEWER_URL ?? "https://ifc-lite-viewer.vercel.app";
 
 type ViewerToHost =
   | { source: typeof SOURCE; type: "READY" }
