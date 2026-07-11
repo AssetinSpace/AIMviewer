@@ -17,7 +17,9 @@ import type { ToolDefinition } from "./provider";
  */
 
 const DEFAULT_LIMIT = 20;
-const MAX_LIMIT = 50;
+const MAX_LIMIT = 100;
+/** Koľko prvkov naraz zvládne show_in_3d (embed viewer unesie aj stovky GUIDov). */
+const SHOW_3D_CAP = 100;
 /** Max dĺžka JSON payloadu tool výsledku (ochrana kontextu). */
 const MAX_RESULT_CHARS = 12_000;
 /** Koľko prvkov naraz zvládne lokalizácia (locate_objects). */
@@ -405,7 +407,7 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
         ids_or_refs: {
           type: "array",
           items: { type: "string" },
-          description: "objects.id (UUID) alebo object_ref prvkov na zvýraznenie (1–20)",
+          description: `objects.id (UUID) alebo object_ref prvkov na zvýraznenie (1–${SHOW_3D_CAP})`,
         },
         id_or_ref: { type: "string", description: "Alternatíva pre jediný prvok" },
       },
@@ -1318,23 +1320,55 @@ export class AskToolRuntime {
     if (single) refs.push(single);
     if (refs.length === 0) throw new Error("Zadaj ids_or_refs (pole) alebo id_or_ref.");
 
+    // Dávkovo: pri SHOW_3D_CAP prvkoch by per-prvok slučka (2 queries × N)
+    // znamenala stovky round-tripov; takto sú to 2–3 `.in()` queries.
+    const unique = [...new Set(refs.map((r) => r.trim()))].slice(0, SHOW_3D_CAP);
+    const rows: ObjectRow[] = [];
+    for (const [col, vals] of [
+      ["id", unique.filter(isUuid)],
+      ["object_ref", unique.filter((r) => !isUuid(r))],
+    ] as const) {
+      for (let i = 0; i < vals.length; i += IN_CHUNK) {
+        const { data, error } = await supabase
+          .from("objects")
+          .select("id, object_type, object_ref, name, ifc_type, predefined_type")
+          .in(col, vals.slice(i, i + IN_CHUNK));
+        if (error) throw new Error(error.message);
+        rows.push(...((data ?? []) as ObjectRow[]));
+      }
+    }
+    const byId = new Map(rows.map((r) => [r.id, r]));
+    const byRef = new Map(
+      rows.filter((r) => r.object_ref).map((r) => [r.object_ref as string, r])
+    );
+
+    const guidByObjectId = new Map<string, string>();
+    const ids = rows.map((r) => r.id);
+    for (let i = 0; i < ids.length; i += IN_CHUNK) {
+      const { data, error } = await supabase
+        .from("ifc_guid_history")
+        .select("object_id, ifc_guid")
+        .in("object_id", ids.slice(i, i + IN_CHUNK))
+        .is("valid_until", null);
+      if (error) throw new Error(error.message);
+      for (const row of data ?? []) {
+        if (row.object_id && row.ifc_guid && !guidByObjectId.has(row.object_id as string)) {
+          guidByObjectId.set(row.object_id as string, row.ifc_guid as string);
+        }
+      }
+    }
+
     const shown: { label: string; guid: string }[] = [];
     const skipped: string[] = [];
-    for (const ref of [...new Set(refs)].slice(0, 20)) {
-      const obj = await this.resolveObject(ref);
+    for (const ref of unique) {
+      const obj = isUuid(ref) ? byId.get(ref) : byRef.get(ref);
       if (!obj) {
         skipped.push(`${ref} (neexistuje)`);
         continue;
       }
-      const { data, error } = await supabase
-        .from("ifc_guid_history")
-        .select("ifc_guid")
-        .eq("object_id", obj.id)
-        .is("valid_until", null)
-        .limit(1);
-      if (error) throw new Error(error.message);
-      const guid = data?.[0]?.ifc_guid as string | undefined;
+      this.addSource(obj);
       const label = obj.object_ref ?? obj.name ?? obj.id.slice(0, 8);
+      const guid = guidByObjectId.get(obj.id);
       if (!guid) skipped.push(`${label} (bez IFC GUID — nie je v 3D)`);
       else shown.push({ label, guid });
     }
