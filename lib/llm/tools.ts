@@ -38,10 +38,12 @@ const QUERY_RELATIONS = new Set([
   "classification_references",
   "ifc_guid_history",
   "relationship_types",
+  "ifc_property_definitions",
   "v_asset_effective",
   "v_asset_classifications",
   "v_floors",
   "v_actors",
+  "v_property_dictionary",
   "rel_aggregates",
   "rel_contained_in_spatial_structure",
   "rel_defines_by_type",
@@ -134,20 +136,25 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
   {
     name: "get_model_stats",
     description:
-      "Slovník modelu: počty uzlov podľa object_type + zoznam IFC tried assetov " +
-      "(ifc_type × predefined_type) s počtami. Zavolaj, keď nevieš, aké triedy/podtypy " +
-      "v projekte existujú, alebo keď search_objects nič nenašiel — zistíš správne hodnoty filtrov.",
+      "Slovník modelu: počty uzlov podľa object_type, zoznam IFC tried assetov " +
+      "(ifc_type × predefined_type) s počtami, zoznam psetov (názvy + počet properties), " +
+      "podlažia, systémy, klasifikačné systémy a dokumenty. Zavolaj, keď nevieš, aké " +
+      "triedy/podtypy/psety v projekte existujú, alebo keď search nič nenašiel — zistíš " +
+      "správne hodnoty filtrov. Presné JSONB cesty (pset × property × typ hodnoty × " +
+      "vzorky hodnôt) → query_view relation=v_property_dictionary (D-058).",
     inputSchema: { type: "object", properties: {} },
   },
   {
     name: "search_objects",
     description:
-      "Vyhľadanie uzlov grafu (objects). `query` hľadá naraz v názve, object_ref, IFC triede " +
-      "aj predefined_type (ilike). Filtre: object_type (asset, asset_type, space, floor, " +
-      "building, site, system, document, person, organization), ifc_type = IFC trieda " +
-      "(napr. IfcDoor, IfcUnitaryEquipment), predefined_type = IFC enum podtypu (napr. " +
-      "AIRCONDITIONINGUNIT, VAV). POZOR: podtyp ako AIRCONDITIONINGUNIT je predefined_type, " +
-      "NIE ifc_type. Na počty použi count_objects, na slovník hodnôt get_model_stats.",
+      "Vyhľadanie uzlov grafu (objects) podľa IDENTITY a IFC typológie. `query` hľadá naraz " +
+      "v názve, object_ref, IFC triede aj predefined_type (ilike). Filtre: object_type " +
+      "(asset, asset_type, space, floor, building, site, system, document, person, " +
+      "organization), ifc_type = IFC trieda (napr. IfcDoor, IfcUnitaryEquipment), " +
+      "predefined_type = IFC enum podtypu (napr. AIRCONDITIONINGUNIT, VAV). POZOR: podtyp " +
+      "ako AIRCONDITIONINGUNIT je predefined_type, NIE ifc_type. Obsah VLASTNOSTÍ (psety) " +
+      "tento tool nevidí — na to je search_everything. Na počty použi count_objects, " +
+      "na slovník hodnôt get_model_stats.",
     inputSchema: {
       type: "object",
       properties: {
@@ -157,6 +164,31 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
         predefined_type: { type: "string", description: "Filter na IFC predefined_type enum (case-insensitive zhoda)" },
         limit: { type: "number", description: `Max riadkov (default ${DEFAULT_LIMIT}, strop ${MAX_LIMIT})` },
       },
+    },
+  },
+  {
+    name: "search_everything",
+    description:
+      "Fulltextové vyhľadávanie nad CELÝM obsahom uzlov — názov, object_ref, IFC trieda " +
+      "aj VŠETKY psety (kľúče a hodnoty, vrátane custom psetov). Tolerantné na diakritiku " +
+      "a preklepy (fuzzy). Použi vždy, keď hľadáš podľa OBSAHU vlastností (výrobca, materiál, " +
+      "sériové číslo, ľubovoľné kľúčové slovo) alebo keď search_objects nič nenašiel. " +
+      "Vracia score, match_kind, úryvok (headline) a matched_properties = v ktorom psete/" +
+      "property match nastal — cituj to ako dôkaz. Kandidátov ďalej over cez " +
+      "get_asset_details/get_object; hľadané slovo skús aj v angličtine (kľúče psetov " +
+      "bývajú anglické: HeatRecovery, Manufacturer…).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        q: { type: "string", description: "Hľadaný text (slová, kód, hodnota; min 2 znaky)" },
+        object_types: {
+          type: "array",
+          items: { type: "string" },
+          description: "Voliteľný filter na object_type (napr. ['asset','asset_type'])",
+        },
+        limit: { type: "number", description: `Max riadkov (default ${DEFAULT_LIMIT}, strop ${MAX_LIMIT})` },
+      },
+      required: ["q"],
     },
   },
   {
@@ -201,7 +233,11 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
       "user_defined_type, properties JSONB s psetmi), floors (elevation), documents, persons, " +
       "classification_systems/references, ifc_guid_history, relationship_types (manifest hrán), " +
       "v_asset_effective (properties s dedičnosťou type→occurrence), v_asset_classifications, " +
-      "v_floors, v_actors a hrany rel_aggregates, rel_contained_in_spatial_structure, " +
+      "v_floors, v_actors, v_property_dictionary (slovník psetov z dát: object_type, ifc_type, " +
+      "pset, property, value_type, object_count, sample_values, min/max_number — presné JSONB " +
+      "cesty zisti TU, nehádaj ich), ifc_property_definitions (IFC definície štandardných " +
+      "psetov: description, data_type, enum_values, applicable_classes — VÝZNAM a jednotky " +
+      "property) a hrany rel_aggregates, rel_contained_in_spatial_structure, " +
       "rel_defines_by_type, rel_associates_document, rel_associates_classification, " +
       "rel_assigns_to_actor, rel_assigns_to_group, rel_member_of (všetky: from_id→to_id, " +
       "valid_until null = aktívna). JSONB cesty fungujú v select aj filtri: " +
@@ -241,6 +277,61 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
         limit: { type: "number", description: `Max riadkov (default ${DEFAULT_LIMIT}, strop ${MAX_LIMIT})` },
       },
       required: ["relation"],
+    },
+  },
+  {
+    name: "aggregate_objects",
+    description:
+      "Presné agregácie a ČÍSELNÉ porovnania nad hodnotami psetov — počíta databáza, " +
+      "nikdy nepočítaj z orezaných riadkov. agg=count|sum|avg|min|max nad numerickou " +
+      "hodnotou prop_path (napr. ['VZT_Parametre','AirFlowRate']); group_by (stĺpec: " +
+      "object_type|ifc_type|predefined_type|user_defined_type|name|object_ref) alebo " +
+      "group_by_path (pset cesta ako kľúč, napr. výrobca). AND filtre " +
+      "{column|path, op eq|neq|gt|gte|lt|lte|ilike|is, value} — gt/lt nad path porovnáva " +
+      "NUMERICKY (v query_view sa JSONB porovnáva ako text — na čísla vždy toto). " +
+      "ids = zúženie na konkrétne prvky (reťazenie s locate_objects/search_everything). " +
+      "return_rows=true vráti top 50 riadkov s hodnotou (implicitne len tie, čo hodnotu " +
+      "majú). Nenumerické hodnoty preskočí a reportuje v skipped_non_numeric. " +
+      "relation: objects | v_asset_effective (dedičnosť type→occurrence — pre psety " +
+      "assetov preferuj v_asset_effective).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        relation: { type: "string", description: "objects (default) | v_asset_effective" },
+        agg: { type: "string", description: "count (default) | sum | avg | min | max" },
+        prop_path: {
+          type: "array",
+          items: { type: "string" },
+          description: "Cesta v properties, napr. ['Qto_DoorBaseQuantities','Width']",
+        },
+        group_by: { type: "string", description: "Stĺpec pre skupiny (whitelist)" },
+        group_by_path: {
+          type: "array",
+          items: { type: "string" },
+          description: "Alternatíva: pset cesta ako kľúč skupiny",
+        },
+        filters: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              column: { type: "string", description: "Stĺpec z whitelistu" },
+              path: { type: "array", items: { type: "string" }, description: "Alebo pset cesta" },
+              op: { type: "string", description: "eq|neq|gt|gte|lt|lte|ilike|is" },
+              value: { description: "Hodnota (pre gt/lt nad path číslo ako string)" },
+            },
+            required: ["op"],
+          },
+          description: "AND filtre",
+        },
+        ids: {
+          type: "array",
+          items: { type: "string" },
+          description: "Voliteľné: len tieto objects.id (UUID)",
+        },
+        max_groups: { type: "number", description: "Strop skupín (default a max 50)" },
+        return_rows: { type: "boolean", description: "true = riadky s hodnotou namiesto agregátu" },
+      },
     },
   },
   {
@@ -350,6 +441,23 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
     },
   },
   {
+    name: "search_documents",
+    description:
+      "Fulltextové vyhľadávanie v OBSAHU dokumentov/výkresov (extrahovaný text PDF strán — " +
+      "legendy, špecifikácie, popisky, pečiatky). Vracia dokument, stranu, snippet a " +
+      "deep_link na otvorenie výkresu na danej strane. Použi na otázky 'v ktorom dokumente " +
+      "sa píše o X'. POZOR: výkresy sú prevažne grafika — text býva riedky; ak dokument " +
+      "nemá extrahovaný text, nenájde sa tu (metadáta dokumentov hľadá query_view/search).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        q: { type: "string", description: "Hľadaný text (min 2 znaky)" },
+        limit: { type: "number", description: "Max výsledkov (default 10, strop 50)" },
+      },
+      required: ["q"],
+    },
+  },
+  {
     name: "find_in_drawings",
     description:
       "Výkresy, v ktorých je prvok (asset/asset_type) zobrazený (E4 auto-linking) vrátane " +
@@ -435,12 +543,16 @@ export class AskToolRuntime {
         return this.getModelStats();
       case "search_objects":
         return this.searchObjects(input);
+      case "search_everything":
+        return this.searchEverything(input);
       case "count_objects":
         return this.countObjects(input);
       case "locate_objects":
         return this.locateObjects(input);
       case "query_view":
         return this.queryView(input);
+      case "aggregate_objects":
+        return this.aggregateObjects(input);
       case "get_object":
         return this.getObject(input);
       case "get_asset_details":
@@ -451,6 +563,8 @@ export class AskToolRuntime {
         return this.getSpatialPath(input);
       case "find_in_drawings":
         return this.findInDrawings(input);
+      case "search_documents":
+        return this.searchDocuments(input);
       case "show_in_3d":
         return this.showIn3d(input);
       case "open_drawing":
@@ -503,6 +617,46 @@ export class AskToolRuntime {
     for (const r of rows) this.addSource(r);
     if (rows.length === 0) {
       return { rows, hint: "Nič sa nenašlo — zavolaj get_model_stats a over hodnoty filtrov." };
+    }
+    return rows;
+  }
+
+  /**
+   * Fulltext + fuzzy nad `objects.search_text` (D-059) — RPC `search_everything`.
+   * Jediné .rpc() volanie LLM vrstvy: parametrizované (žiadny SQL splicing),
+   * row-cap drží SQL funkcia (limit 50).
+   */
+  private async searchEverything(input: Record<string, unknown>) {
+    const supabase = getSupabaseAdmin();
+    const q = String(input.q ?? "").trim().slice(0, 200);
+    if (q.length < 2) throw new Error("q musí mať aspoň 2 znaky.");
+    const objectTypes = Array.isArray(input.object_types)
+      ? (input.object_types as unknown[]).filter(
+          (v): v is string => typeof v === "string" && v.trim().length > 0
+        )
+      : null;
+
+    const { data, error } = await supabase.rpc("search_everything", {
+      q,
+      object_types: objectTypes && objectTypes.length > 0 ? objectTypes : null,
+      max_rows: clampLimit(input.limit),
+    });
+    if (error) throw new Error(error.message);
+
+    const rows = (data ?? []) as (ObjectRow & {
+      score: number;
+      match_kind: string;
+      headline: string | null;
+      matched_properties: unknown;
+    })[];
+    for (const r of rows) this.addSource(r);
+    if (rows.length === 0) {
+      return {
+        rows,
+        hint:
+          "Nič sa nenašlo — skús synonymá alebo anglický ekvivalent (kľúče psetov " +
+          "bývajú anglické), prípadne over slovník cez v_property_dictionary.",
+      };
     }
     return rows;
   }
@@ -689,6 +843,15 @@ export class AskToolRuntime {
       if (!COLUMN_RE.test(col)) throw new Error(`Neplatný stĺpec '${col}'.`);
       if (!QUERY_OPS.has(operator))
         throw new Error(`Neplatný operátor '${operator}' — povolené: ${[...QUERY_OPS].join(", ")}.`);
+      // PostgREST porovnáva JSONB cesty ako TEXT ('9' > '10') → číselné porovnanie
+      // psetov musí ísť cez aggregate_objects (guidance error, viditeľný v trace).
+      if (col.includes("->") && ["gt", "gte", "lt", "lte"].includes(operator)) {
+        throw new Error(
+          `Porovnanie '${operator}' nad JSONB cestou tu porovnáva text ('9' > '10'), nie ` +
+            `čísla — použi aggregate_objects s filters: [{path: [...], op: '${operator}', ` +
+            `value: '...'}] (numericky bezpečné; return_rows=true vráti riadky).`
+        );
+      }
       if (operator === "in") {
         const vals = Array.isArray(value) ? value : [value];
         q = q.in(col, vals.slice(0, IN_CHUNK));
@@ -724,13 +887,78 @@ export class AskToolRuntime {
     return { rows, row_count: rows.length };
   }
 
+  /**
+   * Agregácie/číselné filtre nad psetmi (D-060) — RPC `aggregate_objects`.
+   * Whitelisty a formátovanie identifikátorov/literálov drží SQL funkcia;
+   * TS strana len normalizuje vstup a zbiera zdroje z rows režimu.
+   */
+  private async aggregateObjects(input: Record<string, unknown>) {
+    const supabase = getSupabaseAdmin();
+    const strArr = (v: unknown): string[] | null =>
+      Array.isArray(v)
+        ? (v as unknown[]).filter((x): x is string => typeof x === "string" && x.length > 0)
+        : null;
+    const propPath = strArr(input.prop_path);
+    const groupByPath = strArr(input.group_by_path);
+    const idsArr = (strArr(input.ids) ?? []).filter(isUuid);
+
+    const { data, error } = await supabase.rpc("aggregate_objects", {
+      relation:
+        typeof input.relation === "string" && input.relation ? input.relation : "objects",
+      agg: typeof input.agg === "string" && input.agg ? input.agg : "count",
+      prop_path: propPath && propPath.length > 0 ? propPath : null,
+      group_by:
+        typeof input.group_by === "string" && input.group_by ? input.group_by : null,
+      group_by_path: groupByPath && groupByPath.length > 0 ? groupByPath : null,
+      filters: Array.isArray(input.filters) ? input.filters : [],
+      ids: idsArr.length > 0 ? idsArr : null,
+      max_groups: typeof input.max_groups === "number" ? input.max_groups : 50,
+      return_rows: input.return_rows === true,
+    });
+    if (error) throw new Error(error.message);
+
+    const res = data as {
+      mode?: string;
+      rows?: {
+        id?: string;
+        object_ref?: string | null;
+        name?: string | null;
+        object_type?: string;
+      }[];
+    } | null;
+    if (res?.mode === "rows" && Array.isArray(res.rows)) {
+      for (const r of res.rows) {
+        if (typeof r.id === "string" && typeof r.object_type === "string") {
+          this.addSource({
+            id: r.id,
+            object_type: r.object_type,
+            object_ref: r.object_ref ?? null,
+            name: r.name ?? null,
+          });
+        }
+      }
+    }
+    return data;
+  }
+
   /** Slovník modelu — grounding pre filtre (model nemusí hádať hodnoty). */
   private async getModelStats() {
     const supabase = getSupabaseAdmin();
-    const { data, error } = await supabase
-      .from("objects")
-      .select("object_type, ifc_type, predefined_type")
-      .limit(10000);
+    // Jadro (objects) je povinné; grounding bloky (psety, podlažia, systémy,
+    // klasifikácie, dokumenty — D-058) sú best-effort: ich výpadok nezhodí tool.
+    const [objRes, psetRes, floorsRes, systemsRes, clsSysRes, docsRes] = await Promise.all([
+      supabase.from("objects").select("object_type, ifc_type, predefined_type").limit(10000),
+      supabase.from("v_property_dictionary").select("pset, property").limit(5000),
+      supabase
+        .from("v_floors")
+        .select("name, elevation")
+        .order("elevation", { ascending: true })
+        .limit(50),
+      supabase.from("objects").select("name").eq("object_type", "system").limit(50),
+      supabase.from("classification_systems").select("name").limit(20),
+      supabase.from("objects").select("name").eq("object_type", "document").limit(50),
+    ]);
+    const { data, error } = objRes;
     if (error) throw new Error(error.message);
 
     const byObjectType = new Map<string, number>();
@@ -754,6 +982,22 @@ export class AskToolRuntime {
       }
     }
 
+    // Psety: názov → počet properties (presné cesty žijú vo v_property_dictionary).
+    const psetProps = new Map<string, Set<string>>();
+    for (const r of (psetRes.error ? [] : (psetRes.data ?? [])) as {
+      pset: string;
+      property: string;
+    }[]) {
+      let set = psetProps.get(r.pset);
+      if (!set) {
+        set = new Set();
+        psetProps.set(r.pset, set);
+      }
+      set.add(r.property);
+    }
+    const names = (res: { error: unknown; data: { name: string | null }[] | null }) =>
+      res.error ? [] : (res.data ?? []).map((r) => r.name).filter(Boolean);
+
     return {
       object_types: Object.fromEntries(byObjectType),
       // Len occurrence triedy (asset) — typy by duplikovali slovník.
@@ -762,6 +1006,17 @@ export class AskToolRuntime {
         .map(([, v]) => v)
         .sort((a, b) => b.count - a.count)
         .slice(0, 150),
+      psets: [...psetProps.entries()]
+        .map(([pset, props]) => ({ pset, properties: props.size }))
+        .sort((a, b) => b.properties - a.properties)
+        .slice(0, 100),
+      psets_hint:
+        "Presné cesty properties->Pset->>Key, typy hodnôt a vzorky: " +
+        "query_view relation=v_property_dictionary (filtruj ifc_type/pset).",
+      floors: floorsRes.error ? [] : (floorsRes.data ?? []),
+      systems: names(systemsRes),
+      classification_systems: names(clsSysRes),
+      documents: names(docsRes),
     };
   }
 
@@ -984,6 +1239,52 @@ export class AskToolRuntime {
       };
     });
     return { drawings: out };
+  }
+
+  /**
+   * Fulltext v obsahu dokumentov (D-063) — RPC `search_documents` nad
+   * `document_pages` (text extrahuje etl/pdf_text.py). Deep-link stavia server.
+   */
+  private async searchDocuments(input: Record<string, unknown>) {
+    const supabase = getSupabaseAdmin();
+    const q = String(input.q ?? "").trim().slice(0, 200);
+    if (q.length < 2) throw new Error("q musí mať aspoň 2 znaky.");
+
+    const { data, error } = await supabase.rpc("search_documents", {
+      q,
+      max_rows: clampLimit(input.limit),
+    });
+    if (error) throw new Error(error.message);
+
+    const rows = (data ?? []) as {
+      document_id: string;
+      document_ref: string | null;
+      document_name: string | null;
+      page: number;
+      rank: number;
+      snippet: string | null;
+    }[];
+    if (rows.length === 0) {
+      return {
+        rows,
+        hint:
+          "Žiadna zhoda v extrahovanom texte — dokument nemusí mať textovú vrstvu " +
+          "(výkresy sú prevažne grafika). Metadáta dokumentov skús cez query_view " +
+          "relation=documents/objects alebo search_everything.",
+      };
+    }
+    for (const r of rows) {
+      this.addSource({
+        id: r.document_id,
+        object_type: "document",
+        object_ref: r.document_ref ?? null,
+        name: r.document_name ?? null,
+      });
+    }
+    return rows.map((r) => ({
+      ...r,
+      deep_link: `/drawing/${r.document_id}?page=${r.page}`,
+    }));
   }
 
   /** Uzol podľa UUID alebo object_ref — spoločné pre akčné tools. */

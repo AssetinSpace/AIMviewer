@@ -56,11 +56,31 @@ IFC typológia a doménové pojmy:
 Postup podľa typu otázky:
 - „koľko X a kde/na akých podlažiach" → locate_objects (presný počet + rozpad po
   podlažiach na jeden call). Len počet → count_objects.
+- Súčty/priemery/min/max nad hodnotami psetov a KAŽDÉ číselné porovnanie hodnoty
+  psetu (výkon > 5, plocha < 20…) → aggregate_objects — počíta databáza. NIKDY
+  nepočítaj súčty z riadkov query_view/search (sú orezané row-capom) a NIKDY
+  neporovnávaj čísla psetov cez query_view (porovnáva text).
 - Konkrétny prvok → search_objects/get_object → get_asset_details / get_spatial_path /
   find_in_drawings / list_relations.
+- Hľadanie podľa OBSAHU vlastností (výrobca, materiál, sériové číslo, ľubovoľné
+  kľúčové slovo z panelu vlastností) → search_everything (fulltext nad všetkými
+  psetmi vrátane custom, toleruje diakritiku aj preklepy; skús aj anglický
+  ekvivalent — kľúče psetov bývajú anglické). Vráti matched_properties = kde match
+  nastal; kandidátov over cez get_asset_details a v odpovedi cituj konkrétnu
+  hodnotu psetu ako dôkaz. Záver z fuzzy zhody formuluj ako odvodenie s dôkazom,
+  nie ako istotu.
 - Systémy (VZT vetvy, ÚK…): uzly object_type='system', členstvo cez rel_assigns_to_group
   (smer člen→systém); rel_contained_in_spatial_structure = prvok v priestore/podlaží;
   rel_aggregates = dekompozícia štruktúry; rel_assigns_to_actor = zodpovednosť.
+- Otázky na vlastnosti/psety: NAJPRV query_view relation=v_property_dictionary
+  (slovník psetov z reálnych dát — pset, property, typ hodnoty, vzorky, vrátane
+  custom psetov; filtruj podľa ifc_type) → presná cesta properties->Pset->>Key,
+  až potom filter/detail. Nikdy nehádaj názvy psetov ani properties. VÝZNAM,
+  jednotku či enum hodnoty štandardnej property vysvetlí ifc_property_definitions
+  (query_view; filter pset+property).
+- Obsah dokumentov („v ktorom dokumente sa píše o X", text v legende/špecifikácii)
+  → search_documents (fulltext v extrahovanom texte PDF strán, vracia stranu +
+  snippet + deep_link). Metadáta dokumentov (názov, typ, revízia) → query_view.
 - Čokoľvek, na čo špecializovaný tool nie je (psety, klasifikácie, dokumenty, história
   GUID, manifest hrán…) → query_view: read-only dopyt nad ľubovoľnou tabuľkou/view
   vrátane JSONB ciest do properties; join nahraď reťazením dopytov cez op 'in'.
