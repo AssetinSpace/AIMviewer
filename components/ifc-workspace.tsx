@@ -9,8 +9,11 @@ import type { SelectedElement } from "@/lib/data/drawing";
 import type { GuidMap, IfcModel } from "@/lib/data/ifc";
 import type { ViewerApi } from "@/lib/viewer-api";
 
+// 3D viewer je teraz embed-nutý ifc-lite viewer cez iframe (postMessage bridge),
+// nie in-process three.js. Rovnaké Props + ViewerApi, takže workspace je bez zmeny.
+// Starý three.js komponent (components/ifc-viewer.tsx) ostáva pre rollback.
 const IFCViewer = dynamic(
-  () => import("@/components/ifc-viewer").then((m) => m.IFCViewer),
+  () => import("@/components/ifc-viewer-embed").then((m) => m.IFCViewerEmbed),
   {
     ssr: false,
     loading: () => (
