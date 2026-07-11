@@ -1737,6 +1737,63 @@ bez šablón sa reportuje, nezhodí generovanie. PK `(pset, property)` +
 `query_view` stačí); prompt: „význam/jednotku/enum štandardnej property →
 ifc_property_definitions; skutočný výskyt → v_property_dictionary."
 
+### D-062 — Výber produkčného modelu (eval-driven)
+**Rozhodnutie (procedúra):** Produkčný model pre `/api/ask` sa vyberá **meraním na eval
+sade (D-057), nie pocitom** — používateľ rozhodol prejsť z free tieru (gemini-flash-lite,
+zdokumentovaná konfabulácia D-056) na platený model. Zmena je čisto konfiguračná
+(`LLM_PROVIDER`/`LLM_MODEL` env, provider vrstva D-056 je pluggable); anti-konfabulačná
+poistka v route ostáva bez ohľadu na model.
+
+**Procedúra výberu (spustiť po nasadení D-058–D-060 na prod a doplnení verified hodnôt
+v eval sade):**
+1. Pre každého kandidáta: plný eval run `npm run eval -- --runs 3 --label <model>`
+   (variancia; lokálny dev + prod Supabase).
+2. Porovnať: pass-rate celkovo aj per kategória (kritické: negative/anti-konfabulácia,
+   psets_custom, aggregation), priemerný počet tool kôl, latenciu, cenu na otázku
+   (vstup ~5–15k tokenov/otázku pri tool slučke).
+3. Víťaza zapísať sem ako dodatok (tabuľka výsledkov) + commitnúť results JSON +
+   nastaviť `LLM_MODEL` vo Vercel env; ROADMAP changelog.
+
+**Kandidáti (model ID a ceny overené 2026-07-10, claude-api referencia; pri behu znova
+overiť proti aktuálnym cenníkom):**
+- `claude-sonnet-5` (Anthropic) — $3/$15 za MTok (intro $2/$10 do 2026-08-31), 1M kontext;
+  near-Opus kvalita na agentic/tool-calling — **primárny kandidát** (je aj default
+  v `lib/llm/anthropic.ts`). Pozn.: adaptívne myslenie je pri ňom default — provider
+  vrstva posiela čisté Messages API cez fetch, netreba nič meniť.
+- `claude-haiku-4-5` (Anthropic) — $1/$5, 200k kontext; dolná hranica ceny — zmerať, či
+  po D-058/D-059/D-060 groundingu stačí (deterministické tools kompenzujú slabší úsudok).
+- `claude-opus-4-8` (Anthropic) — $5/$25; horná hranica kvality, pravdepodobne overkill
+  pre demo Q&A — merať len ak sonnet-5 nesplní cieľ na psets_custom/aggregation.
+- platený Gemini tier (flash) — provider už existuje (`gemini.ts`); konkrétne ID/cenu
+  overiť pri behu (Google modely sa menia rýchlo, viď D-056 dodatok).
+
+**Cieľ:** negative kategória 100 % (žiadna konfabulácia), psets_custom ≥ 75 % (metrika
+D-059), celkový pass-rate ≥ 85 % pri akceptovateľnej cene na otázku.
+
+### D-063 — Obsah dokumentov (`document_pages` + `search_documents`)
+**Rozhodnutie:** Otázky na **obsah** dokumentov („v ktorom dokumente sa píše o X") boli
+principiálne nezodpovedateľné — dokumenty boli len metadáta (D-036) + E4 regióny. Text sa
+extrahuje z PDF per strana do tabuľky `document_pages` a vyhľadáva RPC `search_documents`
+(FTS, rovnaká normalizácia lower+f_unaccent ako D-059). Migrácia `20260715120000`.
+
+**Implementácia:**
+- **`etl/pdf_text.py`** — rovnaký vstupný kontrakt ako E4 (`docs.csv`: `source_path` pod
+  `podklady/FINAL`, `container_name` = object_ref dokumentu), ale VŠETKY PDF (nie len
+  výkresy VD). PyMuPDF (už ETL závislosť, D-041), `page.get_text("text")` + normalizácia
+  bielych znakov, prázdne strany von. Idempotentné (delete+insert per dokument v jednej
+  transakcii). Dokument mimo DB → warning, beh nezhodí. `--dry-run` = report.
+- **RPC `search_documents(q, max_rows)`** — websearch FTS + ts_rank + ts_headline snippet,
+  join na objects (identita dokumentu v jednom calle), row-cap 50, guardraily podľa
+  AGENTS pravidla (stable, search_path, parametrizované).
+- **Tool `search_documents`** — vracia dokument/stranu/snippet + `deep_link
+  /drawing/<id>?page=<n>` (stavia server); dokumenty idú do trust-loop zdrojov. Prompt:
+  obsah → search_documents, metadáta → query_view.
+
+**Poctivé očakávanie:** výkresy sú prevažne vektorová grafika — text je riedky (legendy,
+rohové pečiatky, špecifikácie); OCR zámerne mimo scope. Dokument bez lokálneho zdrojového
+PDF stránky nemá a tool to v hinte povie. Extrakcia sa spúšťa tam, kde sú PDF lokálne
+(rovnaký workflow ako E4), po E3 uploade dokumentov.
+
 ---
 
 ## 8. Budúce rozhodnutia (D-037+)
@@ -1826,6 +1883,8 @@ polí pasport↔Odoo, metóda zamerania (3D scan/Matterport/ručne — zatiaľ n
 > Kompaktný reverse-chrono log pridaných/zmenených rozhodnutí. Plný kontext = príslušný
 > D-záznam vyššie.
 
+- **2026-07-10** — **D-063 (obsah dokumentov):** `document_pages` (text PDF strán, `etl/pdf_text.py` cez PyMuPDF, idempotentné) + RPC/tool `search_documents` (FTS + snippet + deep_link na stranu). OCR mimo scope. Migrácia `20260715120000`.
+- **2026-07-10** — **D-062 (výber produkčného modelu):** procedúra eval-driven výberu (kandidáti claude-sonnet-5 / claude-haiku-4-5 / claude-opus-4-8 / platený Gemini; ciele: negative 100 %, psets_custom ≥ 75 %, celkovo ≥ 85 %). Beh po nasadení D-058–D-060 a doplnení verified eval hodnôt; zmena čisto env.
 - **2026-07-10** — **D-061 (statický IFC slovník psetov):** `etl/pset_manifest.py` (PsetQto šablóny z ifcopenshell, deterministický --sql) → tabuľka `ifc_property_definitions` (973 properties / 127 psetov pre triedy projektu; description/data_type/enum/applicable_classes) vo whiteliste. Migrácia `20260714120000`.
 - **2026-07-10** — **D-060 (agregácie + numerika):** RPC `aggregate_objects` (sum/avg/min/max/count + group_by + numericky bezpečné filtre nad psetmi, guarded cast + skipped_non_numeric, interné whitelisty) + tool + guidance guard v query_view (gt/lt nad JSONB = text). Migrácia `20260713120000`.
 - **2026-07-10** — **D-059 (fulltext nad všetkým):** `objects.search_text` (generated, unaccent+lower flattening psetov) + GIN tsvector/trgm indexy + RPC `search_everything` (FTS + fuzzy, matched_properties ako dôkaz) + tool a prompt. Custom psety sú prvýkrát vyhľadateľné. Migrácia `20260712120000`.
