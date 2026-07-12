@@ -2054,13 +2054,52 @@ prepnutie na platený STT je čisto env zmena. Systémové diktovanie OS (iOS/ma
 podporuje SK) funguje do textarea nezávisle od tejto vrstvy. LLM vrstva
 (tools/prompt/model) sa nemení ⇒ eval beh podľa D-057 nie je nutný.
 
----
+### D-070 — Assetin design kit (zdieľané brand tokeny naprieč appkami)
+**Status:** rozhodnuté (2026-07-12), implementácia neodštartovaná.
 
-## Changelog
+**Kontext:** brand assetin žije de facto len v ArchiveApp
+(`frontend/src/styles.css`, ~3700 riadkov plain CSS): zelená `#1a7431`
+(hover `#156028`), navy `#121a2b`, Inter, radius 6–8 px, dotykové targety
+(tlačidlá ≥44 px, inputy ≥48 px/16 px), triedy `.btn-*`, `.card`, `.fab`;
+logá `assetin-logo.png`/`assetin-mark.png` (len PNG). Zvyšné farby sú surové
+Tailwind hex hodnoty (gray/green/red/amber/blue škály) bez semantiky.
+AIMviewer (Next.js + Tailwind v4 + shadcn) beží na defaultnej neutrálnej
+téme bez brandu a loga. Inšpirácia: That Open Company
+(`@thatopen/ui`) — tokens-first (CSS custom properties), nad tým adaptéry,
+npm distribúcia, showcase stránka so živými ukážkami.
+
+**Rozhodnutie:** samostatný repozitár `AssetinSpace/design-kit` (npm balík
+inštalovaný z GitHubu), rozsah v1 = tokeny + CSS + logá (bez React/web
+komponentov), light **aj** dark od začiatku:
+1. **Vrstva 0 — tokeny:** `tokens.css` (`:root` + `.dark`; farby vrátane
+   semantických stavov success/warning/danger/info, typografia, radius,
+   spacing, touch targets, z-index) + `tokens.json` ako strojový zdroj pravdy.
+2. **Vrstva 1a — plain-CSS adaptér** (`archive.css`): dnešné triedy
+   ArchiveAppu (`.btn-*`, `.card`, `.fab`, modaly…) čerpajúce výhradne
+   z tokenov — ArchiveApp prejde na kit bez zmeny markupu.
+3. **Vrstva 1b — shadcn adaptér** (`shadcn.css`): mapovanie tokenov na
+   shadcn premenné (`--primary` = assetin zelená v oklch, `--radius`,
+   `--font-sans`, sidebar/chart škály) pre light aj dark — AIMviewer sa
+   nabranduje bez zásahu do komponentov.
+4. **Assets:** logá (cieľ: prekresliť do SVG; PNG ako fallback), favicon.
+5. **Showcase:** statická HTML stránka (à la That Open docs) — farby,
+   typografia, tlačidlá, inputy, karty, logá.
+
+**Aplikácia na AIMviewer (prvý konzument):** import `shadcn.css` do
+`app/globals.css` (override defaultných oklch hodnôt), logo do navigácie
++ favicon, vizuálna verifikácia cez devtest harness (skill `verify`).
+ArchiveApp migruje ako druhý (výmena `:root` bloku + postupné nahradenie
+surových hexov tokenmi).
+
+**Vedomé limity:** kit repo zatiaľ neexistuje (prerekvizita: založiť
+`AssetinSpace/design-kit` a sprístupniť); logo existuje len ako PNG —
+SVG prekreslenie je samostatný krok; zdieľané React komponenty a web
+components sú vedome mimo v1 (aditívna vrstva 2, keď bude ≥3. konzument).
 
 > Kompaktný reverse-chrono log pridaných/zmenených rozhodnutí. Plný kontext = príslušný
 > D-záznam vyššie.
 
+- **2026-07-12** — **D-070 (assetin design kit):** rozhodnutie o zdieľaných brand tokenoch — nový repo `AssetinSpace/design-kit` (tokens.css + tokens.json, plain-CSS adaptér pre ArchiveApp, shadcn adaptér pre AIMviewer, logá, showcase), light+dark; AIMviewer = prvý konzument. Implementácia neodštartovaná (prerekvizita: založenie repa).
 - **2026-07-12** — **D-069 (hlasový vstup pokynov):** dictation pattern v ask-paneli (MediaRecorder → `/api/transcribe` → editovateľný prepis do inputu, žiadne auto-send) + STT provider vrstva `lib/stt/` (default Gemini `inline_data` audio na existujúcom kľúči — demo zadarmo; mock pre testy); doménový slovník v prompte; ochrana routy podľa D-068.
 - **2026-07-12** — **D-068 (ochrana /api/ask):** per-IP sliding-window rate limit (20/10 min, len prod, env override) + cross-origin guard v `lib/api-guard.ts`; 429 + Retry-After; in-memory per inštancia (vedomý trade-off). Nález nočného auditu.
 - **2026-07-12** — **D-067 (AIM karta v paneli viewera):** host render schéma `lib/aim-panel.ts` → bridge `AIM_PANEL_DATA`/`AIM_PANEL_EMPTY` → fork `AimCard.tsx`; kliky späť cez `AIM_NAVIGATE`; `ElementInfoPanel` overlay nahradený natívnym panelom; `NEXT_DIST_DIR_OVERRIDE` pre paralelný devtest server.
