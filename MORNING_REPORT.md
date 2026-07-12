@@ -84,6 +84,9 @@ Vo viewri (ifc-lite vetva `claude/overnight-repo-audit-vky8t5`) sú opravené:
 `resetColors(refs)` ignoroval refs (FOCUS mazal aktívny filter), validácia
 payloadu správ, `e.source` guard, FOCUS echo (už sa nevracia ako
 ENTITY_SELECTED), MODELS_LOADED latch, autoload `?models=` hardening.
-**Pozor:** `flyTo` je stále no-op (kamera sa pri FOCUS nehýbe) — architektonické
-rozhodnutie, viď `NEXT_STEPS.md` bod 1 v ifc-lite repe. A MODELS_LOADED sa
-stále hlási po prvom z N modelov (deep-link na VZT prvok sa môže stratiť).
+
+**Doplnené po rannom rozhodnutí:** `flyTo` je implementovaný (FOCUS už letí
+kamerou; commit `28690c9` — nový camera callback `frameEntities`, bez mutácie
+selekcie) a MODELS_LOADED sa hlási až po dokončení celého autoloadu (commit
+`0173f66`), takže deep-link focus na VZT prvok už funguje. Wire kontrakt sa
+nemenil — host strana v tomto repe nepotrebuje úpravu.
