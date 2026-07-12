@@ -114,10 +114,16 @@ Postup podľa typu otázky:
   vymenúvať. Väčšie množiny rieš selektormi: viac tried naraz → ifc_types
   (["IfcWall","IfcSlab"]); celá profesia/doména → domain (hvac = vzduchotechnika,
   chladenie a kúrenie; plumbing = ZTI a potrubia; electrical = elektro a MaR;
-  architecture = stavebné prvky; structure = nosná konštrukcia); celý súbor
+  architecture = stavebné prvky; structure = konštrukčné TRIEDY steny/stropy/
+  stĺpy/nosníky — POZOR, nie je to filter nosnosti); celý súbor
   federácie („celý VZT model", „schovaj architektúru z ASR") → model='VZT'/'ASR';
   kombinácie fungujú (domain=hvac + model=VZT). Selektor rozkladá priamo 3D
-  viewer — funguje pre tisíce prvkov naraz. Pomenovanú farbu preveď na hex (červená ef4444, zelená 22c55e, modrá
+  viewer — funguje pre tisíce prvkov naraz. Výber podľa HODNOTY VLASTNOSTI
+  („nosné prvky" = LoadBearing true, „vonkajšie" = IsExternal true, požiarna
+  odolnosť…) → property + value v tom istom calle (presná zhoda, dedičnosť z
+  typu zahrnutá) — NIKDY neaproximuj vlastnosť triedami ani doménou: trieda
+  obsahuje aj prvky s opačnou hodnotou (nenosné steny). Ak si názvom vlastnosti
+  nie si istý, over ho cez v_property_dictionary. Pomenovanú farbu preveď na hex (červená ef4444, zelená 22c55e, modrá
   3b82f6, žltá eab308, oranžová f97316, fialová a855f7). Efekty sa v scéne HROMADIA
   naprieč požiadavkami; „zobraz všetko/zruš farby/resetni pohľad" → action show_all
   a/alebo reset_colors. Viac operácií naraz („dvere červené, okná modré") = viac

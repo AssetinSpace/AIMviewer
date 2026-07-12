@@ -1976,6 +1976,18 @@ navigácia); žiadna zmena DB ani schémy; deploy vyžaduje aj redeploy forku
 (ifc-lite-viewer.vercel.app). Izolácia rešpektuje federáciu — GUIDy sa resolvujú
 naprieč všetkými modelmi (D-049/D-050).
 
+**Dodatok (2026-07-12) — výber podľa hodnoty vlastnosti psetu:** „vyizoluj nosné
+prvky (LoadBearing=true)" model aproximoval triedami (isolate_sel IfcWall+IfcSlab+
+IfcColumn) → izoloval aj nenosné steny. Fix: `style_in_3d` dostal `property` +
+`value` (+ voliteľný `pset`): psety, v ktorých vlastnosť existuje, sa zistia
+z `v_property_dictionary` (D-058), match beží PostgREST `or()` nad JSONB cestami
+na **`v_asset_effective`** (zmergované properties → dedičnosť z typu zahrnutá),
+`ilike` bez `%` = case-insensitive presná zhoda. Kombinovateľné s ifc_type/
+predefined_type (AND), cap `STYLE_CAP` s explicitnou poznámkou o orezaní.
+Prompt: „NIKDY neaproximuj vlastnosť triedami ani doménou" + `domain=structure`
+preznačený na konštrukčné TRIEDY (nie filter nosnosti). Číselné porovnania
+(>, <) zámerne nevie — na to je `aggregate_objects` (D-060) + `ids_or_refs`.
+
 ### D-067 — AIM karta v natívnom paneli embed viewera
 **Status:** implementované (2026-07-12).
 
@@ -2137,6 +2149,7 @@ ho odstránil (podklad pre neskoršie upstream PR).
 > Kompaktný reverse-chrono log pridaných/zmenených rozhodnutí. Plný kontext = príslušný
 > D-záznam vyššie.
 
+- **2026-07-12** — **Dodatok D-066 (výber podľa vlastnosti psetu):** `style_in_3d` dostal `property`+`value`(+`pset`) — psety z `v_property_dictionary`, match `or()` nad JSONB cestami na `v_asset_effective` (dedičnosť z typu), case-insensitive presná zhoda; prompt zakazuje aproximovať vlastnosť triedami (fix „nosné prvky" izolovali aj LoadBearing=false).
 - **2026-07-12** — **D-071 (stratégia forku IFClite):** fork `AssetinSpace/ifc-lite` originálu `LTplus-AG/ifc-lite` konzumujeme ako optimalizovaný fork — vlastná AIM vrstva v `apps/viewer/src/aim/`, wiring obalený `// >>> AIM-FORK … // <<< AIM-FORK`, upstream sa preberá periodickým **merge** (nie rebase) cez `upstream` remote, sync spúšťa bot-PR (`.github/workflows/upstream-sync.yml`) vo vlastnom repe (fetch je read-only voči originálu); CI heavy joby na forku bežia na `ubuntu-latest` (Depot upstream-only), release/docs/docker guardnuté upstream-only. Recept: `ifc-lite/docs/FORK_MAINTENANCE.md`.
 - **2026-07-12** — **D-070 dodatok (aplikované na AIMviewer):** kit v0.1.0 pushnutý do `AssetinSpace/design-kit` (vetva `claude/design-system-archive-8iy6go`); AIMviewer prebrandovaný — kit ako git závislosť, `shadcn.css` import namiesto defaultných tokenov, Inter namiesto Geist, assetin mark v sidebar hlavičke + favicon. Overené devtest+Playwright (light/dark), tsc, vitest 22/22.
 - **2026-07-12** — **D-070 (assetin design kit):** rozhodnutie o zdieľaných brand tokenoch — nový repo `AssetinSpace/design-kit` (tokens.css + tokens.json, plain-CSS adaptér pre ArchiveApp, shadcn adaptér pre AIMviewer, logá, showcase), light+dark; AIMviewer = prvý konzument.

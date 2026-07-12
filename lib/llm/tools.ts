@@ -480,8 +480,11 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
       "Množiny vyberaj filtrom, nie vymenúvaním: jedna trieda = ifc_type, viac tried " +
       "= ifc_types, celá profesia = domain (hvac/plumbing/electrical/architecture/" +
       "structure), celý súbor federácie = model (VZT/ASR) — kombinovateľné " +
-      "(napr. domain=hvac + model=VZT). Efekty sa hromadia, kým ich nezruší " +
-      "show_all/reset_colors. Viac operácií = viac callov (pokojne v jednom kole).",
+      "(napr. domain=hvac + model=VZT). Výber podľa HODNOTY VLASTNOSTI psetu " +
+      "(nosné prvky, vonkajšie, požiarna odolnosť…) = property + value (presná " +
+      "zhoda, dedičnosť z typu zahrnutá) — NIKDY neaproximuj vlastnosť triedami. " +
+      "Efekty sa hromadia, kým ich nezruší show_all/reset_colors. Viac operácií " +
+      "= viac callov (pokojne v jednom kole).",
     inputSchema: {
       type: "object",
       properties: {
@@ -530,6 +533,25 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
         predefined_type: {
           type: "string",
           description: "Voliteľné spresnenie ifc_type cez predefined_type enum",
+        },
+        property: {
+          type: "string",
+          description:
+            "Alternatíva: prvky podľa hodnoty vlastnosti psetu (napr. LoadBearing, " +
+            "IsExternal, FireRating) — vyžaduje value. Pset netreba (nájde sa v " +
+            "slovníku), pri nejednoznačnosti ho spresni cez pset. Dedičnosť z typu " +
+            "je zahrnutá. Kombinovateľné s ifc_type/predefined_type (AND).",
+        },
+        value: {
+          type: "string",
+          description:
+            "Očakávaná hodnota vlastnosti ako text — presná zhoda bez ohľadu na " +
+            "veľkosť písmen (booleany: true/false). Číselné porovnania (>, <) tool " +
+            "nevie — ids si zisti cez aggregate_objects/query_view.",
+        },
+        pset: {
+          type: "string",
+          description: "Voliteľné spresnenie property na konkrétny pset (napr. Pset_WallCommon)",
         },
         query: {
           type: "string",
@@ -1614,7 +1636,10 @@ export class AskToolRuntime {
     const singleType = sanitizeIfcType(input.ifc_type);
     const explicitGiven =
       Array.isArray(input.ids_or_refs) && (input.ids_or_refs as unknown[]).length > 0;
-    const dbOnlyFilter = sanitizeQuery(input.predefined_type) || sanitizeQuery(input.query);
+    // Výber podľa hodnoty vlastnosti psetu žije len v DB → DB vetva nižšie.
+    const propertyName = String(input.property ?? "").trim();
+    const dbOnlyFilter =
+      sanitizeQuery(input.predefined_type) || sanitizeQuery(input.query) || propertyName;
     const selectorTypes = domain
       ? DOMAIN_IFC_TYPES[domain]
       : multiTypes.length > 0
@@ -1662,6 +1687,7 @@ export class AskToolRuntime {
 
     const objectIds: string[] = [];
     const skipped: string[] = [];
+    let propertyPsets: string[] = [];
     if (explicit.length > 0) {
       const uuids = explicit.filter((v) => isUuid(v.trim())).map((v) => v.trim());
       const refs = explicit.filter((v) => !isUuid(v.trim())).map((v) => v.trim());
@@ -1683,6 +1709,64 @@ export class AskToolRuntime {
         const row = found.get(ref.trim());
         if (row) objectIds.push(row.id);
         else skipped.push(`${ref} (neexistuje)`);
+      }
+    } else if (propertyName) {
+      // ── Výber podľa hodnoty vlastnosti psetu (fix „nosné = LoadBearing true",
+      // nie aproximácia triedami). Kľúče idú do PostgREST or() výrazu, preto
+      // striktný whitelist znakov (čiarka/zátvorka/medzera = syntax filtra).
+      const PSET_KEY_RE = /^[A-Za-z0-9_.-]+$/;
+      if (!PSET_KEY_RE.test(propertyName)) {
+        throw new Error("property smie obsahovať len písmená, číslice a _ . - (napr. LoadBearing).");
+      }
+      const propertyValue = sanitizeQuery(input.value);
+      if (!propertyValue) {
+        throw new Error("Pri property zadaj aj value — očakávanú hodnotu (napr. true).");
+      }
+      const psetNarrow = String(input.pset ?? "").trim();
+      if (psetNarrow) {
+        if (!PSET_KEY_RE.test(psetNarrow)) {
+          throw new Error("pset smie obsahovať len písmená, číslice a _ . - (napr. Pset_WallCommon).");
+        }
+        propertyPsets = [psetNarrow];
+      } else {
+        // V ktorých psetoch vlastnosť reálne existuje — slovník z dát (D-058).
+        const { data, error } = await supabase
+          .from("v_property_dictionary")
+          .select("pset")
+          .ilike("property", propertyName);
+        if (error) throw new Error(error.message);
+        propertyPsets = [...new Set((data ?? []).map((r) => (r as { pset: string }).pset))]
+          .filter((p) => PSET_KEY_RE.test(p))
+          .slice(0, 20);
+        if (propertyPsets.length === 0) {
+          throw new Error(
+            `Vlastnosť '${propertyName}' sa v dátach nenašla — over presný názov cez ` +
+              "query_view relation=v_property_dictionary."
+          );
+        }
+      }
+      // ilike bez % = case-insensitive presná zhoda (true/True/TRUE);
+      // v_asset_effective = properties zmergované s typom → dedičnosť zahrnutá.
+      const orExpr = propertyPsets
+        .map((p) => `properties->${p}->>${propertyName}.ilike.${propertyValue}`)
+        .join(",");
+      let q = supabase
+        .from("v_asset_effective")
+        .select("id")
+        .or(orExpr)
+        .limit(STYLE_CAP);
+      if (singleType) q = q.ilike("ifc_type", singleType);
+      else if (multiTypes.length > 0) q = q.in("ifc_type", multiTypes);
+      const predefinedType = sanitizeQuery(input.predefined_type);
+      if (predefinedType) q = q.ilike("predefined_type", predefinedType);
+      const { data, error } = await q;
+      if (error) throw new Error(error.message);
+      for (const row of (data ?? []) as { id: string }[]) objectIds.push(row.id);
+      if (objectIds.length === 0) {
+        throw new Error(
+          `Žiadny prvok nemá ${propertyName}='${propertyValue}' ` +
+            `(hľadané psety: ${propertyPsets.join(", ")}) — over hodnoty cez v_property_dictionary.`
+        );
       }
     } else {
       const hasFilter =
@@ -1737,6 +1821,12 @@ export class AskToolRuntime {
       applied: action,
       elements: guids.length,
       ...(color ? { color: `#${color}` } : {}),
+      ...(propertyName
+        ? { property: propertyName, value: String(input.value ?? ""), psets: propertyPsets }
+        : {}),
+      ...(objectIds.length >= STYLE_CAP
+        ? { note: `Výber orezaný na ${STYLE_CAP} prvkov — zúž filter (ifc_type/pset).` }
+        : {}),
       ...(skipped.length ? { skipped } : {}),
     };
   }
