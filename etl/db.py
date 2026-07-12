@@ -189,6 +189,18 @@ def _load_appendices(cur, model: StagedModel, obj_ids: dict[str, str]) -> None:
 def _load_guid_history(cur, model: StagedModel, obj_ids: dict[str, str]) -> None:
     for g in model.guid_history:
         hid = ids.guid_history_id(g.object_ref, g.ifc_guid)
+        if g.valid_until is None:
+            # Rotácia GUID (D-010): pred insertom nového aktívneho záznamu uzavri
+            # predošlý aktívny s iným GUID — inak partial unique index
+            # uniq_active_guid (object_id WHERE valid_until IS NULL) zhodí celý load.
+            cur.execute(
+                """
+                update ifc_guid_history
+                set valid_until = now()
+                where object_id = %s and valid_until is null and ifc_guid <> %s
+                """,
+                (obj_ids[g.object_ref], g.ifc_guid),
+            )
         cur.execute(
             """
             insert into ifc_guid_history
