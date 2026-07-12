@@ -194,7 +194,10 @@ def _write_document(cur, row: ManifestRow, location: str, storage_type: str) -> 
         values ('document', %s, %s, %s)
         on conflict (object_ref) do update set
           object_type = 'document', name = excluded.name,
-          properties = excluded.properties, updated_at = now()
+          -- nahradí LEN pset CDE; ostatné kľúče (_drawing_links z pdf_link, E4)
+          -- musia re-upload prežiť (D-031: opakovaný E3 nesmie degradovať E4)
+          properties = (coalesce(objects.properties, '{}'::jsonb) - 'CDE')
+                       || excluded.properties, updated_at = now()
         returning id
         """,
         (row.container_name, name, Json(_document_properties(meta))),
