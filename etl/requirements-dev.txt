@@ -1,0 +1,3 @@
+# Dev/test závislosti ETL (unit testy: python -m pytest etl/tests -q)
+-r requirements.txt
+pytest>=8.0

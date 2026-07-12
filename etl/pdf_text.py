@@ -51,7 +51,9 @@ def _load_pdf_rows(manifest: Path) -> list[PdfRow]:
     """Všetky riadky manifestu s PDF zdrojom (výkresy aj ostatné dokumenty)."""
     out: list[PdfRow] = []
     with manifest.open(encoding="utf-8-sig", newline="") as fh:
-        for r in csv.DictReader(fh):
+        # `#` komentáre filtrovať ako doc_upload/pdf_link — prvý riadok manifestu
+        # je komentár a bez filtra by sa stal hlavičkou (0 spracovaných PDF).
+        for r in csv.DictReader(line for line in fh if not line.startswith("#")):
             src = (r.get("source_path") or "").strip()
             cn = (r.get("container_name") or "").strip()
             if src.lower().endswith(".pdf") and cn:

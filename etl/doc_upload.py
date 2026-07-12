@@ -70,7 +70,9 @@ def read_manifest() -> list[ManifestRow]:
     if not _MANIFEST.exists():
         raise SystemExit(f"Chýba manifest {_MANIFEST}")
     rows: list[ManifestRow] = []
-    with _MANIFEST.open(encoding="utf-8") as fh:
+    with _MANIFEST.open(encoding="utf-8-sig") as fh:
+        # utf-8-sig: Excel pri uložení CSV pridá BOM — bez neho by prvý stĺpec
+        # hlavičky bol '﻿source_path' a parser by padol na KeyError.
         reader = csv.DictReader(line for line in fh if not line.startswith("#"))
         for r in reader:
             rows.append(

@@ -226,7 +226,8 @@ def read_drawings() -> list[DrawingRow]:
     if not _MANIFEST.exists():
         raise SystemExit(f"Chýba manifest {_MANIFEST}")
     out: list[DrawingRow] = []
-    with _MANIFEST.open(encoding="utf-8") as fh:
+    with _MANIFEST.open(encoding="utf-8-sig") as fh:
+        # utf-8-sig kvôli prípadnému BOM z Excelu (rovnako ako doc_upload.read_manifest)
         reader = csv.DictReader(line for line in fh if not line.startswith("#"))
         for r in reader:
             cn = r["container_name"].strip()
