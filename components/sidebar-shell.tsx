@@ -115,11 +115,15 @@ export function SidebarShell({ children }: { children: React.ReactNode }) {
       style={{ width }}
     >
       <div className="flex items-center justify-between gap-2 border-b px-4 py-3">
-        <div className="min-w-0">
-          <Link href="/" className="font-heading text-sm font-semibold">
-            AIM Viewer
-          </Link>
-          <p className="truncate text-xs text-muted-foreground">Priestorová hierarchia</p>
+        <div className="flex min-w-0 items-center gap-2">
+          {/* assetin mark z design kitu (D-070); malá statická ikona, next/image netreba */}
+          <img src="/assetin-mark.png" alt="" className="size-7 shrink-0" />
+          <div className="min-w-0">
+            <Link href="/" className="font-heading text-sm font-semibold">
+              AIM Viewer
+            </Link>
+            <p className="truncate text-xs text-muted-foreground">Priestorová hierarchia</p>
+          </div>
         </div>
         <button
           type="button"

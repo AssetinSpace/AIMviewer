@@ -2055,7 +2055,7 @@ podporuje SK) funguje do textarea nezávisle od tejto vrstvy. LLM vrstva
 (tools/prompt/model) sa nemení ⇒ eval beh podľa D-057 nie je nutný.
 
 ### D-070 — Assetin design kit (zdieľané brand tokeny naprieč appkami)
-**Status:** rozhodnuté (2026-07-12), implementácia neodštartovaná.
+**Status:** kit v0.1.0 publikovaný (`AssetinSpace/design-kit`), AIMviewer nabrandovaný (2026-07-12); ArchiveApp migrácia čaká.
 
 **Kontext:** brand assetin žije de facto len v ArchiveApp
 (`frontend/src/styles.css`, ~3700 riadkov plain CSS): zelená `#1a7431`
@@ -2085,11 +2085,14 @@ komponentov), light **aj** dark od začiatku:
 5. **Showcase:** statická HTML stránka (à la That Open docs) — farby,
    typografia, tlačidlá, inputy, karty, logá.
 
-**Aplikácia na AIMviewer (prvý konzument):** import `shadcn.css` do
-`app/globals.css` (override defaultných oklch hodnôt), logo do navigácie
-+ favicon, vizuálna verifikácia cez devtest harness (skill `verify`).
-ArchiveApp migruje ako druhý (výmena `:root` bloku + postupné nahradenie
-surových hexov tokenmi).
+**Aplikácia na AIMviewer (prvý konzument, hotové 2026-07-12):** závislosť
+`github:AssetinSpace/design-kit` v `package.json`; v `app/globals.css`
+nahradené defaultné `:root`/`.dark` bloky importom kitového `shadcn.css`;
+font Geist → Inter (`next/font`, premenná `--font-sans`); assetin mark
+v hlavičke sidebaru + brand `favicon.ico`; overené vizuálne (light + dark,
+devtest stránka + Playwright) a `tsc`/vitest (22/22). ArchiveApp migruje
+ako druhý (výmena `:root` bloku + postupné nahradenie surových hexov
+tokenmi).
 
 **Vedomé limity:** kit repo zatiaľ neexistuje (prerekvizita: založiť
 `AssetinSpace/design-kit` a sprístupniť); logo existuje len ako PNG —
@@ -2099,7 +2102,8 @@ components sú vedome mimo v1 (aditívna vrstva 2, keď bude ≥3. konzument).
 > Kompaktný reverse-chrono log pridaných/zmenených rozhodnutí. Plný kontext = príslušný
 > D-záznam vyššie.
 
-- **2026-07-12** — **D-070 (assetin design kit):** rozhodnutie o zdieľaných brand tokenoch — nový repo `AssetinSpace/design-kit` (tokens.css + tokens.json, plain-CSS adaptér pre ArchiveApp, shadcn adaptér pre AIMviewer, logá, showcase), light+dark; AIMviewer = prvý konzument. Implementácia neodštartovaná (prerekvizita: založenie repa).
+- **2026-07-12** — **D-070 dodatok (aplikované na AIMviewer):** kit v0.1.0 pushnutý do `AssetinSpace/design-kit` (vetva `claude/design-system-archive-8iy6go`); AIMviewer prebrandovaný — kit ako git závislosť, `shadcn.css` import namiesto defaultných tokenov, Inter namiesto Geist, assetin mark v sidebar hlavičke + favicon. Overené devtest+Playwright (light/dark), tsc, vitest 22/22.
+- **2026-07-12** — **D-070 (assetin design kit):** rozhodnutie o zdieľaných brand tokenoch — nový repo `AssetinSpace/design-kit` (tokens.css + tokens.json, plain-CSS adaptér pre ArchiveApp, shadcn adaptér pre AIMviewer, logá, showcase), light+dark; AIMviewer = prvý konzument.
 - **2026-07-12** — **D-069 (hlasový vstup pokynov):** dictation pattern v ask-paneli (MediaRecorder → `/api/transcribe` → editovateľný prepis do inputu, žiadne auto-send) + STT provider vrstva `lib/stt/` (default Gemini `inline_data` audio na existujúcom kľúči — demo zadarmo; mock pre testy); doménový slovník v prompte; ochrana routy podľa D-068.
 - **2026-07-12** — **D-068 (ochrana /api/ask):** per-IP sliding-window rate limit (20/10 min, len prod, env override) + cross-origin guard v `lib/api-guard.ts`; 429 + Retry-After; in-memory per inštancia (vedomý trade-off). Nález nočného auditu.
 - **2026-07-12** — **D-067 (AIM karta v paneli viewera):** host render schéma `lib/aim-panel.ts` → bridge `AIM_PANEL_DATA`/`AIM_PANEL_EMPTY` → fork `AimCard.tsx`; kliky späť cez `AIM_NAVIGATE`; `ElementInfoPanel` overlay nahradený natívnym panelom; `NEXT_DIST_DIR_OVERRIDE` pre paralelný devtest server.
