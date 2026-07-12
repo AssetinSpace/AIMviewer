@@ -2099,9 +2099,45 @@ tokenmi).
 SVG prekreslenie je samostatný krok; zdieľané React komponenty a web
 components sú vedome mimo v1 (aditívna vrstva 2, keď bude ≥3. konzument).
 
+### D-071 — Stratégia forku IFClite (upstream sync + vlastná AIM vrstva)
+**Status:** rozhodnuté (2026-07-12).
+
+**Kontext:** 3D vrstvu embedujeme cez fork `AssetinSpace/ifc-lite` originálu
+[`LTplus-AG/ifc-lite`](https://github.com/LTplus-AG/ifc-lite) (MPL-2.0; viď D-044, D-055,
+D-067). Originál pravidelne vydáva vylepšenia, ktoré chceme preberať, no zároveň si držíme
+vlastné úpravy (AIM iframe bridge, AIM karta, `?models=` federácia, FOCUS colorize). Bez
+disciplíny by sa naše zmeny bili s každou aktualizáciou upstreamu.
+
+**Rozhodnutie:** IFClite konzumujeme ako **optimalizovaný fork**, nie ako npm balík (upravili
+sme *vnútro* viewer appky, nie len publikované `@ifc-lite/*`).
+- Vlastný kód žije ako **izolovaná vrstva** v `apps/viewer/src/aim/` (upstream tam nemá súbory →
+  nulová kolízia).
+- Nevyhnutné napojenia do upstream súborov (`App.tsx`, `ViewerLayout.tsx`, `PropertiesPanel.tsx`)
+  sú obalené sentinelom `// >>> AIM-FORK … // <<< AIM-FORK`, aby merge konflikt bol okamžite
+  viditeľný a rozhodnutie „keep our side" jednoznačné.
+- Upstream sa preberá periodickým **merge** (nie rebase — `main` je nasadený cez Vercel a nesie
+  PR-ka) cez `upstream` remote; fetch je voči originálu len na čítanie — nič sa mu neposiela.
+- Sync spúšťa **bot-PR** vo vlastnom repe (`.github/workflows/upstream-sync.yml`, týždenne +
+  manuálne); pri konflikte otvorí PR s markermi a labelom `needs-manual-merge`. Recept a tabuľka
+  touchpointov: `ifc-lite/docs/FORK_MAINTENANCE.md`, konvencia v `ifc-lite/AGENTS.md`. CI: heavy
+  joby (Build+WASM, Rust tests) bežia na forku na `ubuntu-latest` (Depot je upstream-only),
+  upstream-only workflowy (release/docs/docker) sú guardnuté `if: github.repository ==
+  'LTplus-AG/ifc-lite'`.
+
+**Dôvod:** fork drží plný prístup ku celému stromu (aj rust core) a funguje hneď; layering +
+sentinely + merge (nie rebase) minimalizujú konflikty pri každom syncu.
+
+**Dôsledok:** generické bugfixy (drag cez iframe) zatiaľ držíme u nás, neposielame upstream.
+Budúca migrácia na čistý npm-balíkový model ostáva otvorená — podmienená tým, že upstream vystaví
+extension-pointy (props/sloty); pri riešení každého wiring-konfliktu si poznamenáme, ktorý hook by
+ho odstránil (podklad pre neskoršie upstream PR).
+
+---
+
 > Kompaktný reverse-chrono log pridaných/zmenených rozhodnutí. Plný kontext = príslušný
 > D-záznam vyššie.
 
+- **2026-07-12** — **D-071 (stratégia forku IFClite):** fork `AssetinSpace/ifc-lite` originálu `LTplus-AG/ifc-lite` konzumujeme ako optimalizovaný fork — vlastná AIM vrstva v `apps/viewer/src/aim/`, wiring obalený `// >>> AIM-FORK … // <<< AIM-FORK`, upstream sa preberá periodickým **merge** (nie rebase) cez `upstream` remote, sync spúšťa bot-PR (`.github/workflows/upstream-sync.yml`) vo vlastnom repe (fetch je read-only voči originálu); CI heavy joby na forku bežia na `ubuntu-latest` (Depot upstream-only), release/docs/docker guardnuté upstream-only. Recept: `ifc-lite/docs/FORK_MAINTENANCE.md`.
 - **2026-07-12** — **D-070 dodatok (aplikované na AIMviewer):** kit v0.1.0 pushnutý do `AssetinSpace/design-kit` (vetva `claude/design-system-archive-8iy6go`); AIMviewer prebrandovaný — kit ako git závislosť, `shadcn.css` import namiesto defaultných tokenov, Inter namiesto Geist, assetin mark v sidebar hlavičke + favicon. Overené devtest+Playwright (light/dark), tsc, vitest 22/22.
 - **2026-07-12** — **D-070 (assetin design kit):** rozhodnutie o zdieľaných brand tokenoch — nový repo `AssetinSpace/design-kit` (tokens.css + tokens.json, plain-CSS adaptér pre ArchiveApp, shadcn adaptér pre AIMviewer, logá, showcase), light+dark; AIMviewer = prvý konzument.
 - **2026-07-12** — **D-069 (hlasový vstup pokynov):** dictation pattern v ask-paneli (MediaRecorder → `/api/transcribe` → editovateľný prepis do inputu, žiadne auto-send) + STT provider vrstva `lib/stt/` (default Gemini `inline_data` audio na existujúcom kľúči — demo zadarmo; mock pre testy); doménový slovník v prompte; ochrana routy podľa D-068.
