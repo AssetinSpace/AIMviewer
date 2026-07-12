@@ -1996,11 +1996,37 @@ Odpovede sú GUID-stampované — stale odpoveď po zmene výberu viewer zahodí
 
 ---
 
+### D-068 — Ochrana `/api/ask`: per-IP rate limit + origin guard
+**Status:** implementované (2026-07-12).
+
+**Kontext:** `/api/ask` je verejný endpoint bez auth (línia D-025/D-026 — auth zatiaľ
+nie je) a jedna požiadavka spustí až `MAX_TOOL_ROUNDS+1` volaní LLM providera
+(platené tokeny) + desiatky DB dotazov. Na verejnom Verceli priamy vektor na
+vyčerpanie kreditu / DoS (nález nočného auditu 2026-07-12).
+
+**Rozhodnutie:** dve lacné vrstvy bez externých závislostí (`lib/api-guard.ts`):
+1. **Origin guard** — POST s Origin hlavičkou iného hostu = 403 (cudzia stránka
+   strieľajúca z prehliadača používateľa). Požiadavky bez Origin (curl, eval
+   runner D-057) prechádzajú — je to CSRF vrstva, nie autentifikácia.
+2. **Per-IP sliding-window rate limit** — default 20 req / 10 min, len v produkcii
+   (eval runner búši do dev servera desiatkami otázok); override
+   `ASK_RATE_LIMIT_MAX` / `ASK_RATE_LIMIT_WINDOW_MS` (0 = vypnuté). 429 + Retry-After.
+   IP z `x-real-ip`/`x-forwarded-for` (na Verceli ich nastavuje platforma).
+
+**Vedomé limity:** in-memory stav je per serverless inštancia — nie presný
+distribuovaný limit (ten by vyžadoval KV/Upstash; zbytočná závislosť pre demo).
+Skutočná ochrana účtov príde s auth + RLS (mimo línie D-025); Turnstile/WAF je
+prípadná ďalšia vrstva. LLM vrstva (tools/prompt/model) sa nemení ⇒ eval beh
+podľa D-057 nie je nutný; limiter je v dev vypnutý, takže evaly bežia bez zmeny.
+
+---
+
 ## Changelog
 
 > Kompaktný reverse-chrono log pridaných/zmenených rozhodnutí. Plný kontext = príslušný
 > D-záznam vyššie.
 
+- **2026-07-12** — **D-068 (ochrana /api/ask):** per-IP sliding-window rate limit (20/10 min, len prod, env override) + cross-origin guard v `lib/api-guard.ts`; 429 + Retry-After; in-memory per inštancia (vedomý trade-off). Nález nočného auditu.
 - **2026-07-12** — **D-067 (AIM karta v paneli viewera):** host render schéma `lib/aim-panel.ts` → bridge `AIM_PANEL_DATA`/`AIM_PANEL_EMPTY` → fork `AimCard.tsx`; kliky späť cez `AIM_NAVIGATE`; `ElementInfoPanel` overlay nahradený natívnym panelom; `NEXT_DIST_DIR_OVERRIDE` pre paralelný devtest server.
 - **2026-07-12** — **D-066 (AI chat ovláda 3D scénu):** tool `style_in_3d` (colorize/hide/show/isolate/show_all/reset_colors; výber filtrom ifc_type/predefined_type alebo ids_or_refs, cap 400) → URL `ops` wire formát → nové bridge správy do IFClite forku (COLORIZE/HIDE/SHOW/ISOLATE/SHOW_ALL/RESET_COLORS → `bim.viewer.*`). Efekty sa hromadia, reset explicitný. Zároveň doplnený stratený nadpis D-065 (pasportizácia).
 - **2026-07-11** — **Dodatok D-050 (georeferencovanie federácie):** viewer prešiel z `exportGlb`

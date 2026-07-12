@@ -5,11 +5,12 @@ Prioritizované odporúčania z auditu (vetva `claude/overnight-repo-audit-vky8t
 
 ## Kritické
 
-1. **Rate limit / ochrana `/api/ask`** (M) — endpoint bez auth, origin checku a limitu
-   spúšťa až 9 volaní LLM providera × 4000 tokenov na request (`app/api/ask/route.ts`,
-   `maxDuration = 60`). Na verejnom Verceli priamy vektor na vyčerpanie kreditu /
-   DoS. Vyžaduje D-0xx rozhodnutie (Turnstile? IP limit v middleware? auth?), preto
-   neopravené autonómne.
+1. ~~**Rate limit / ochrana `/api/ask`**~~ — **VYRIEŠENÉ** (D-068, commit v tejto
+   vetve): per-IP sliding-window limit (default 20 req / 10 min, len v produkcii —
+   eval runner v dev beží bez limitu; override `ASK_RATE_LIMIT_MAX`/`_WINDOW_MS`)
+   + cross-origin guard (403 pre cudzie Origin). In-memory per Vercel inštancia —
+   vedomý trade-off (presný distribuovaný limit = KV/Upstash, viď D-068); ďalšia
+   vrstva (Turnstile/WAF/auth) podľa potreby po nasadení.
 
 2. **ETL: hrany na neimportované entity zhodia celý load** (M) —
    `_collect_documents`/`_collect_actors` (`etl/transform.py:534-558`) emitujú hranu

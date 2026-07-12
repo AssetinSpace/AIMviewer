@@ -1,6 +1,11 @@
 import { NextResponse } from "next/server";
 
 import {
+  clientIpKey,
+  createRateLimiter,
+  isCrossOriginBlocked,
+} from "@/lib/api-guard";
+import {
   getLlmProvider,
   LlmConfigError,
   type LlmMessage,
@@ -28,6 +33,17 @@ const MAX_HISTORY = 20;
 const MAX_INPUT_CHARS = 2000;
 
 export const maxDuration = 60;
+
+// D-068: endpoint spúšťa až MAX_TOOL_ROUNDS+1 LLM volaní na požiadavku —
+// bez limitu je to vektor na vyčerpanie kreditu providera. Per-IP sliding
+// window; default len v produkcii — eval runner (`npm run eval`, D-057) búši
+// do dev servera desiatkami otázok a nesmie sa limitovať. Override oboma
+// smermi cez ASK_RATE_LIMIT_MAX (0 = vypnuté).
+const RATE_LIMIT_MAX = Number(
+  process.env.ASK_RATE_LIMIT_MAX ?? (process.env.NODE_ENV === "production" ? 20 : 0)
+);
+const RATE_LIMIT_WINDOW_MS = Number(process.env.ASK_RATE_LIMIT_WINDOW_MS ?? 10 * 60_000);
+const askLimiter = createRateLimiter({ windowMs: RATE_LIMIT_WINDOW_MS, max: RATE_LIMIT_MAX });
 
 const SYSTEM_PROMPT = `Si asistent AIM Viewera — Asset Information Model platformy pre správu
 informácií o stavbách. Odpovedáš na otázky o konkrétnej budove nad grafom v databáze:
@@ -114,6 +130,22 @@ interface AskRequestBody {
 }
 
 export async function POST(req: Request) {
+  // Cudzia stránka strieľajúca na API z prehliadača používateľa (CSRF-ová
+  // vrstva; požiadavky bez Origin — curl/eval — prechádzajú na limiter).
+  if (isCrossOriginBlocked(req.headers.get("origin"), req.headers.get("host"))) {
+    return NextResponse.json({ error: "cross-origin request denied" }, { status: 403 });
+  }
+
+  if (RATE_LIMIT_MAX > 0) {
+    const rate = askLimiter.check(clientIpKey(req.headers));
+    if (!rate.allowed) {
+      return NextResponse.json(
+        { error: "Priveľa požiadaviek — skús to o chvíľu." },
+        { status: 429, headers: { "Retry-After": String(rate.retryAfterSeconds) } }
+      );
+    }
+  }
+
   let body: AskRequestBody;
   try {
     body = (await req.json()) as AskRequestBody;
