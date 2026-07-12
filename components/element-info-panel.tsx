@@ -5,40 +5,10 @@ import Link from "next/link";
 import { ArrowLeft, ArrowUpRight, FileText } from "lucide-react";
 
 import type { SelectedElement } from "@/lib/data/drawing";
-
-interface ObjectLink {
-  id: string;
-  object_type: string;
-  object_ref: string | null;
-  name: string | null;
-}
-
-interface SummaryDocument {
-  id: string;
-  name: string | null;
-  objectRef: string | null;
-  role: string | null;
-  isDrawing: boolean;
-}
-
-interface NodeSummary {
-  id: string;
-  objectType: string;
-  route: "node" | "type";
-  name: string | null;
-  objectRef: string | null;
-  ifcType: string | null;
-  predefinedType: string | null;
-  userDefinedType: string | null;
-  type: ObjectLink | null;
-  documents: SummaryDocument[];
-  counts: { classifications: number; occurrences: number };
-}
-
-const TYPE_LABEL: Record<string, string> = {
-  asset: "Asset",
-  asset_type: "Typ assetu",
-};
+// Len typ — kanonický tvar odpovede /api/element žije v lib/data/object.ts
+// (server-only modul; import type sa pri kompilácii vymaže, do klienta nič nejde).
+import type { NodeSummary } from "@/lib/data/object";
+import { OBJECT_TYPE_LABEL, type ObjectType } from "@/lib/object-type";
 
 /**
  * Bočný info-panel prehliadačky výkresov (D-042 D): pri kliknutí na prvok vo výkrese
@@ -90,7 +60,7 @@ export function ElementInfoPanel({
       </button>
       <div className="mb-3">
         <span className="inline-block rounded-full bg-secondary px-2 py-0.5 text-xs font-medium text-secondary-foreground">
-          {TYPE_LABEL[data?.objectType ?? ""] ?? "Prvok"}
+          {(data && OBJECT_TYPE_LABEL[data.objectType as ObjectType]) ?? "Prvok"}
         </span>
         <h2 className="mt-1.5 font-heading text-base font-semibold leading-tight">
           {data?.name ?? selected.label}
