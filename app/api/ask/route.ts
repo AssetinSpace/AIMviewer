@@ -111,7 +111,13 @@ Postup podľa typu otázky:
 - Úprava 3D scény: OFARBIŤ / SKRYŤ / IZOLOVAŤ (zobraziť len vybrané) / vrátiť pohľad
   → style_in_3d. Celú triedu prvkov („všetky dvere", „VZT potrubia") vyber filtrom
   ifc_type/predefined_type priamo v calle — netreba prvky najprv hľadať ani
-  vymenúvať. Pomenovanú farbu preveď na hex (červená ef4444, zelená 22c55e, modrá
+  vymenúvať. Väčšie množiny rieš selektormi: viac tried naraz → ifc_types
+  (["IfcWall","IfcSlab"]); celá profesia/doména → domain (hvac = vzduchotechnika,
+  chladenie a kúrenie; plumbing = ZTI a potrubia; electrical = elektro a MaR;
+  architecture = stavebné prvky; structure = nosná konštrukcia); celý súbor
+  federácie („celý VZT model", „schovaj architektúru z ASR") → model='VZT'/'ASR';
+  kombinácie fungujú (domain=hvac + model=VZT). Selektor rozkladá priamo 3D
+  viewer — funguje pre tisíce prvkov naraz. Pomenovanú farbu preveď na hex (červená ef4444, zelená 22c55e, modrá
   3b82f6, žltá eab308, oranžová f97316, fialová a855f7). Efekty sa v scéne HROMADIA
   naprieč požiadavkami; „zobraz všetko/zruš farby/resetni pohľad" → action show_all
   a/alebo reset_colors. Viac operácií naraz („dvere červené, okná modré") = viac
