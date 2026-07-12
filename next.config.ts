@@ -3,6 +3,9 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   // Turbopack (default in Next.js 16). WASM is served from public/ via fetch — no bundler config needed.
   turbopack: {},
+  // Paralelný dev server (devtest popri bežnom `npm run dev`): Next 16 drží
+  // single-instance lock na distDir, override umožní druhú inštanciu.
+  distDir: process.env.NEXT_DIST_DIR_OVERRIDE ?? ".next",
   experimental: {
     // Klientská router cache: opakovaná navigácia na nedávno navštívený /
     // prefetchnutý uzol sa vykreslí z cache bez server round-tripu. Viewer je

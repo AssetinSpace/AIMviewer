@@ -10,6 +10,8 @@ node_modules/
 
 # Next.js
 .next/
+.next-devtest/
+.next-eval/
 out/
 
 # TypeScript (auto-generované)

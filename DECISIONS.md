@@ -1896,6 +1896,8 @@ je viazané na projekt a čo prežije ľubovoľnú budúcu budovu/disciplínu.
 **Záver:** dlhodobo neobmedzuje nič štrukturálne; jediná skutočná prerekvizita
 multi-projektu je `project` entita (D-033) + scoping v tools. Eval sady a prompt
 segmenty sa škálujú súbormi/konfiguráciou.
+
+### D-065 — Pasportizácia existujúcej budovy *(kandidát)*
 **Status:** brainstorm — strategické smery rozhodnuté, konkrétna zákazka nepotvrdená.
 
 **Kontext:** Nový use-case — pasportizácia existujúcej budovy pre prevádzku a údržbu
@@ -1936,6 +1938,62 @@ polí pasport↔Odoo, metóda zamerania (3D scan/Matterport/ručne — zatiaľ n
 
 **Závislosť:** Vyžaduje reálnu zákazku (field study) + funkčný ETL pipeline (D-031).
 
+### D-066 — AI chat ovláda 3D scénu (ofarbenie / skrytie / izolácia)
+**Status:** implementované (2026-07-12).
+
+**Kontext:** LLM rozhranie (D-056) vedelo prvky v 3D len zvýrazniť a priblížiť
+(`show_in_3d` → `/ifc?focus=…` → bridge správa `FOCUS`). Používateľ chce chatom
+vykonávať aj viewer operácie IFClite („ofarbi všetky dvere na červeno", „skry steny",
+„vyizoluj VZT", „zobraz všetko") — teda funkcie, ktoré IFClite SDK už má
+(`colorize`/`hide`/`show`/`isolate`/`resetVisibility`/`resetColors`).
+
+**Rozhodnutie:** rozšíriť existujúcu D-056 architektúru (server stavia URL akciu →
+klient naviguje → viewer wrapper prekladá URL na postMessage), NIE zavádzať nový kanál:
+
+1. **Nový tool `style_in_3d`** (`lib/llm/tools.ts`): `action` = colorize | hide |
+   show | isolate | show_all | reset_colors; výber prvkov explicitne
+   (`ids_or_refs`, batch resolve) alebo filtrom (`ifc_type`/`predefined_type`/
+   `query` — „všetky dvere" = jeden call, bez enumerácie), cap `STYLE_CAP=400`
+   (GUIDy cestujú v URL); `color` = validovaný hex RRGGBB (model prekladá
+   pomenované farby). GUIDy sa resolvujú dávkovo cez `ifc_guid_history`
+   (aktívne, `valid_until IS NULL`).
+2. **Wire formát `ops`** v URL `/ifc?ops=<op>:<arg>:<guid.guid…>[;…]&r=<nonce>` —
+   kompaktný (GUID abeceda bodku neobsahuje → separátor `.`, žiadny JSON quote
+   bloat), viac operácií sa vo `finalActions()` zreťazí cez `;` do jednej URL
+   spolu s prípadným `focus` (klient vykonáva len prvú navigáciu).
+3. **Bridge rozšírenie** (`components/ifc-viewer.tsx` ↔ fork
+   `apps/viewer/src/aim/AimBridge.tsx`, vetva `aim-integration`): nové správy
+   `COLORIZE{guids,color}` · `HIDE` · `SHOW` · `ISOLATE` · `SHOW_ALL` ·
+   `RESET_COLORS` mapované 1:1 na IFClite SDK (`bim.viewer.*`). Počiatočné ops
+   z deep-linku sa aplikujú až po `MODELS_LOADED` (GUID resolve potrebuje
+   naparsované modely), soft-nav reaktívne cez nonce `r` (vzor focus, D-056).
+4. **Sémantika stavu:** efekty sa vo vieweri HROMADIA naprieč požiadavkami
+   (iframe pri soft-nav nezaniká); reset je explicitná operácia
+   (`show_all`/`reset_colors`) — model to má v system prompte.
+
+**Dôsledky:** klientský chat panel (`ask-panel.tsx`) sa nemení (stále len
+navigácia); žiadna zmena DB ani schémy; deploy vyžaduje aj redeploy forku
+(ifc-lite-viewer.vercel.app). Izolácia rešpektuje federáciu — GUIDy sa resolvujú
+naprieč všetkými modelmi (D-049/D-050).
+
+### D-067 — AIM karta v natívnom paneli embed viewera
+**Status:** implementované (2026-07-12).
+
+**Kontext:** po migrácii 3D na embednutý IFClite fork (iframe wrapper, PR #17–22 +
+prepnutie `ifc-workspace.tsx` na wrapper `ifc-viewer.tsx`) mal vybraný prvok dva
+panely: natívny properties panel viewera + plávajúci `ElementInfoPanel` hosta nad iframom.
+
+**Rozhodnutie:** jeden panel — host po `ENTITY_SELECTED` dotiahne DB súhrn
+(`/api/element/{id}`) a pošle ho cez bridge ako **generickú render schému**
+(`lib/aim-panel.ts`; správy `AIM_PANEL_DATA{guid,data}` / `AIM_PANEL_EMPTY{guid,reason}`);
+viewer ju vykreslí v natívnom paneli (fork: `apps/viewer/src/aim/AimCard.tsx` +
+`aimPanelStore.ts`). Schéma je verzovaná (`version: 1`) a data-driven — nové polia/sekcie
+sa pridávajú len na hoste, bez redeployu viewera. `href` v karte sú host-relatívne cesty;
+viewer ich neinterpretuje, klik pošle späť `AIM_NAVIGATE{href}` a naviguje parent appka.
+Odpovede sú GUID-stampované — stale odpoveď po zmene výberu viewer zahodí. Popri tom
+`next.config.ts` dostal `NEXT_DIST_DIR_OVERRIDE` (paralelný devtest server popri
+`npm run dev` — Next 16 drží single-instance lock na distDir).
+
 ---
 
 ## Changelog
@@ -1943,6 +2001,8 @@ polí pasport↔Odoo, metóda zamerania (3D scan/Matterport/ručne — zatiaľ n
 > Kompaktný reverse-chrono log pridaných/zmenených rozhodnutí. Plný kontext = príslušný
 > D-záznam vyššie.
 
+- **2026-07-12** — **D-067 (AIM karta v paneli viewera):** host render schéma `lib/aim-panel.ts` → bridge `AIM_PANEL_DATA`/`AIM_PANEL_EMPTY` → fork `AimCard.tsx`; kliky späť cez `AIM_NAVIGATE`; `ElementInfoPanel` overlay nahradený natívnym panelom; `NEXT_DIST_DIR_OVERRIDE` pre paralelný devtest server.
+- **2026-07-12** — **D-066 (AI chat ovláda 3D scénu):** tool `style_in_3d` (colorize/hide/show/isolate/show_all/reset_colors; výber filtrom ifc_type/predefined_type alebo ids_or_refs, cap 400) → URL `ops` wire formát → nové bridge správy do IFClite forku (COLORIZE/HIDE/SHOW/ISOLATE/SHOW_ALL/RESET_COLORS → `bim.viewer.*`). Efekty sa hromadia, reset explicitný. Zároveň doplnený stratený nadpis D-065 (pasportizácia).
 - **2026-07-11** — **Dodatok D-050 (georeferencovanie federácie):** viewer prešiel z `exportGlb`
   na IFClite low-level pipeline so zdieľaným RTC offsetom prvého modelu + delta `IfcMapConversion`
   ako group transform — modely federácie už sedia na sebe ako v iných prehliadačoch.

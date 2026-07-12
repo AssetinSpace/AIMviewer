@@ -26,6 +26,8 @@ const MAX_RESULT_CHARS = 12_000;
 const LOCATE_CAP = 500;
 /** Veľkosť dávky pre `.in()` filtre (limit dĺžky URL v PostgREST). */
 const IN_CHUNK = 100;
+/** Max prvkov jednej style_in_3d operácie — GUIDy cestujú v URL (D-066). */
+const STYLE_CAP = 400;
 
 /**
  * Whitelist relácií pre generický query_view (celá čitateľná DB, D-056 dodatok).
@@ -422,6 +424,53 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
     },
   },
   {
+    name: "style_in_3d",
+    description:
+      "UI AKCIA: ofarbí / skryje / znova zobrazí / izoluje prvky v 3D modeli, alebo " +
+      "resetne pohľad. Zavolaj, keď používateľ žiada prvky OFARBIŤ, SKRYŤ, IZOLOVAŤ " +
+      "(zobraziť len ich) alebo vrátiť pohľad (zobraziť všetko / zrušiť farby). " +
+      "Celé triedy prvkov ('všetky dvere') vyber cez ifc_type/predefined_type — " +
+      "nevymenúvaj ids_or_refs. Efekty sa hromadia, kým ich nezruší show_all/" +
+      "reset_colors. Viac operácií = viac callov (pokojne v jednom kole).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        action: {
+          type: "string",
+          enum: ["colorize", "hide", "show", "isolate", "show_all", "reset_colors"],
+          description:
+            "colorize=ofarbiť (vyžaduje color), hide=skryť, show=znova zobraziť skryté, " +
+            "isolate=zobraziť LEN vybrané (ostatné skryť), show_all=zrušiť skrývanie, " +
+            "reset_colors=zrušiť ofarbenie",
+        },
+        color: {
+          type: "string",
+          description:
+            "Hex farba RRGGBB pre colorize (napr. ef4444 = červená, 22c55e = zelená, " +
+            "3b82f6 = modrá) — preveď pomenovanú farbu používateľa na hex sám",
+        },
+        ids_or_refs: {
+          type: "array",
+          items: { type: "string" },
+          description: "objects.id (UUID) alebo object_ref konkrétnych prvkov",
+        },
+        ifc_type: {
+          type: "string",
+          description: "Alternatíva: všetky prvky IFC triedy (napr. IfcDoor)",
+        },
+        predefined_type: {
+          type: "string",
+          description: "Voliteľné spresnenie ifc_type cez predefined_type enum",
+        },
+        query: {
+          type: "string",
+          description: "Alternatíva: prvky podľa názvu/object_ref (ilike substring)",
+        },
+      },
+      required: ["action"],
+    },
+  },
+  {
     name: "open_drawing",
     description:
       "UI AKCIA: otvorí výkres/dokument v prehliadačke, voliteľne so zvýrazneným prvkom " +
@@ -577,6 +626,8 @@ export class AskToolRuntime {
         return this.searchDocuments(input);
       case "show_in_3d":
         return this.showIn3d(input);
+      case "style_in_3d":
+        return this.styleIn3d(input);
       case "open_drawing":
         return this.openDrawing(input);
       case "open_node":
@@ -1431,6 +1482,141 @@ export class AskToolRuntime {
     };
   }
 
+  /**
+   * Viewer operácia nad 3D scénou (D-066): ofarbenie/skrytie/izolácia prvkov.
+   * GUIDy sa resolvujú dávkovo a cestujú klientovi v URL parametri `ops`
+   * (wire formát `<op>:<arg>:<guid.guid…>`, viď parseOps v ifc-viewer.tsx);
+   * viewer si stav drží, kým ho nezruší show_all/reset_colors.
+   */
+  private async styleIn3d(input: Record<string, unknown>) {
+    const action = String(input.action ?? "").trim();
+    const opLabel: Record<string, string> = {
+      colorize: "ofarbenie",
+      hide: "skrytie",
+      show: "zobrazenie",
+      isolate: "izolácia",
+      show_all: "zobraziť všetko",
+      reset_colors: "zrušiť farby",
+    };
+    if (!(action in opLabel)) {
+      throw new Error(
+        "action musí byť colorize | hide | show | isolate | show_all | reset_colors."
+      );
+    }
+
+    const nonce = () => Date.now().toString(36);
+
+    // Globálne resety nepotrebujú prvky.
+    if (action === "show_all" || action === "reset_colors") {
+      this.actions.push({
+        type: "navigate",
+        url: `/ifc?ops=${encodeURIComponent(`${action}::`)}&r=${nonce()}`,
+        label: `3D: ${opLabel[action]}`,
+      });
+      return { ok: true, applied: action };
+    }
+
+    let color = "";
+    if (action === "colorize") {
+      color = String(input.color ?? "").trim().replace(/^#/, "").toLowerCase();
+      if (!/^[0-9a-f]{6}$/.test(color)) {
+        throw new Error("color musí byť hex RRGGBB (napr. ef4444 pre červenú).");
+      }
+    }
+
+    // ── Výber prvkov: explicitné ids_or_refs ALEBO filter (ifc_type/…/query).
+    const supabase = getSupabaseAdmin();
+    const explicit = Array.isArray(input.ids_or_refs)
+      ? [
+          ...new Set(
+            (input.ids_or_refs as unknown[]).filter(
+              (v): v is string => typeof v === "string" && v.trim().length > 0
+            )
+          ),
+        ].slice(0, STYLE_CAP)
+      : [];
+
+    const objectIds: string[] = [];
+    const skipped: string[] = [];
+    if (explicit.length > 0) {
+      const uuids = explicit.filter((v) => isUuid(v.trim())).map((v) => v.trim());
+      const refs = explicit.filter((v) => !isUuid(v.trim())).map((v) => v.trim());
+      const found = new Map<string, ObjectRow>();
+      for (const [col, values] of [["id", uuids], ["object_ref", refs]] as const) {
+        for (let i = 0; i < values.length; i += IN_CHUNK) {
+          const { data, error } = await supabase
+            .from("objects")
+            .select("id, object_type, object_ref, name")
+            .in(col, values.slice(i, i + IN_CHUNK));
+          if (error) throw new Error(error.message);
+          for (const row of (data ?? []) as ObjectRow[]) {
+            found.set(row.id, row);
+            if (col === "object_ref" && row.object_ref) found.set(row.object_ref, row);
+          }
+        }
+      }
+      for (const ref of explicit) {
+        const row = found.get(ref.trim());
+        if (row) objectIds.push(row.id);
+        else skipped.push(`${ref} (neexistuje)`);
+      }
+    } else {
+      const hasFilter =
+        sanitizeQuery(input.ifc_type) ||
+        sanitizeQuery(input.predefined_type) ||
+        sanitizeQuery(input.query);
+      if (!hasFilter) {
+        throw new Error(
+          "Zadaj ids_or_refs, alebo filter ifc_type / predefined_type / query."
+        );
+      }
+      const q = this.applyObjectFilters(
+        supabase.from("objects").select("id, object_type, object_ref, name"),
+        input
+      ).limit(STYLE_CAP);
+      const { data, error } = await q;
+      if (error) throw new Error(error.message);
+      for (const row of (data ?? []) as ObjectRow[]) objectIds.push(row.id);
+      if (objectIds.length === 0) {
+        throw new Error(
+          "Filtru nezodpovedá žiadny prvok — over hodnoty cez get_model_stats."
+        );
+      }
+    }
+
+    // ── objects.id → aktívny IFC GUID (len prvky prítomné v 3D modeli).
+    const guids: string[] = [];
+    for (let i = 0; i < objectIds.length; i += IN_CHUNK) {
+      const { data, error } = await supabase
+        .from("ifc_guid_history")
+        .select("ifc_guid, object_id")
+        .in("object_id", objectIds.slice(i, i + IN_CHUNK))
+        .is("valid_until", null);
+      if (error) throw new Error(error.message);
+      for (const row of (data ?? []) as { ifc_guid: string }[]) {
+        if (row.ifc_guid) guids.push(row.ifc_guid);
+      }
+    }
+    if (guids.length === 0) {
+      throw new Error("Žiadny z vybraných prvkov nemá IFC GUID — nie sú v 3D modeli.");
+    }
+
+    this.actions.push({
+      type: "navigate",
+      url:
+        `/ifc?ops=${encodeURIComponent(`${action}:${color}:${guids.join(".")}`)}` +
+        `&r=${nonce()}`,
+      label: `3D: ${opLabel[action]} ${guids.length} prvkov`,
+    });
+    return {
+      ok: true,
+      applied: action,
+      elements: guids.length,
+      ...(color ? { color: `#${color}` } : {}),
+      ...(skipped.length ? { skipped } : {}),
+    };
+  }
+
   private async openDrawing(input: Record<string, unknown>) {
     const docId = String(input.document_id ?? "").trim();
     if (!isUuid(docId)) throw new Error("document_id musí byť UUID (objects.id dokumentu).");
@@ -1473,9 +1659,10 @@ export class AskToolRuntime {
   }
 
   /**
-   * Akcie pre klienta: viac 3D akcií (model občas zavolá show_in_3d per prvok
-   * napriek inštrukcii) sa zlúči do jednej multi-focus URL — klient vykonáva
-   * len prvú navigáciu, bez zlúčenia by sa zvýraznil jediný prvok.
+   * Akcie pre klienta: viac 3D akcií (model občas zavolá show_in_3d per prvok;
+   * style_in_3d vydáva jednu akciu per operácia) sa zlúči do jednej /ifc URL —
+   * klient vykonáva len prvú navigáciu. Focus GUIDy sa spoja do `focus`,
+   * viewer ops (D-066) sa zreťazia cez `;` do `ops` v pôvodnom poradí.
    */
   finalActions(): AskAction[] {
     const isIfc = (a: AskAction) => a.url.startsWith("/ifc?");
@@ -1483,20 +1670,27 @@ export class AskToolRuntime {
     if (ifcActions.length <= 1) return this.actions;
 
     const guids: string[] = [];
+    const ops: string[] = [];
     for (const a of ifcActions) {
       const params = new URLSearchParams(a.url.slice(a.url.indexOf("?") + 1));
       for (const g of (params.get("focus") ?? "").split(",")) {
         if (g && !guids.includes(g)) guids.push(g);
       }
+      const op = params.get("ops");
+      if (op) ops.push(op);
     }
-    const merged: AskAction = {
-      type: "navigate",
-      url:
-        `/ifc?focus=${encodeURIComponent(guids.join(","))}` +
-        `&r=${Date.now().toString(36)}`,
-      label: `3D: ${guids.length} prvkov`,
-    };
-    return [merged, ...this.actions.filter((a) => !isIfc(a))];
+    const merged = new URLSearchParams();
+    if (guids.length > 0) merged.set("focus", guids.join(","));
+    if (ops.length > 0) merged.set("ops", ops.join(";"));
+    merged.set("r", Date.now().toString(36));
+    const label =
+      ops.length > 0
+        ? `3D: ${ifcActions.length} akcií`
+        : `3D: ${guids.length} prvkov`;
+    return [
+      { type: "navigate", url: `/ifc?${merged.toString()}`, label },
+      ...this.actions.filter((a) => !isIfc(a)),
+    ];
   }
 
   /**

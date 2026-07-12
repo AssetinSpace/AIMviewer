@@ -2,8 +2,10 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { nodeSummaryToAimPanel, type AimPanelData } from "@/lib/aim-panel";
 import type { SelectedElement } from "@/lib/data/drawing";
 import type { GuidMap, IfcModel } from "@/lib/data/ifc";
+import type { NodeSummary } from "@/lib/data/object";
 import type { ViewerApi } from "@/lib/viewer-api";
 
 /**
@@ -42,12 +44,17 @@ type ViewerToHost =
   | { source: typeof SOURCE; type: "READY" }
   | { source: typeof SOURCE; type: "MODELS_LOADED"; count: number }
   | { source: typeof SOURCE; type: "ENTITY_SELECTED"; guid: string }
-  | { source: typeof SOURCE; type: "ENTITY_DESELECTED" };
+  | { source: typeof SOURCE; type: "ENTITY_DESELECTED" }
+  // Klik na link v AIM karte vo viewri — navigáciu robí táto (parent) appka.
+  | { source: typeof SOURCE; type: "AIM_NAVIGATE"; href: string };
 
 type HostToViewer =
   | { source: typeof SOURCE; type: "FOCUS"; guids: string[] }
   | { source: typeof SOURCE; type: "HIGHLIGHT_FILTER"; guids: string[] }
-  | { source: typeof SOURCE; type: "CLEAR_FILTER" };
+  | { source: typeof SOURCE; type: "CLEAR_FILTER" }
+  // AIM karta v natívnom paneli viewera — DB dáta pre vybraný element.
+  | { source: typeof SOURCE; type: "AIM_PANEL_DATA"; guid: string; data: AimPanelData }
+  | { source: typeof SOURCE; type: "AIM_PANEL_EMPTY"; guid: string; reason: string };
 
 function isViewerMessage(data: unknown): data is ViewerToHost {
   return (
@@ -68,6 +75,8 @@ interface Props {
   apiRef?: React.RefObject<ViewerApi | null>;
   onSelect?: (element: SelectedElement) => void;
   onPickedElement?: (objectId: string, guid: string) => void;
+  /** Navigácia z AIM karty vo viewri (host-relatívne href, napr. /node/{id}). */
+  onNavigate?: (href: string) => void;
 }
 
 export function IFCViewerEmbed({
@@ -78,6 +87,7 @@ export function IFCViewerEmbed({
   apiRef,
   onSelect,
   onPickedElement,
+  onNavigate,
 }: Props) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const [status, setStatus] = useState<"loading" | "ready">("loading");
@@ -124,6 +134,12 @@ export function IFCViewerEmbed({
   const modelsLoadedRef = useRef(false);
   const pendingRef = useRef<HostToViewer[]>([]);
 
+  // AIM karta: race guard pre fetch detailu — pri novej selekcii sa
+  // predchádzajúci fetch abortne a odpoveď sa pošle len pre aktuálny GUID
+  // (viewer má navyše vlastný guid guard, belt-and-suspenders).
+  const aimGuidRef = useRef<string | null>(null);
+  const aimAbortRef = useRef<AbortController | null>(null);
+
   const postToViewer = useCallback(
     (msg: HostToViewer) => {
       iframeRef.current?.contentWindow?.postMessage(msg, viewerOrigin ?? "*");
@@ -137,6 +153,44 @@ export function IFCViewerEmbed({
     (msg: HostToViewer) => {
       if (modelsLoadedRef.current) postToViewer(msg);
       else pendingRef.current.push(msg);
+    },
+    [postToViewer]
+  );
+
+  // Po selekcii vo viewri načíta DB súhrn a pošle ho do AIM karty v paneli
+  // viewera. Ide cez postToViewer (nie send-queue): selekcia existuje len po
+  // načítaní modelov a queue by po reloade iframe mohla doručiť stale dáta.
+  const sendAimPanel = useCallback(
+    (guid: string, objectId: string | undefined) => {
+      aimAbortRef.current?.abort();
+      aimGuidRef.current = guid;
+
+      if (!objectId) {
+        postToViewer({ source: SOURCE, type: "AIM_PANEL_EMPTY", guid, reason: "no-mapping" });
+        return;
+      }
+
+      const controller = new AbortController();
+      aimAbortRef.current = controller;
+      fetch(`/api/element/${objectId}`, { signal: controller.signal })
+        .then((r) => {
+          if (!r.ok) throw new Error(String(r.status));
+          return r.json();
+        })
+        .then((summary: NodeSummary) => {
+          if (aimGuidRef.current !== guid) return; // medzičasom iná selekcia
+          postToViewer({
+            source: SOURCE,
+            type: "AIM_PANEL_DATA",
+            guid,
+            data: nodeSummaryToAimPanel(summary, guid),
+          });
+        })
+        .catch((err: unknown) => {
+          if (controller.signal.aborted || aimGuidRef.current !== guid) return;
+          const reason = err instanceof Error && err.message === "404" ? "not-found" : "error";
+          postToViewer({ source: SOURCE, type: "AIM_PANEL_EMPTY", guid, reason });
+        });
     },
     [postToViewer]
   );
@@ -163,6 +217,9 @@ export function IFCViewerEmbed({
   useEffect(() => {
     modelsLoadedRef.current = false;
     pendingRef.current = [];
+    aimAbortRef.current?.abort();
+    aimAbortRef.current = null;
+    aimGuidRef.current = null;
   }, [src]);
 
   // Inbound: viewer → host.
@@ -182,20 +239,31 @@ export function IFCViewerEmbed({
           break;
         case "ENTITY_SELECTED": {
           const objectId = guidMap[e.data.guid];
+          sendAimPanel(e.data.guid, objectId);
           if (!objectId) return;
           onSelect?.({ id: objectId, route: "node", label: e.data.guid });
           onPickedElement?.(objectId, e.data.guid);
           break;
         }
         case "ENTITY_DESELECTED":
-          // Parity with the old three.js viewer: 3D deselect does not clear the
-          // DB-side selection panel (Escape only reset the 3D highlight).
+          // AIM kartu si viewer čistí sám pri deselekcii; tu stačí zahodiť
+          // rozbehnutý fetch, aby stale odpoveď nešla do ďalšej selekcie.
+          aimAbortRef.current?.abort();
+          aimGuidRef.current = null;
           break;
+        case "AIM_NAVIGATE": {
+          // Len host-relatívne cesty — obrana pred navigáciou na cudzie URL.
+          const href = e.data.href;
+          if (typeof href === "string" && href.startsWith("/") && !href.startsWith("//")) {
+            onNavigate?.(href);
+          }
+          break;
+        }
       }
     }
     window.addEventListener("message", onMessage);
     return () => window.removeEventListener("message", onMessage);
-  }, [viewerOrigin, guidMap, onSelect, onPickedElement, flushPending]);
+  }, [viewerOrigin, guidMap, onSelect, onPickedElement, onNavigate, sendAimPanel, flushPending]);
 
   // Focus (card / AI dock → 3D). Comma-separated GUIDs; queued until load.
   // focusNonce in deps: every AI action carries a fresh nonce so an identical

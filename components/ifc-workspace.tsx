@@ -1,18 +1,17 @@
 "use client";
 
 import dynamic from "next/dynamic";
+import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
 
-import { ElementInfoPanel } from "@/components/element-info-panel";
-import type { SelectedElement } from "@/lib/data/drawing";
 import type { GuidMap, IfcModel } from "@/lib/data/ifc";
 import type { ViewerApi } from "@/lib/viewer-api";
 
 // 3D viewer je embed-nutý ifc-lite viewer cez iframe (postMessage bridge),
 // nie in-process three.js. Rovnaké Props + ViewerApi, takže workspace je bez zmeny.
-// Starý three.js komponent (components/ifc-viewer.tsx) ostáva pre rollback.
+// Používa sa variant s podporou viewer ops AI docku (D-066).
 const IFCViewer = dynamic(
-  () => import("@/components/ifc-viewer-embed").then((m) => m.IFCViewerEmbed),
+  () => import("@/components/ifc-viewer").then((m) => m.IFCViewer),
   {
     ssr: false,
     loading: () => (
@@ -24,24 +23,29 @@ const IFCViewer = dynamic(
 );
 
 /**
- * Full-page 3D workspace: viewer vypĺňa celú plochu, panel s detailom prvku
- * pláva ako overlay vpravo (len keď je niečo vybrané). IFC-typ FilterBar bol
- * odstránený — filtrovanie beží cez AI dock a natívne nástroje embed viewera.
+ * Full-page 3D workspace: viewer vypĺňa celú plochu. Detail vybraného prvku
+ * sa zobrazuje ako AIM karta priamo v natívnom paneli embed viewera (host mu
+ * posiela DB dáta cez bridge, viď ifc-viewer.tsx + lib/aim-panel.ts) — žiadny
+ * druhý plávajúci panel. IFC-typ FilterBar bol odstránený — filtrovanie beží
+ * cez AI dock a natívne nástroje embed viewera.
  */
 export default function IFCWorkspace({
   models,
   guidMap,
   focus,
   focusNonce,
+  ops,
 }: {
   models: IfcModel[];
   guidMap: GuidMap;
   focus?: string;
-  /** Nonce akcie AI docku — nová hodnota vynúti re-aplikáciu focusu (D-056). */
+  /** Nonce akcie AI docku — nová hodnota vynúti re-aplikáciu focusu/ops (D-056). */
   focusNonce?: string;
+  /** Viewer operácie AI docku (ofarbenie/skrytie/izolácia, D-066). */
+  ops?: string;
 }) {
+  const router = useRouter();
   const viewerApiRef = useRef<ViewerApi | null>(null);
-  const [selected, setSelected] = useState<SelectedElement | null>(null);
   const [siblingLoading, setSiblingLoading] = useState(false);
 
   // 3D → DB: po picku dotiahni súrodencov v priestore a zvýrazni ich.
@@ -69,26 +73,16 @@ export default function IFCWorkspace({
         guidMap={guidMap}
         focus={focus}
         focusNonce={focusNonce}
+        ops={ops}
         apiRef={viewerApiRef}
-        onSelect={setSelected}
         onPickedElement={handlePickedElement}
+        onNavigate={(href) => router.push(href)}
       />
 
       {siblingLoading && (
         <div className="pointer-events-none absolute left-3 top-3 z-10 rounded-full bg-background/80 px-3 py-1 text-xs text-muted-foreground shadow backdrop-blur-sm">
           Načítavam priestorový kontext…
         </div>
-      )}
-
-      {/* Detail vybraného prvku — plávajúci panel nad viewerom vpravo */}
-      {selected && (
-        <aside className="absolute bottom-3 right-3 top-3 z-10 w-80 max-w-[calc(100%-1.5rem)] overflow-y-auto rounded-md border bg-background/95 shadow-lg backdrop-blur-sm">
-          <ElementInfoPanel
-            selected={selected}
-            onBack={() => setSelected(null)}
-            backLabel="Zavrieť"
-          />
-        </aside>
       )}
     </div>
   );

@@ -92,6 +92,15 @@ Postup podľa typu otázky:
   show_in_3d PRIAMO s filtrom (ifc_type='IfcDoor', prípadne query/predefined_type)
   BEZ vymenúvania ids_or_refs — server prvky dohľadá sám. Ids vymenúvaj len pri
   konkrétnej množine prvkov.
+- Úprava 3D scény: OFARBIŤ / SKRYŤ / IZOLOVAŤ (zobraziť len vybrané) / vrátiť pohľad
+  → style_in_3d. Celú triedu prvkov („všetky dvere", „VZT potrubia") vyber filtrom
+  ifc_type/predefined_type priamo v calle — netreba prvky najprv hľadať ani
+  vymenúvať. Pomenovanú farbu preveď na hex (červená ef4444, zelená 22c55e, modrá
+  3b82f6, žltá eab308, oranžová f97316, fialová a855f7). Efekty sa v scéne HROMADIA
+  naprieč požiadavkami; „zobraz všetko/zruš farby/resetni pohľad" → action show_all
+  a/alebo reset_colors. Viac operácií naraz („dvere červené, okná modré") = viac
+  style_in_3d callov. show_in_3d používaj na zvýraznenie+priblíženie, style_in_3d
+  na farby a viditeľnosť.
 - Opakované zobrazovanie: KAŽDÁ nová požiadavka na zobrazenie = nový show_in_3d call.
   Zvýraznenie v 3D vždy nahradí predchádzajúce — pošli presne tie prvky, ktoré majú
   byť zvýraznené PO tejto požiadavke: „ukáž iné/teraz X" → len X; „pridaj k nim X" /
