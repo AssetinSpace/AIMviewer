@@ -118,11 +118,14 @@ export function IFCViewer({
   const aimGuidRef = useRef<string | null>(null);
   const aimAbortRef = useRef<AbortController | null>(null);
 
+  // Fail-closed: nevalidná viewer URL = žiadny iframe ani postMessage.
+  // Fallback "*" by vypol origin filter prichádzajúcich správ A poslal
+  // AIM panel dáta ľubovoľnej origin — misconfigurácia nesmie otvárať bridge.
   const viewerOrigin = useMemo(() => {
     try {
       return new URL(VIEWER_URL).origin;
     } catch {
-      return "*";
+      return null;
     }
   }, []);
 
@@ -137,10 +140,11 @@ export function IFCViewer({
   // ViewerLayout). URLSearchParams zakóduje čiarky/URL bezpečne; viewer ich
   // dekóduje späť a splitne na ','.
   const src = useMemo(() => {
+    if (!viewerOrigin) return null;
     const u = new URL(VIEWER_URL);
     u.searchParams.set("models", models.map((m) => m.url).join(","));
     return u.toString();
-  }, [models]);
+  }, [models, viewerOrigin]);
 
   // Stabilný kľúč — iframe sa remountuje len keď sa zmenia URL modelov.
   const modelsKey = models.map((m) => m.url).join("|");
@@ -154,6 +158,7 @@ export function IFCViewer({
   }
 
   function post(msg: Record<string, unknown>) {
+    if (!viewerOrigin) return;
     iframeRef.current?.contentWindow?.postMessage(
       { source: SOURCE, ...msg },
       viewerOrigin
@@ -222,7 +227,7 @@ export function IFCViewer({
     readyRef.current = false;
 
     function onMessage(e: MessageEvent) {
-      if (viewerOrigin !== "*" && e.origin !== viewerOrigin) return;
+      if (!viewerOrigin || e.origin !== viewerOrigin) return;
       if (e.source !== iframeRef.current?.contentWindow) return;
       if (!isBridgeMessage(e.data)) return;
 
@@ -313,6 +318,23 @@ export function IFCViewer({
     applyOps(ops);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ops, focusNonce]);
+
+  // Misconfigurácia (nevalidná NEXT_PUBLIC_IFC_VIEWER_URL) — fail-closed UI.
+  if (!viewerOrigin || !src) {
+    return (
+      <div className="relative h-full w-full overflow-hidden rounded-md ring-1 ring-border">
+        <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-background/90 p-6 text-center">
+          <span className="text-sm font-semibold text-destructive">
+            3D prehliadač nie je nakonfigurovaný
+          </span>
+          <span className="max-w-sm text-xs text-muted-foreground">
+            <code className="rounded bg-muted px-1">NEXT_PUBLIC_IFC_VIEWER_URL</code>{" "}
+            nie je platná URL: <code className="rounded bg-muted px-1">{VIEWER_URL}</code>
+          </span>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="relative h-full w-full overflow-hidden rounded-md ring-1 ring-border">

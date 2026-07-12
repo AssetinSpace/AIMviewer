@@ -61,6 +61,10 @@ export default function IFCWorkspace({
       if (data.spaceId && data.siblingObjectIds.length > 1) {
         viewerApiRef.current?.highlightSiblings(data.siblingObjectIds, objectId);
       }
+    } catch (err) {
+      // Volá sa fire-and-forget z bridge handlera — bez catch by network
+      // chyba skončila ako unhandled rejection. Zvýraznenie je best-effort.
+      console.error("space-siblings fetch failed", err);
     } finally {
       setSiblingLoading(false);
     }
