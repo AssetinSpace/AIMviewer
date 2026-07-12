@@ -2,6 +2,7 @@ import "server-only";
 
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { PDF_LINK_SOURCE } from "@/lib/data/constants";
+import { fetchAllPages } from "@/lib/data/pagination";
 import type { ToolDefinition } from "./provider";
 
 /**
@@ -1007,8 +1008,21 @@ export class AskToolRuntime {
     const supabase = getSupabaseAdmin();
     // Jadro (objects) je povinné; grounding bloky (psety, podlažia, systémy,
     // klasifikácie, dokumenty — D-058) sú best-effort: ich výpadok nezhodí tool.
-    const [objRes, psetRes, floorsRes, systemsRes, clsSysRes, docsRes] = await Promise.all([
-      supabase.from("objects").select("object_type, ifc_type, predefined_type").limit(10000),
+    const [objRows, psetRes, floorsRes, systemsRes, clsSysRes, docsRes] = await Promise.all([
+      // Stránkovane: .limit(10000) neprebije PostgREST db-max-rows (1000) —
+      // bez stránkovania by slovník modelu (grounding pre LLM) ticho podhodnotil
+      // počty typov/tried nad prvých 1000 objektov.
+      fetchAllPages<{
+        object_type: string;
+        ifc_type: string | null;
+        predefined_type: string | null;
+      }>((from, to) =>
+        supabase
+          .from("objects")
+          .select("object_type, ifc_type, predefined_type")
+          .order("id", { ascending: true })
+          .range(from, to)
+      ),
       supabase.from("v_property_dictionary").select("pset, property").limit(5000),
       supabase
         .from("v_floors")
@@ -1019,16 +1033,9 @@ export class AskToolRuntime {
       supabase.from("classification_systems").select("name").limit(20),
       supabase.from("objects").select("name").eq("object_type", "document").limit(50),
     ]);
-    const { data, error } = objRes;
-    if (error) throw new Error(error.message);
-
     const byObjectType = new Map<string, number>();
     const byClass = new Map<string, { ifc_type: string; predefined_type: string | null; count: number }>();
-    for (const r of (data ?? []) as {
-      object_type: string;
-      ifc_type: string | null;
-      predefined_type: string | null;
-    }[]) {
+    for (const r of objRows) {
       byObjectType.set(r.object_type, (byObjectType.get(r.object_type) ?? 0) + 1);
       if ((r.object_type === "asset" || r.object_type === "asset_type") && r.ifc_type) {
         const key = `${r.object_type}|${r.ifc_type}|${r.predefined_type ?? ""}`;

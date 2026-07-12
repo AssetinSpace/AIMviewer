@@ -5,6 +5,7 @@ import { unstable_cache } from "next/cache";
 
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { AIM_CACHE } from "@/lib/data/constants";
+import { fetchAllPages } from "@/lib/data/pagination";
 
 /**
  * Data-access vrstva pre priestorovú hierarchiu (S1).
@@ -75,25 +76,45 @@ interface RawSpatialObject {
  * Načíta všetky priestorové objekty stránkovane (obchádza Supabase `db-max-rows`
  * limit 1000). Stabilné poradie cez `order(id)` — nutné pre správne stránkovanie.
  */
-async function loadSpatialObjects(
+function loadSpatialObjects(
   supabase: ReturnType<typeof getSupabaseAdmin>
 ): Promise<RawSpatialObject[]> {
-  const PAGE = 1000;
-  const rows: RawSpatialObject[] = [];
-  for (let from = 0; ; from += PAGE) {
-    const { data, error } = await supabase
+  return fetchAllPages<RawSpatialObject>((from, to) =>
+    supabase
       .from("objects")
       .select(
         "id, object_type, object_ref, name, ifc_type, ifc_guid, predefined_type"
       )
       .in("object_type", SPATIAL_TYPES as unknown as string[])
       .order("id", { ascending: true })
-      .range(from, from + PAGE - 1);
-    if (error) throw new Error(error.message);
-    rows.push(...((data ?? []) as RawSpatialObject[]));
-    if (!data || data.length < PAGE) break;
-  }
-  return rows;
+      .range(from, to)
+  );
+}
+
+/** Aktívna spatial hrana `from_id (dieťa) → to_id (rodič)`. */
+interface RawEdge {
+  from_id: string;
+  to_id: string;
+}
+
+/**
+ * Načíta všetky aktívne hrany jednej spatial view stránkovane — hrán je po
+ * federácii VZT tiež > 1000 (každý asset má containment hranu) a PostgREST
+ * by ich bez stránkovania ticho orezal: prvky nad limit by prišli o rodiča
+ * a vypadli by zo stromu (parentless assety sa vynechávajú).
+ */
+function loadSpatialEdges(
+  supabase: ReturnType<typeof getSupabaseAdmin>,
+  view: "rel_aggregates" | "rel_contained_in_spatial_structure"
+): Promise<RawEdge[]> {
+  return fetchAllPages<RawEdge>((from, to) =>
+    supabase
+      .from(view)
+      .select("from_id, to_id")
+      .is("valid_until", null)
+      .order("id", { ascending: true })
+      .range(from, to)
+  );
 }
 
 /** Serializovateľná podoba grafu pre `unstable_cache` (Mapy JSON neprežijú). */
@@ -113,7 +134,7 @@ interface GraphData {
 const loadGraphData = unstable_cache(async (): Promise<GraphData> => {
   const supabase = getSupabaseAdmin();
 
-  const [objectRows, aggRes, containedRes, floorsRes, spacesRes] = await Promise.all([
+  const [objectRows, aggEdges, containedEdges, floorsRes, spacesRes] = await Promise.all([
     // Priestorové objekty stránkovane — Supabase capuje odpoveď na 1000 riadkov
     // (`db-max-rows`), a assetov je po federácii VZT (D-049) > 1000. Bez stránkovania
     // by sa prvky nad limit stratili z grafu (fetchNode → 404).
@@ -121,20 +142,13 @@ const loadGraphData = unstable_cache(async (): Promise<GraphData> => {
     // Spatial väzby IFC-kanonicky (D-048): dekompozícia štruktúry (rel_aggregates)
     // + umiestnenie prvku (rel_contained_in_spatial_structure). Len aktívne
     // (valid_until IS NULL) — partial-unique na oboch garantuje 1 rodiča na dieťa.
-    supabase
-      .from("rel_aggregates")
-      .select("from_id, to_id")
-      .is("valid_until", null),
-    supabase
-      .from("rel_contained_in_spatial_structure")
-      .select("from_id, to_id")
-      .is("valid_until", null),
+    // Tiež stránkovane (hrán je rovnako veľa ako prvkov).
+    loadSpatialEdges(supabase, "rel_aggregates"),
+    loadSpatialEdges(supabase, "rel_contained_in_spatial_structure"),
     supabase.from("floors").select("id, elevation"),
     supabase.from("spaces").select("id, long_name"),
   ]);
 
-  if (aggRes.error) throw new Error(aggRes.error.message);
-  if (containedRes.error) throw new Error(containedRes.error.message);
   if (floorsRes.error) throw new Error(floorsRes.error.message);
   if (spacesRes.error) throw new Error(spacesRes.error.message);
 
@@ -170,7 +184,7 @@ const loadGraphData = unstable_cache(async (): Promise<GraphData> => {
 
   // Uzol je buď agregovaný (štruktúra) alebo obsiahnutý (prvok) — nikdy oboje,
   // takže zliatie oboch tabuliek nekoliduje.
-  const relRows = [...(aggRes.data ?? []), ...(containedRes.data ?? [])];
+  const relRows = [...aggEdges, ...containedEdges];
   const edges: [string, string][] = [];
   for (const r of relRows) {
     const from = r.from_id as string;
