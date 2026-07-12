@@ -30,6 +30,53 @@ const IN_CHUNK = 100;
 const STYLE_CAP = 400;
 
 /**
+ * IFC domény → triedy pre množinové 3D operácie (D-066 rozšírenie: „všetko
+ * HVAC", „celá elektrika"). Selektor rozkladá viewer z entity tables, takže
+ * zoznam smie byť veľkorysý — trieda, ktorá v modeli nie je, sa ticho
+ * preskočí. Kurátorský výber podľa IFC4 domain schém.
+ */
+const DOMAIN_IFC_TYPES: Record<string, string[]> = {
+  hvac: [
+    "IfcDuctSegment", "IfcDuctFitting", "IfcDuctSilencer", "IfcAirTerminal",
+    "IfcAirTerminalBox", "IfcAirToAirHeatRecovery", "IfcFan", "IfcDamper",
+    "IfcCoil", "IfcHumidifier", "IfcEvaporativeCooler", "IfcEvaporator",
+    "IfcCondenser", "IfcCompressor", "IfcChiller", "IfcBoiler", "IfcBurner",
+    "IfcCooledBeam", "IfcCoolingTower", "IfcHeatExchanger", "IfcSpaceHeater",
+    "IfcTubeBundle", "IfcUnitaryEquipment", "IfcVibrationIsolator", "IfcFilter",
+  ],
+  plumbing: [
+    "IfcPipeSegment", "IfcPipeFitting", "IfcSanitaryTerminal", "IfcWasteTerminal",
+    "IfcInterceptor", "IfcStackTerminal", "IfcValve", "IfcPump", "IfcTank",
+    "IfcFlowMeter",
+  ],
+  electrical: [
+    "IfcCableCarrierSegment", "IfcCableCarrierFitting", "IfcCableSegment",
+    "IfcCableFitting", "IfcOutlet", "IfcSwitchingDevice", "IfcLightFixture",
+    "IfcLamp", "IfcElectricAppliance", "IfcElectricDistributionBoard",
+    "IfcElectricFlowStorageDevice", "IfcElectricGenerator", "IfcElectricMotor",
+    "IfcElectricTimeControl", "IfcJunctionBox", "IfcTransformer",
+    "IfcAudioVisualAppliance", "IfcCommunicationsAppliance", "IfcProtectiveDevice",
+    "IfcSensor", "IfcActuator", "IfcAlarm", "IfcController", "IfcUnitaryControlElement",
+  ],
+  architecture: [
+    "IfcWall", "IfcCurtainWall", "IfcDoor", "IfcWindow", "IfcRoof", "IfcStair",
+    "IfcStairFlight", "IfcRamp", "IfcRampFlight", "IfcRailing", "IfcCovering",
+    "IfcFurniture", "IfcFurnishingElement",
+  ],
+  structure: [
+    "IfcBeam", "IfcColumn", "IfcSlab", "IfcFooting", "IfcPile", "IfcMember",
+    "IfcPlate", "IfcReinforcingBar", "IfcReinforcingMesh", "IfcTendon",
+    "IfcTendonAnchor",
+  ],
+};
+
+/** Wire-safe očista selektorových hodnôt (ops formát používa : ; ~ . ako oddeľovače). */
+const sanitizeIfcType = (raw: unknown): string =>
+  String(raw ?? "").replace(/[^A-Za-z0-9]/g, "").trim();
+const sanitizeModelName = (raw: unknown): string =>
+  String(raw ?? "").replace(/[:;~.]/g, "").trim();
+
+/**
  * Whitelist relácií pre generický query_view (celá čitateľná DB, D-056 dodatok).
  * Base `relationships` zámerne chýba — LLM dotazuje len kanonické views (D-051).
  */
@@ -429,9 +476,11 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
       "UI AKCIA: ofarbí / skryje / znova zobrazí / izoluje prvky v 3D modeli, alebo " +
       "resetne pohľad. Zavolaj, keď používateľ žiada prvky OFARBIŤ, SKRYŤ, IZOLOVAŤ " +
       "(zobraziť len ich) alebo vrátiť pohľad (zobraziť všetko / zrušiť farby). " +
-      "Celé triedy prvkov ('všetky dvere') vyber cez ifc_type/predefined_type — " +
-      "nevymenúvaj ids_or_refs. Efekty sa hromadia, kým ich nezruší show_all/" +
-      "reset_colors. Viac operácií = viac callov (pokojne v jednom kole).",
+      "Množiny vyberaj filtrom, nie vymenúvaním: jedna trieda = ifc_type, viac tried " +
+      "= ifc_types, celá profesia = domain (hvac/plumbing/electrical/architecture/" +
+      "structure), celý súbor federácie = model (VZT/ASR) — kombinovateľné " +
+      "(napr. domain=hvac + model=VZT). Efekty sa hromadia, kým ich nezruší " +
+      "show_all/reset_colors. Viac operácií = viac callov (pokojne v jednom kole).",
     inputSchema: {
       type: "object",
       properties: {
@@ -457,6 +506,25 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
         ifc_type: {
           type: "string",
           description: "Alternatíva: všetky prvky IFC triedy (napr. IfcDoor)",
+        },
+        ifc_types: {
+          type: "array",
+          items: { type: "string" },
+          description: "Alternatíva: viac IFC tried naraz (napr. [IfcWall, IfcSlab])",
+        },
+        domain: {
+          type: "string",
+          enum: ["hvac", "plumbing", "electrical", "architecture", "structure"],
+          description:
+            "Alternatíva: celá IFC doména — hvac=vzduchotechnika/chladenie/kúrenie, " +
+            "plumbing=ZTI/potrubia, electrical=elektro/MaR, architecture=stavebné " +
+            "prvky, structure=nosná konštrukcia",
+        },
+        model: {
+          type: "string",
+          description:
+            "Alternatíva/spresnenie: celý súbor federácie podľa názvu (napr. VZT " +
+            "alebo ASR) — kombinovateľné s ifc_type(s)/domain",
         },
         predefined_type: {
           type: "string",
@@ -1522,6 +1590,55 @@ export class AskToolRuntime {
       if (!/^[0-9a-f]{6}$/.test(color)) {
         throw new Error("color musí byť hex RRGGBB (napr. ef4444 pre červenú).");
       }
+    }
+
+    // ── Množinový selektor (D-066 rozšírenie): celé triedy / IFC domény /
+    // súbory federácie rozkladá viewer sám z entity tables — žiadne DB
+    // round-tripy, žiadny STYLE_CAP, URL ostáva krátka pri tisícoch prvkov.
+    // predefined_type/query selektor nevie (žijú len v DB) → DB vetva nižšie.
+    const domain = String(input.domain ?? "").trim().toLowerCase();
+    if (domain && !(domain in DOMAIN_IFC_TYPES)) {
+      throw new Error(`domain musí byť jedna z: ${Object.keys(DOMAIN_IFC_TYPES).join(", ")}.`);
+    }
+    const modelName = sanitizeModelName(input.model);
+    const multiTypes = Array.isArray(input.ifc_types)
+      ? (input.ifc_types as unknown[]).map(sanitizeIfcType).filter(Boolean)
+      : [];
+    const singleType = sanitizeIfcType(input.ifc_type);
+    const explicitGiven =
+      Array.isArray(input.ids_or_refs) && (input.ids_or_refs as unknown[]).length > 0;
+    const dbOnlyFilter = sanitizeQuery(input.predefined_type) || sanitizeQuery(input.query);
+    const selectorTypes = domain
+      ? DOMAIN_IFC_TYPES[domain]
+      : multiTypes.length > 0
+        ? multiTypes
+        : singleType
+          ? [singleType]
+          : [];
+    if (!explicitGiven && !dbOnlyFilter && (selectorTypes.length > 0 || modelName)) {
+      const fields: string[] = [];
+      if (selectorTypes.length > 0) fields.push(`t=${selectorTypes.join(".")}`);
+      if (modelName) fields.push(`m=${modelName}`);
+      const op = `${action}_sel:${color}:${fields.join("~")}`;
+      const scope = domain || (modelName && selectorTypes.length === 0 ? `model ${modelName}` : "");
+      const scopeLabel =
+        scope ||
+        `${selectorTypes.slice(0, 3).join("+")}${selectorTypes.length > 3 ? "…" : ""}` +
+          (modelName ? ` v ${modelName}` : "");
+      this.actions.push({
+        type: "navigate",
+        url: `/ifc?ops=${encodeURIComponent(op)}&r=${nonce()}`,
+        label: `3D: ${opLabel[action]} — ${scopeLabel}`,
+      });
+      return {
+        ok: true,
+        applied: action,
+        selector: {
+          ...(selectorTypes.length > 0 ? { ifc_types: selectorTypes } : {}),
+          ...(modelName ? { model: modelName } : {}),
+        },
+        note: "Výber rozloží 3D viewer podľa IFC tried/súboru — triedy mimo modelu sa ticho preskočia.",
+      };
     }
 
     // ── Výber prvkov: explicitné ids_or_refs ALEBO filter (ifc_type/…/query).

@@ -18,8 +18,10 @@ import type { ViewerApi } from "@/lib/viewer-api";
  * Druhá strana mostu žije vo forku: apps/viewer/src/aim/AimBridge.tsx.
  * Protokol (source: "aim-bridge"):
  *   host → viewer:  FOCUS{guids} · HIGHLIGHT_FILTER{guids} · CLEAR_FILTER ·
- *                   COLORIZE{guids,color} · HIDE{guids} · SHOW{guids} ·
- *                   ISOLATE{guids} · SHOW_ALL · RESET_COLORS   (D-066) ·
+ *                   COLORIZE{guids|selector,color} · HIDE{guids|selector} ·
+ *                   SHOW{guids|selector} · ISOLATE{guids|selector} ·
+ *                   SHOW_ALL · RESET_COLORS   (D-066; selector = množinový
+ *                   výber {types,model} rozkladaný viewer-side) ·
  *                   AIM_PANEL_DATA{guid,data} · AIM_PANEL_EMPTY{guid,reason}
  *   viewer → host:  READY · MODELS_LOADED · ENTITY_SELECTED{guid} ·
  *                   ENTITY_DESELECTED · AIM_NAVIGATE{href}
@@ -48,22 +50,53 @@ type OutboundMessage =
  * Viewer operácia AI docku (D-066) — kompaktný wire formát v URL parametri
  * `ops`: `<op>:<arg>:<guid.guid…>` spájané `;`. GUIDy (base64 abeceda IFC,
  * bez bodky) sa oddeľujú bodkou — neencoduje sa, URL ostáva krátka.
+ *
+ * Množinové varianty `<op>_sel:<arg>:<selektor>` (D-066 rozšírenie) nesú
+ * namiesto GUIDov selektor `t=IfcA.IfcB~m=Model` — celé triedy/súbory
+ * rozloží viewer sám z entity tables, takže URL ostáva krátka pri
+ * ľubovoľnom počte prvkov.
  */
+interface OpsSelector {
+  types?: string[];
+  model?: string;
+}
+
 type ViewerOp =
   | { op: "colorize"; guids: string[]; color: string }
   | { op: "hide" | "show" | "isolate"; guids: string[] }
+  | { op: "colorize_sel"; selector: OpsSelector; color: string }
+  | { op: "hide_sel" | "show_sel" | "isolate_sel"; selector: OpsSelector }
   | { op: "show_all" }
   | { op: "reset_colors" };
+
+function parseSelector(raw: string): OpsSelector | null {
+  const sel: OpsSelector = {};
+  for (const field of raw.split("~")) {
+    if (field.startsWith("t=")) {
+      const types = field.slice(2).split(".").filter(Boolean);
+      if (types.length > 0) sel.types = types;
+    } else if (field.startsWith("m=")) {
+      const model = field.slice(2).trim();
+      if (model) sel.model = model;
+    }
+  }
+  return sel.types || sel.model ? sel : null;
+}
 
 function parseOps(raw: string): ViewerOp[] {
   const out: ViewerOp[] = [];
   for (const part of raw.split(";")) {
     const [op, arg = "", joined = ""] = part.split(":");
     const guids = joined.split(".").filter(Boolean);
+    const sel = op.endsWith("_sel") ? parseSelector(joined) : null;
     if (op === "colorize" && guids.length > 0 && /^[0-9a-fA-F]{6}$/.test(arg)) {
       out.push({ op, guids, color: `#${arg}` });
     } else if ((op === "hide" || op === "show" || op === "isolate") && guids.length > 0) {
       out.push({ op, guids });
+    } else if (op === "colorize_sel" && sel && /^[0-9a-fA-F]{6}$/.test(arg)) {
+      out.push({ op, selector: sel, color: `#${arg}` });
+    } else if ((op === "hide_sel" || op === "show_sel" || op === "isolate_sel") && sel) {
+      out.push({ op, selector: sel });
     } else if (op === "show_all" || op === "reset_colors") {
       out.push({ op });
     }
@@ -206,6 +239,18 @@ export function IFCViewer({
           break;
         case "isolate":
           post({ type: "ISOLATE", guids: o.guids });
+          break;
+        case "colorize_sel":
+          post({ type: "COLORIZE", selector: o.selector, color: o.color });
+          break;
+        case "hide_sel":
+          post({ type: "HIDE", selector: o.selector });
+          break;
+        case "show_sel":
+          post({ type: "SHOW", selector: o.selector });
+          break;
+        case "isolate_sel":
+          post({ type: "ISOLATE", selector: o.selector });
           break;
         case "show_all":
           post({ type: "SHOW_ALL" });
