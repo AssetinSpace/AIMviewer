@@ -2,9 +2,8 @@ import "server-only";
 
 import { unstable_cache } from "next/cache";
 
+import { AIM_CACHE } from "@/lib/data/constants";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
-
-const AIM_CACHE = { revalidate: 60, tags: ["aim"] };
 
 /** Returns object_ids of assets with the given IFC type. */
 export const fetchByIfcType = unstable_cache(
