@@ -6,6 +6,36 @@
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev"],
       "port": 3000
+    },
+    {
+      "name": "ifclite-viewer",
+      "runtimeExecutable": "corepack",
+      "runtimeArgs": ["pnpm@10.8.1", "--dir", "C:\\Users\\Samuel\\ifc-lite\\apps\\viewer", "dev"],
+      "port": 3000
+    },
+    {
+      "name": "aim-viewer-devtest",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev", "--", "-p", "3210"],
+      "port": 3210
+    },
+    {
+      "name": "aim-viewer-devtest-local-viewer",
+      "runtimeExecutable": "powershell",
+      "runtimeArgs": ["-NoProfile", "-Command", "$env:NEXT_PUBLIC_IFC_VIEWER_URL='http://localhost:4173'; $env:NEXT_DIST_DIR_OVERRIDE='.next-devtest'; npm.cmd run dev -- -p 3211"],
+      "port": 3211
+    },
+    {
+      "name": "aim-viewer-eval-mock",
+      "runtimeExecutable": "powershell",
+      "runtimeArgs": ["-NoProfile", "-Command", "$env:LLM_PROVIDER='mock'; $env:NEXT_DIST_DIR_OVERRIDE='.next-eval'; npm.cmd run dev -- -p 3212"],
+      "port": 3212
+    },
+    {
+      "name": "ifclite-preview",
+      "runtimeExecutable": "corepack",
+      "runtimeArgs": ["pnpm@10.8.1", "--dir", "C:\\Users\\Samuel\\ifc-lite\\apps\\viewer", "exec", "vite", "preview", "--port", "4173", "--strictPort"],
+      "port": 4173
     }
   ]
 }
