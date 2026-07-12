@@ -12,7 +12,7 @@
     "postinstall": "cp node_modules/@ifc-lite/wasm/pkg/ifc-lite_bg.wasm public/ifc-lite_bg.wasm"
   },
   "dependencies": {
-    "@assetinspace/design-kit": "github:AssetinSpace/design-kit#claude/design-system-archive-8iy6go",
+    "@assetinspace/design-kit": "github:AssetinSpace/design-kit#main",
     "@ifc-lite/geometry": "^2.9.2",
     "@ifc-lite/query": "^1.14.10",
     "@ifc-lite/wasm": "^2.12.0",
