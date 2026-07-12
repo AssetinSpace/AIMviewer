@@ -2019,6 +2019,41 @@ Skutočná ochrana účtov príde s auth + RLS (mimo línie D-025); Turnstile/WA
 prípadná ďalšia vrstva. LLM vrstva (tools/prompt/model) sa nemení ⇒ eval beh
 podľa D-057 nie je nutný; limiter je v dev vypnutý, takže evaly bežia bez zmeny.
 
+### D-069 — Hlasový vstup pokynov (STT) do LLM rozhrania
+**Status:** implementované (2026-07-12).
+
+**Kontext:** pokyny pre `/api/ask` sa písali len na klávesnici — v teréne/na mobile
+nepraktické. Vstup je slovenčina s odbornou terminológiou (VZT, ÚK, ZTI) a kódmi
+prvkov (DD01.06.03), čo kladie vysoké nároky na presnosť prepisu. Rešerš (2026-07):
+Web Speech API nevyhovuje (Firefox vypnuté, SK kvalita slabá, bez doménového
+slovníka); on-device Whisper v prehliadači pre SK nepraktický (250 MB+ model);
+Anthropic API audio vstup nemá — STT musí byť externá vrstva; platené STT
+(OpenAI gpt-4o-transcribe ~$0.006/min, Deepgram Nova-3 ~$0.0077/min s realtime
+streamingom a keyterms) sú cieľ pre produkciu, demo malo byť zadarmo.
+
+**Rozhodnutie:** dictation pattern (vzor ChatGPT/Claude) + Gemini ako bezplatný STT:
+1. **UX — žiadne auto-send:** mikrofón v ask-paneli nahrá diktát (MediaRecorder,
+   webm/opus; Safari mp4/AAC cez `isTypeSupported`), prepis sa PRIDÁ do textarea
+   ako editovateľný text a používateľ ho odošle sám — pri kódoch prvkov môže STT
+   urobiť chybu, kontrola je nutná. Max 60 s, časovač, zrušenie, chybové stavy;
+   tlačidlo sa bez `MediaRecorder`/`getUserMedia` podpory vôbec nezobrazí.
+2. **STT provider vrstva `lib/stt/`** (zrkadlí `lib/llm/provider.ts`, D-056):
+   server-only, `STT_PROVIDER`/`STT_MODEL` env, default **gemini** —
+   `generateContent` prijíma audio natívne (`inline_data`), beží na existujúcom
+   `GEMINI_API_KEY` (free tier pokrýva demo, $0, žiadny nový účet). Prompt nesie
+   doménový slovník (VZT/ÚK/ZTI/IFC/pset, tvar kódov) — hlavná výhoda LLM-STT.
+   Mock provider (`STT_PROVIDER=mock`) pre testy/devtest bez kľúča a siete.
+3. **`/api/transcribe`** — route handler s ochranou podľa D-068 (origin guard +
+   per-IP limit, default 30/10 min len prod, `TRANSCRIBE_RATE_LIMIT_MAX` override),
+   limit 4 MB, len `audio/*`; `SttConfigError` → 503 s návodom.
+
+**Vedomé limity:** batch prepis (nie streaming) — diktáty sú krátke (input cap
+2000 znakov), latencia 1–3 s stačí; realtime (Deepgram) je aditívny ďalší provider.
+Kvalita SK prepisu Gemini flash-lite sa priebežne overí na reálnych diktátoch —
+prepnutie na platený STT je čisto env zmena. Systémové diktovanie OS (iOS/macOS
+podporuje SK) funguje do textarea nezávisle od tejto vrstvy. LLM vrstva
+(tools/prompt/model) sa nemení ⇒ eval beh podľa D-057 nie je nutný.
+
 ---
 
 ## Changelog
@@ -2026,6 +2061,7 @@ podľa D-057 nie je nutný; limiter je v dev vypnutý, takže evaly bežia bez z
 > Kompaktný reverse-chrono log pridaných/zmenených rozhodnutí. Plný kontext = príslušný
 > D-záznam vyššie.
 
+- **2026-07-12** — **D-069 (hlasový vstup pokynov):** dictation pattern v ask-paneli (MediaRecorder → `/api/transcribe` → editovateľný prepis do inputu, žiadne auto-send) + STT provider vrstva `lib/stt/` (default Gemini `inline_data` audio na existujúcom kľúči — demo zadarmo; mock pre testy); doménový slovník v prompte; ochrana routy podľa D-068.
 - **2026-07-12** — **D-068 (ochrana /api/ask):** per-IP sliding-window rate limit (20/10 min, len prod, env override) + cross-origin guard v `lib/api-guard.ts`; 429 + Retry-After; in-memory per inštancia (vedomý trade-off). Nález nočného auditu.
 - **2026-07-12** — **D-067 (AIM karta v paneli viewera):** host render schéma `lib/aim-panel.ts` → bridge `AIM_PANEL_DATA`/`AIM_PANEL_EMPTY` → fork `AimCard.tsx`; kliky späť cez `AIM_NAVIGATE`; `ElementInfoPanel` overlay nahradený natívnym panelom; `NEXT_DIST_DIR_OVERRIDE` pre paralelný devtest server.
 - **2026-07-12** — **D-066 (AI chat ovláda 3D scénu):** tool `style_in_3d` (colorize/hide/show/isolate/show_all/reset_colors; výber filtrom ifc_type/predefined_type alebo ids_or_refs, cap 400) → URL `ops` wire formát → nové bridge správy do IFClite forku (COLORIZE/HIDE/SHOW/ISOLATE/SHOW_ALL/RESET_COLORS → `bim.viewer.*`). Efekty sa hromadia, reset explicitný. Zároveň doplnený stratený nadpis D-065 (pasportizácia).

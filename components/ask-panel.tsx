@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -9,10 +9,12 @@ import {
   Cuboid,
   FileText,
   Loader2,
+  Mic,
   Plus,
   Send,
   Sparkles,
   Trash2,
+  X,
 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
@@ -134,6 +136,12 @@ function loadStoredChats(): ChatsState {
   }
   return fresh();
 }
+
+/** Max dĺžka diktátu — chráni náklady STT aj limit veľkosti na serveri. */
+const MAX_RECORD_SECONDS = 60;
+
+/** Preferované formáty nahrávky — Chrome/Firefox webm/opus, Safari mp4/AAC. */
+const RECORDER_MIME_TYPES = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4"];
 
 /** Max zdrojov zobrazených bez rozbalenia. */
 const SOURCE_CAP = 8;
@@ -263,6 +271,117 @@ export function AskPanel() {
   const [pending, setPending] = useState(false);
   const [unconfigured, setUnconfigured] = useState<string | null>(null);
   const endRef = useRef<HTMLDivElement>(null);
+
+  // Hlasový vstup (D-069): diktát → /api/transcribe → prepis sa PRIDÁ do
+  // inputu ako editovateľný text — používateľ ho skontroluje a odošle sám
+  // (dictation pattern; pri kódoch prvkov môže STT urobiť chybu).
+  const [voice, setVoice] = useState<"idle" | "recording" | "transcribing">("idle");
+  const [voiceSeconds, setVoiceSeconds] = useState(0);
+  const [voiceError, setVoiceError] = useState<string | null>(null);
+  const recorderRef = useRef<MediaRecorder | null>(null);
+  const discardRef = useRef(false);
+
+  // Klientská konštanta (SSR nemá navigator/MediaRecorder → server snapshot false).
+  const voiceSupported = useSyncExternalStore(
+    () => () => {},
+    () =>
+      typeof MediaRecorder !== "undefined" && !!navigator.mediaDevices?.getUserMedia,
+    () => false
+  );
+
+  // Časovač nahrávania + auto-stop na limite dĺžky.
+  useEffect(() => {
+    if (voice !== "recording") return;
+    const t = window.setInterval(() => {
+      setVoiceSeconds((s) => {
+        if (s + 1 >= MAX_RECORD_SECONDS) recorderRef.current?.stop();
+        return s + 1;
+      });
+    }, 1000);
+    return () => window.clearInterval(t);
+  }, [voice]);
+
+  // Unmount počas nahrávania → zahodiť a uvoľniť mikrofón.
+  useEffect(
+    () => () => {
+      if (recorderRef.current?.state === "recording") {
+        discardRef.current = true;
+        recorderRef.current.stop();
+      }
+    },
+    []
+  );
+
+  async function transcribeRecording(blob: Blob) {
+    setVoice("transcribing");
+    try {
+      const form = new FormData();
+      form.append("audio", blob, "dictation");
+      const res = await fetch("/api/transcribe", { method: "POST", body: form });
+      const data = (await res.json().catch(() => ({}))) as {
+        text?: string;
+        error?: string;
+      };
+      if (!res.ok || typeof data.text !== "string") {
+        setVoiceError(data.error ?? "Prepis zlyhal — skús to znova.");
+        return;
+      }
+      const text = data.text.trim();
+      if (!text) {
+        setVoiceError("V nahrávke sa nepodarilo rozpoznať reč.");
+        return;
+      }
+      setInput((prev) => (prev.trim() ? `${prev.trimEnd()} ${text}` : text));
+    } catch {
+      setVoiceError("Sieťová chyba pri prepise — skús to znova.");
+    } finally {
+      setVoice("idle");
+    }
+  }
+
+  async function startRecording() {
+    setVoiceError(null);
+    let stream: MediaStream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+          channelCount: 1,
+        },
+      });
+    } catch {
+      setVoiceError("Mikrofón sa nepodarilo spustiť — skontroluj povolenie v prehliadači.");
+      return;
+    }
+    const mimeType = RECORDER_MIME_TYPES.find((t) => MediaRecorder.isTypeSupported(t));
+    const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+    const chunks: Blob[] = [];
+    recorder.ondataavailable = (e) => {
+      if (e.data.size > 0) chunks.push(e.data);
+    };
+    recorder.onstop = () => {
+      stream.getTracks().forEach((t) => t.stop());
+      recorderRef.current = null;
+      if (discardRef.current) {
+        setVoice("idle");
+        return;
+      }
+      void transcribeRecording(new Blob(chunks, { type: recorder.mimeType || "audio/webm" }));
+    };
+    discardRef.current = false;
+    recorderRef.current = recorder;
+    recorder.start();
+    setVoiceSeconds(0);
+    setVoice("recording");
+  }
+
+  /** Ukončí nahrávanie; discard = zahodiť bez prepisu (tlačidlo ×). */
+  function stopRecording(discard: boolean) {
+    discardRef.current = discard;
+    recorderRef.current?.stop();
+  }
 
   const active = chats.find((c) => c.id === activeId) ?? chats[0];
   const turns = active.turns;
@@ -481,8 +600,11 @@ export function AskPanel() {
         <div ref={endRef} />
       </div>
 
+      {voiceError && (
+        <p className="border-t px-3 pt-2 text-xs text-destructive">{voiceError}</p>
+      )}
       <form
-        className="flex items-end gap-2 border-t p-3"
+        className={cn("flex items-end gap-2 p-3", !voiceError && "border-t")}
         onSubmit={(e) => {
           e.preventDefault();
           send(input);
@@ -503,6 +625,47 @@ export function AskPanel() {
           className="max-h-32 flex-1 resize-y rounded-md border bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
           disabled={pending || !!unconfigured}
         />
+        {voiceSupported &&
+          (voice === "recording" ? (
+            <div className="flex shrink-0 items-center gap-1">
+              <button
+                type="button"
+                onClick={() => stopRecording(true)}
+                className="inline-flex size-9 items-center justify-center rounded-md border text-muted-foreground hover:bg-accent hover:text-foreground"
+                title="Zrušiť nahrávanie"
+                aria-label="Zrušiť nahrávanie"
+              >
+                <X className="size-4" />
+              </button>
+              <button
+                type="button"
+                onClick={() => stopRecording(false)}
+                className="inline-flex h-9 items-center gap-1.5 rounded-md bg-destructive px-2.5 text-destructive-foreground"
+                title="Ukončiť diktovanie a prepísať"
+                aria-label="Ukončiť diktovanie a prepísať"
+              >
+                <span className="size-2 animate-pulse rounded-full bg-current" />
+                <span className="font-mono text-xs tabular-nums">
+                  {Math.floor(voiceSeconds / 60)}:{String(voiceSeconds % 60).padStart(2, "0")}
+                </span>
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={startRecording}
+              disabled={pending || voice === "transcribing" || !!unconfigured}
+              className="inline-flex size-9 shrink-0 items-center justify-center rounded-md border text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-50"
+              title="Diktovať otázku — prepis sa vloží do poľa na kontrolu"
+              aria-label="Diktovať otázku"
+            >
+              {voice === "transcribing" ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <Mic className="size-4" />
+              )}
+            </button>
+          ))}
         <button
           type="submit"
           disabled={pending || !input.trim() || !!unconfigured}
