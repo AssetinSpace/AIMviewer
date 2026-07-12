@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import re
+import sys
 from typing import Optional, Sequence
 
 from . import config, extract, transform
@@ -17,6 +18,12 @@ from .model import StagedModel
 
 
 def main(argv: Optional[Sequence[str]] = None) -> None:
+    # Windows konzola býva cp1250 — diakritika v coverage reporte by inak padla
+    # na UnicodeEncodeError (rovnaký guard ako doc_upload/pdf_link/pdf_annotate).
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8")
+
     parser = argparse.ArgumentParser(description="AIM ETL — IFC → Supabase (D-031)")
     parser.add_argument("--file", required=True, help="cesta k IFC súboru")
     parser.add_argument(

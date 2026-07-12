@@ -103,7 +103,7 @@ def upload_ifc(base: str, key: str, content: bytes, object_key: str = OBJECT_KEY
     )
     if status not in (200, 201):
         raise SystemExit(
-            f"Upload '{OBJECT_KEY}' zlyhal ({status}): {body.decode(errors='replace')}"
+            f"Upload '{object_key}' zlyhal ({status}): {body.decode(errors='replace')}"
         )
     return f"{base}/storage/v1/object/public/{BUCKET}/{encoded}"
 
