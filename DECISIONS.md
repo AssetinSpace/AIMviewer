@@ -1994,6 +1994,36 @@ Odpovede sú GUID-stampované — stale odpoveď po zmene výberu viewer zahodí
 `next.config.ts` dostal `NEXT_DIST_DIR_OVERRIDE` (paralelný devtest server popri
 `npm run dev` — Next 16 drží single-instance lock na distDir).
 
+### D-068 — Stratégia forku IFClite (upstream sync + vlastná AIM vrstva)
+**Status:** rozhodnuté (2026-07-12).
+
+**Kontext:** 3D vrstvu embedujeme cez fork `AssetinSpace/ifc-lite` originálu
+[`LTplus-AG/ifc-lite`](https://github.com/LTplus-AG/ifc-lite) (MPL-2.0; viď D-044, D-055,
+D-067). Originál pravidelne vydáva vylepšenia, ktoré chceme preberať, no zároveň si držíme
+vlastné úpravy (AIM iframe bridge, AIM karta, `?models=` federácia, FOCUS colorize). Bez
+disciplíny by sa naše zmeny bili s každou aktualizáciou upstreamu.
+
+**Rozhodnutie:** IFClite konzumujeme ako **optimalizovaný fork**, nie ako npm balík (upravili
+sme *vnútro* viewer appky, nie len publikované `@ifc-lite/*`).
+- Vlastný kód žije ako **izolovaná vrstva** v `apps/viewer/src/aim/` (upstream tam nemá súbory →
+  nulová kolízia).
+- Nevyhnutné napojenia do upstream súborov (`App.tsx`, `ViewerLayout.tsx`, `PropertiesPanel.tsx`)
+  sú obalené sentinelom `// >>> AIM-FORK … // <<< AIM-FORK`, aby merge konflikt bol okamžite
+  viditeľný a rozhodnutie „keep our side" jednoznačné.
+- Upstream sa preberá periodickým **merge** (nie rebase — `main` je nasadený cez Vercel a nesie
+  PR-ka) cez `upstream` remote; fetch je voči originálu len na čítanie — nič sa mu neposiela.
+- Sync spúšťa **bot-PR** vo vlastnom repe (`.github/workflows/upstream-sync.yml`, týždenne +
+  manuálne); pri konflikte otvorí PR s markermi a labelom `needs-manual-merge`. Recept a tabuľka
+  touchpointov: `ifc-lite/docs/FORK_MAINTENANCE.md`, konvencia v `ifc-lite/AGENTS.md`.
+
+**Dôvod:** fork drží plný prístup ku celému stromu (aj rust core) a funguje hneď; layering +
+sentinely + merge (nie rebase) minimalizujú konflikty pri každom syncu.
+
+**Dôsledok:** generické bugfixy (drag cez iframe) zatiaľ držíme u nás, neposielame upstream.
+Budúca migrácia na čistý npm-balíkový model ostáva otvorená — podmienená tým, že upstream vystaví
+extension-pointy (props/sloty); pri riešení každého wiring-konfliktu si poznamenáme, ktorý hook by
+ho odstránil (podklad pre neskoršie upstream PR).
+
 ---
 
 ## Changelog
@@ -2001,6 +2031,7 @@ Odpovede sú GUID-stampované — stale odpoveď po zmene výberu viewer zahodí
 > Kompaktný reverse-chrono log pridaných/zmenených rozhodnutí. Plný kontext = príslušný
 > D-záznam vyššie.
 
+- **2026-07-12** — **D-068 (stratégia forku IFClite):** fork `AssetinSpace/ifc-lite` originálu `LTplus-AG/ifc-lite` konzumujeme ako optimalizovaný fork — vlastná AIM vrstva v `apps/viewer/src/aim/`, wiring obalený `// >>> AIM-FORK … // <<< AIM-FORK`, upstream sa preberá periodickým **merge** (nie rebase) cez `upstream` remote, sync spúšťa bot-PR (`.github/workflows/upstream-sync.yml`) vo vlastnom repe (fetch je read-only voči originálu). Recept: `ifc-lite/docs/FORK_MAINTENANCE.md`.
 - **2026-07-12** — **D-067 (AIM karta v paneli viewera):** host render schéma `lib/aim-panel.ts` → bridge `AIM_PANEL_DATA`/`AIM_PANEL_EMPTY` → fork `AimCard.tsx`; kliky späť cez `AIM_NAVIGATE`; `ElementInfoPanel` overlay nahradený natívnym panelom; `NEXT_DIST_DIR_OVERRIDE` pre paralelný devtest server.
 - **2026-07-12** — **D-066 (AI chat ovláda 3D scénu):** tool `style_in_3d` (colorize/hide/show/isolate/show_all/reset_colors; výber filtrom ifc_type/predefined_type alebo ids_or_refs, cap 400) → URL `ops` wire formát → nové bridge správy do IFClite forku (COLORIZE/HIDE/SHOW/ISOLATE/SHOW_ALL/RESET_COLORS → `bim.viewer.*`). Efekty sa hromadia, reset explicitný. Zároveň doplnený stratený nadpis D-065 (pasportizácia).
 - **2026-07-11** — **Dodatok D-050 (georeferencovanie federácie):** viewer prešiel z `exportGlb`
