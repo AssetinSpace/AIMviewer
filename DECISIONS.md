@@ -1843,8 +1843,10 @@ Next.js). WebGPU renderer alebo Three.js podľa browser support požiadaviek.
 mód pre veľké súbory.
 **Závislosť:** Vyžaduje funkčný ETL s reálnym IFC z diplomky (S4).
 
-### D-038 — PDF / DWG výkres vedľa IFC viewera (split-screen) *(kandidát)*
-**Kontext:** Stavebný sektor je závislý na 2D autorizovaných výkresoch (pečiatka).
+### D-038 — PDF / DWG výkres vedľa IFC viewera (split-screen) *(→ rozhodnuté ako D-072)*
+**Status: supercedovaný D-072** — split 2D+3D pohľad je súčasťou georeferencovaných
+PDF podkladov (D-072); DWG/DXF vektorová cesta ostáva ako neskoršia fáza tam.
+**Kontext (zachovaný pre históriu):** Stavebný sektor je závislý na 2D autorizovaných výkresoch (pečiatka).
 Minimálne riešenie: split-screen — PDF viewer (`react-pdf`) na jednej strane, IFC viewer
 na druhej, používateľ si porovnáva manuálne.
 **Výhoda DWG oproti PDF:** DXF obsahuje vektorové entity so súradnicami, georeferencing
@@ -1852,8 +1854,10 @@ je potenciálne automatický. DWG → DXF konverzia zadarmo (DWG TrueView), rend
 `three-dxf`.
 **Závislosť:** Vyžaduje D-037 (3D viewer).
 
-### D-039 — Georeferencing PDF/DWG výkresov do IFC priestoru *(kandidát)*
-**Kontext:** Prepojenie 2D výkresu s 3D IFC modelom cez spoločný referenčný systém.
+### D-039 — Georeferencing PDF/DWG výkresov do IFC priestoru *(→ rozhodnuté ako D-072)*
+**Status: supercedovaný D-072** — 2-bodová manuálna kalibrácia + `_georef` úložisko
+prevzaté do D-072; IfcGridAxis/AI auto-kalibrácia ostáva ako neskoršia fáza tam.
+**Kontext (zachovaný pre históriu):** Prepojenie 2D výkresu s 3D IFC modelom cez spoločný referenčný systém.
 Základný prístup: manuálne označenie bodu v PDF + zodpovedajúci bod v IFC scéne →
 transform matica. Z súradnica z `floors.elevation`. Transform sa uloží do
 `documents.properties` ako `_georef` — jednorazová práca per výkres.
@@ -2144,11 +2148,62 @@ Budúca migrácia na čistý npm-balíkový model ostáva otvorená — podmiene
 extension-pointy (props/sloty); pri riešení každého wiring-konfliktu si poznamenáme, ktorý hook by
 ho odstránil (podklad pre neskoršie upstream PR).
 
+### D-072 — Georeferencované PDF podklady (drawing underlay) v 3D viewri
+**Status:** rozhodnuté (2026-07-14), MVP v implementácii — supersedovuje kandidátov
+D-038 (split-screen) a D-039 (georeferencing); preberá ich 2-bodový prístup
+a `_georef` úložisko.
+
+**Kontext:** Stavebníctvo je závislé na 2D autorizovaných pôdorysoch. Chceme podložiť
+3D model výkresom naviazaným na podlažie podľa vzoru Dalux „Locations": 2D Drawing view,
+Split 2D+3D so zamknutou úrovňou a synchronizovanou značkou polohy/smeru kamery,
+a PDF rovina viditeľná v 3D reze podlažia (Ctrl+scroll posúva rez).
+
+**Rozhodnuté:**
+1. **Nový samostatný balík `@ifc-lite/drawing-underlay`** vo forku (D-071), verzovaný
+   changesetom + api-surface snapshot — čistá, framework-free logika: 2-bodová
+   similarity transformácia (uniform scale + rotácia + translácia), `DrawingPlacement`
+   schéma, self-contained WebGPU `PdfPlanePipeline` (vzor `SymbolicFillPipeline`,
+   `render(pass, viewProj)`). **Nulová AIM/Supabase/React/pdf.js závislosť** →
+   upstreamovateľný modul (línia D-071: hook namiesto forku vnútra). pdf.js žije
+   v appke viewera, do balíka vstupuje `ImageBitmap`.
+2. **AIM-špecifické lepidlo** (bridge správy `UNDERLAYS_LOAD`/`UNDERLAY_SAVE`,
+   perzistencia) v `apps/viewer/src/aim/` a v AIMvieweri; úpravy upstream súborov
+   v sentineloch `// >>> AIM-FORK` (D-071).
+3. **Perzistencia bez migrácie:** transform v `documents.properties._georef`
+   (rezervovaný `_` kľúč, ako `_drawing_links`; schéma v1: `storey_guid`, `storey_z`,
+   `page`, `page_size`, `units`, `affine[a,b,tx,c,d,ty]`, `calibration[2]`, `opacity`,
+   `visible`, `discipline`, `calibrated_at`). Väzba na podlažie cez **IFC storey
+   GlobalId** (D-010/D-044 GUID-ako-spojka). Zdroj PDF = existujúce `documents`
+   (E3, bucket `documents/`). Zápis cez nový route handler (PATCH), pre demo gated
+   env secretom — poctivý limit, kým nepríde auth (línia D-025/D-026).
+4. **Kalibrácia MVP:** 2 body v PDF + 2 zodpovedajúce body v modeli (existujúci
+   raycast `raycastScene`/`raycastStoreyFloor`) → similarity; Z z `storeyElevations`
+   (fallback cachované `storey_z`, keď cache-only load nemá elevácie). In-viewer,
+   živý náhľad roviny, uložené kalibračné body = re-editovateľné.
+5. **Render MVP:** PDF rovina v 3D perspektíve (nová WGSL textúrovaná quad pipeline;
+   alpha-blend, depth-test bez depth-write; tiling ≤ limit zariadenia pre A0, mip,
+   LRU cez viac výkresov, deterministický `.destroy()`) + Drawing view (ortho
+   top-down zamknutá na podlažie, vždy-zapnutý horizontálny rez nezávislý od section
+   toolu) + jednoduchý Split (povýšený plávajúci 2D panel, klik v 2D → skok kamery,
+   zelená značka + smerový klin) + Ctrl/Cmd+scroll posúva rez (binding je voľný).
+
+**Vedomé limity / riziká:** federácia — placement žije vo world frame ukotvenej scény
+(anchor model, dodatok D-050); nová GPU pipeline + pamäť textúr; zápis `_georef` bez
+auth len za env bránou.
+
+**Neskôr (po MVP, aditívne):** plnohodnotný resizable split pane; viac výkresov/
+disciplín na podlažie (Dalux „folders") → prípadná tabuľka `drawing_placements`;
+DWG/DXF vektor (D-038); IfcGridAxis/AI auto-kalibrácia (D-039); 3-bodová affine;
+viacstranové PDF.
+
+**Závislosti:** D-044 (IFClite viewer), D-049/D-050 (federácia), D-071 (fork), E3 (documents).
+
 ---
 
 > Kompaktný reverse-chrono log pridaných/zmenených rozhodnutí. Plný kontext = príslušný
 > D-záznam vyššie.
 
+- **2026-07-14** — **D-072 (georeferencované PDF podklady):** Dalux-style „Locations" — PDF pôdorys naviazaný na podlažie (2-bodová kalibrácia → similarity transform, Z z elevácie podlažia, väzba cez IFC storey GlobalId); nový upstreamovateľný balík `@ifc-lite/drawing-underlay` vo forku (WGSL textúrovaná rovina) + AIM bridge `UNDERLAYS_LOAD`/`UNDERLAY_SAVE`; perzistencia `documents.properties._georef` (bez migrácie). Supersedovuje D-038/D-039.
 - **2026-07-12** — **Dodatok D-066 (výber podľa vlastnosti psetu):** `style_in_3d` dostal `property`+`value`(+`pset`) — psety z `v_property_dictionary`, match `or()` nad JSONB cestami na `v_asset_effective` (dedičnosť z typu), case-insensitive presná zhoda; prompt zakazuje aproximovať vlastnosť triedami (fix „nosné prvky" izolovali aj LoadBearing=false).
 - **2026-07-12** — **D-071 (stratégia forku IFClite):** fork `AssetinSpace/ifc-lite` originálu `LTplus-AG/ifc-lite` konzumujeme ako optimalizovaný fork — vlastná AIM vrstva v `apps/viewer/src/aim/`, wiring obalený `// >>> AIM-FORK … // <<< AIM-FORK`, upstream sa preberá periodickým **merge** (nie rebase) cez `upstream` remote, sync spúšťa bot-PR (`.github/workflows/upstream-sync.yml`) vo vlastnom repe (fetch je read-only voči originálu); CI heavy joby na forku bežia na `ubuntu-latest` (Depot upstream-only), release/docs/docker guardnuté upstream-only. Recept: `ifc-lite/docs/FORK_MAINTENANCE.md`.
 - **2026-07-12** — **D-070 dodatok (aplikované na AIMviewer):** kit v0.1.0 pushnutý do `AssetinSpace/design-kit` (vetva `claude/design-system-archive-8iy6go`); AIMviewer prebrandovaný — kit ako git závislosť, `shadcn.css` import namiesto defaultných tokenov, Inter namiesto Geist, assetin mark v sidebar hlavičke + favicon. Overené devtest+Playwright (light/dark), tsc, vitest 22/22.
