@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { nodeSummaryToAimPanel } from "@/lib/aim-panel";
 import type { SelectedElement } from "@/lib/data/drawing";
 import type { UnderlayDrawingWire } from "@/lib/data/drawing";
+import type { CaptureViewerWire } from "@/lib/data/captures";
 import type { GuidMap, IfcModel } from "@/lib/data/ifc";
 import type { NodeSummary } from "@/lib/data/object";
 import type { ViewerApi } from "@/lib/viewer-api";
@@ -47,7 +48,9 @@ type OutboundMessage =
   // Klik na link v AIM karte vo viewri — navigáciu robí táto (parent) appka.
   | { source: typeof SOURCE; type: "AIM_NAVIGATE"; href: string }
   // Kalibrácia PDF podkladu uložená vo viewri (D-072) — host ju perzistuje.
-  | { source: typeof SOURCE; type: "UNDERLAY_SAVE"; documentId: string; georef: unknown };
+  | { source: typeof SOURCE; type: "UNDERLAY_SAVE"; documentId: string; georef: unknown }
+  // Klik na Reality Capture pin v 3D (D-073) — host otvorí galériu/panorámu.
+  | { source: typeof SOURCE; type: "CAPTURE_PIN_CLICK"; captureId: string };
 
 /**
  * Viewer operácia AI docku (D-066) — kompaktný wire formát v URL parametri
@@ -107,6 +110,17 @@ function parseOps(raw: string): ViewerOp[] {
   return out;
 }
 
+/** Host wire → viewer wire: odstráni host-only `spaceId` z capture pinov. */
+function toCapturePins(captures: CaptureViewerWire[]) {
+  return captures.map((c) => ({
+    id: c.id,
+    kind: c.kind,
+    world: c.world,
+    name: c.name,
+    thumbUrl: c.thumbUrl,
+  }));
+}
+
 function isBridgeMessage(data: unknown): data is OutboundMessage {
   return (
     !!data &&
@@ -127,11 +141,15 @@ interface Props {
   ops?: string;
   /** Georeferencované PDF podklady (D-072) — poslané do viewera po MODELS_LOADED. */
   underlays?: UnderlayDrawingWire[];
+  /** Reality Capture piny s 3D ukotvením (D-073) — poslané po MODELS_LOADED. */
+  captures?: CaptureViewerWire[];
   apiRef?: React.RefObject<ViewerApi | null>;
   onSelect?: (element: SelectedElement) => void;
   onPickedElement?: (objectId: string, guid: string) => void;
   /** Navigácia z AIM karty vo viewri (host-relatívne href, napr. /node/{id}). */
   onNavigate?: (href: string) => void;
+  /** Klik na capture pin v 3D (D-073) — host otvorí galériu/panorámu. */
+  onCaptureClick?: (captureId: string) => void;
 }
 
 export function IFCViewer({
@@ -141,10 +159,12 @@ export function IFCViewer({
   focusNonce,
   ops,
   underlays,
+  captures,
   apiRef,
   onSelect,
   onPickedElement,
   onNavigate,
+  onCaptureClick,
 }: Props) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const [status, setStatus] = useState<"loading" | "error" | "ready">("loading");
@@ -302,6 +322,11 @@ export function IFCViewer({
           if (underlays && underlays.length > 0) {
             post({ type: "UNDERLAYS_LOAD", drawings: underlays });
           }
+          // Reality Capture piny (D-073) — world-ukotvené capture pointy; spaceId
+          // je host-only (navigácia po kliku), do viewera sa neposiela.
+          if (captures && captures.length > 0) {
+            post({ type: "CAPTURES_LOAD", captures: toCapturePins(captures) });
+          }
           break;
         case "ENTITY_SELECTED": {
           const objectId = guidMap[e.data.guid];
@@ -325,6 +350,11 @@ export function IFCViewer({
           }
           break;
         }
+        case "CAPTURE_PIN_CLICK":
+          if (typeof e.data.captureId === "string" && e.data.captureId.length > 0) {
+            onCaptureClick?.(e.data.captureId);
+          }
+          break;
         case "UNDERLAY_SAVE": {
           // Kalibrácia z viewera → perzistuj _georef (D-072). Server payload
           // validuje (isValidGeorefV1) a zapína/vypína zápis env bránou.
@@ -394,6 +424,14 @@ export function IFCViewer({
     applyOps(ops);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ops, focusNonce]);
+
+  // ── Reality Capture piny (D-073) — re-send po zmene (napr. po uploade +
+  // router.refresh()). Pred MODELS_LOADED sa piny pošlú v jeho handleri vyššie.
+  useEffect(() => {
+    if (!loadedRef.current) return;
+    post({ type: "CAPTURES_LOAD", captures: toCapturePins(captures ?? []) });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [captures]);
 
   // Misconfigurácia (nevalidná NEXT_PUBLIC_IFC_VIEWER_URL) — fail-closed UI.
   if (!viewerOrigin || !src) {
