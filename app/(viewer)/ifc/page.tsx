@@ -1,3 +1,4 @@
+import { fetchUnderlayDrawings } from "@/lib/data/drawing";
 import { fetchGuidMap, getIfcModels } from "@/lib/data/ifc";
 import IFCWorkspace from "@/components/ifc-workspace";
 
@@ -14,16 +15,18 @@ export default async function IFCPage({
 }) {
   const { focus, ops, r } = await searchParams;
 
-  const [models, guidMap] = await Promise.all([
+  const [models, guidMap, underlays] = await Promise.all([
     Promise.resolve(getIfcModels()),
     fetchGuidMap(),
+    // Georeferencované PDF podklady (D-072) — viewer ich dostane po MODELS_LOADED.
+    fetchUnderlayDrawings(),
   ]);
 
   // Full-bleed: viewer zaberá celú plochu main-u (layout zruší padding aj
   // scroll cez :has(.full-bleed)); navigácia a strom ostávajú v ľavom sidebari.
   return (
     <div className="full-bleed h-full">
-      <IFCWorkspace models={models} guidMap={guidMap} focus={focus} focusNonce={r} ops={ops} />
+      <IFCWorkspace models={models} guidMap={guidMap} focus={focus} focusNonce={r} ops={ops} underlays={underlays} />
     </div>
   );
 }

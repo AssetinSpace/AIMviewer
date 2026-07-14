@@ -4,6 +4,7 @@ import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
 
+import type { UnderlayDrawingWire } from "@/lib/data/drawing";
 import type { GuidMap, IfcModel } from "@/lib/data/ifc";
 import type { ViewerApi } from "@/lib/viewer-api";
 
@@ -35,6 +36,7 @@ export default function IFCWorkspace({
   focus,
   focusNonce,
   ops,
+  underlays,
 }: {
   models: IfcModel[];
   guidMap: GuidMap;
@@ -43,6 +45,8 @@ export default function IFCWorkspace({
   focusNonce?: string;
   /** Viewer operácie AI docku (ofarbenie/skrytie/izolácia, D-066). */
   ops?: string;
+  /** Georeferencované PDF podklady pre embed viewer (D-072). */
+  underlays?: UnderlayDrawingWire[];
 }) {
   const router = useRouter();
   const viewerApiRef = useRef<ViewerApi | null>(null);
@@ -78,6 +82,7 @@ export default function IFCWorkspace({
         focus={focus}
         focusNonce={focusNonce}
         ops={ops}
+        underlays={underlays}
         apiRef={viewerApiRef}
         onPickedElement={handlePickedElement}
         onNavigate={(href) => router.push(href)}

@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import { nodeSummaryToAimPanel } from "@/lib/aim-panel";
 import type { SelectedElement } from "@/lib/data/drawing";
+import type { UnderlayDrawingWire } from "@/lib/data/drawing";
 import type { GuidMap, IfcModel } from "@/lib/data/ifc";
 import type { NodeSummary } from "@/lib/data/object";
 import type { ViewerApi } from "@/lib/viewer-api";
@@ -44,7 +45,9 @@ type OutboundMessage =
   | { source: typeof SOURCE; type: "ENTITY_SELECTED"; guid: string }
   | { source: typeof SOURCE; type: "ENTITY_DESELECTED" }
   // Klik na link v AIM karte vo viewri — navigáciu robí táto (parent) appka.
-  | { source: typeof SOURCE; type: "AIM_NAVIGATE"; href: string };
+  | { source: typeof SOURCE; type: "AIM_NAVIGATE"; href: string }
+  // Kalibrácia PDF podkladu uložená vo viewri (D-072) — host ju perzistuje.
+  | { source: typeof SOURCE; type: "UNDERLAY_SAVE"; documentId: string; georef: unknown };
 
 /**
  * Viewer operácia AI docku (D-066) — kompaktný wire formát v URL parametri
@@ -122,6 +125,8 @@ interface Props {
   focusNonce?: string;
   /** Viewer operácie AI docku (ofarbenie/skrytie/izolácia, D-066) — wire formát viď parseOps. */
   ops?: string;
+  /** Georeferencované PDF podklady (D-072) — poslané do viewera po MODELS_LOADED. */
+  underlays?: UnderlayDrawingWire[];
   apiRef?: React.RefObject<ViewerApi | null>;
   onSelect?: (element: SelectedElement) => void;
   onPickedElement?: (objectId: string, guid: string) => void;
@@ -135,6 +140,7 @@ export function IFCViewer({
   focus,
   focusNonce,
   ops,
+  underlays,
   apiRef,
   onSelect,
   onPickedElement,
@@ -291,6 +297,11 @@ export function IFCViewer({
           loadedRef.current = true;
           if (focus) post({ type: "FOCUS", guids: focus.split(",") });
           if (ops) applyOps(ops);
+          // PDF podklady (D-072) — až po naparsovaní modelov, aby viewer vedel
+          // resolvnúť storey GUIDy z placementov.
+          if (underlays && underlays.length > 0) {
+            post({ type: "UNDERLAYS_LOAD", drawings: underlays });
+          }
           break;
         case "ENTITY_SELECTED": {
           const objectId = guidMap[e.data.guid];
@@ -312,6 +323,26 @@ export function IFCViewer({
           if (typeof href === "string" && href.startsWith("/") && !href.startsWith("//")) {
             onNavigate?.(href);
           }
+          break;
+        }
+        case "UNDERLAY_SAVE": {
+          // Kalibrácia z viewera → perzistuj _georef (D-072). Server payload
+          // validuje (isValidGeorefV1) a zapína/vypína zápis env bránou.
+          const { documentId, georef } = e.data;
+          if (typeof documentId !== "string" || documentId.length === 0) return;
+          void fetch(`/api/underlay/${encodeURIComponent(documentId)}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ georef }),
+          })
+            .then((r) => {
+              if (!r.ok) throw new Error(String(r.status));
+            })
+            .catch((err: unknown) => {
+              // Best-effort: kalibrácia žije vo viewri aj bez zápisu; zaloguj,
+              // nech je zamietnutý zápis (napr. vypnutá brána) viditeľný.
+              console.error("underlay save failed", err);
+            });
           break;
         }
       }
