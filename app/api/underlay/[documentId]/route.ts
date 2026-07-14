@@ -11,7 +11,8 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 /**
  * Zápis georeferencie výkresu (D-072): PATCH uloží `_georef` v1 JSON do
- * `documents.properties` (rezervovaný `_` kľúč, ako `_drawing_links`).
+ * `properties` dokumentového objektu (`objects.properties`, rezervovaný
+ * `_` kľúč ako `_drawing_links` — tabuľka `documents` properties nemá).
  * Volá ho host stránka po bridge správe `UNDERLAY_SAVE` z embed viewera.
  *
  * Ochrana: viewer je zatiaľ verejný read-only (D-025/D-026), takže JEDINÝ
@@ -100,8 +101,10 @@ export async function PATCH(
     .eq("id", documentId);
   if (uErr) return NextResponse.json({ error: uErr.message }, { status: 500 });
 
-  // Viewer/drawing dáta sa čítajú cez ISR tag `aim` — invaliduj hneď
-  // (Next 16 vyžaduje profil; okamžitá expirácia = ďalší request číta čerstvé).
+  // Viewer/drawing dáta sa čítajú cez ISR tag `aim`. Next 16 vyžaduje
+  // profil; `{expire: 0}` na legacy unstable_cache tagu sa môže správať ako
+  // stale-while-revalidate (jeden request ešte stará odpoveď, ďalší čerstvá)
+  // — pre podklady to stačí, viewer drží georef v session. Overiť live (F7).
   revalidateTag("aim", { expire: 0 });
 
   return NextResponse.json({ ok: true });

@@ -2169,9 +2169,11 @@ a PDF rovina viditeľná v 3D reze podlažia (Ctrl+scroll posúva rez).
 2. **AIM-špecifické lepidlo** (bridge správy `UNDERLAYS_LOAD`/`UNDERLAY_SAVE`,
    perzistencia) v `apps/viewer/src/aim/` a v AIMvieweri; úpravy upstream súborov
    v sentineloch `// >>> AIM-FORK` (D-071).
-3. **Perzistencia bez migrácie:** transform v `documents.properties._georef`
-   (rezervovaný `_` kľúč, ako `_drawing_links`; schéma v1: `storey_guid`, `storey_z`,
-   `page`, `page_size`, `units`, `affine[a,b,tx,c,d,ty]`, `calibration[2]`, `opacity`,
+3. **Perzistencia bez migrácie:** transform v `_georef` v `properties`
+   dokumentového objektu (`objects.properties`, rezervovaný `_` kľúč ako
+   `_drawing_links` — tabuľka `documents` properties nemá; schéma v1:
+   `storey_guid`, `storey_z`, `page`, `page_size`, `affine[a,b,tx,c,d,ty]`,
+   `calibration[2]`, `opacity`,
    `visible`, `discipline`, `calibrated_at`). Väzba na podlažie cez **IFC storey
    GlobalId** (D-010/D-044 GUID-ako-spojka). Zdroj PDF = existujúce `documents`
    (E3, bucket `documents/`). Zápis cez nový route handler (PATCH), pre demo gated
@@ -2203,7 +2205,7 @@ viacstranové PDF.
 > Kompaktný reverse-chrono log pridaných/zmenených rozhodnutí. Plný kontext = príslušný
 > D-záznam vyššie.
 
-- **2026-07-14** — **D-072 (georeferencované PDF podklady):** Dalux-style „Locations" — PDF pôdorys naviazaný na podlažie (2-bodová kalibrácia → similarity transform, Z z elevácie podlažia, väzba cez IFC storey GlobalId); nový upstreamovateľný balík `@ifc-lite/drawing-underlay` vo forku (WGSL textúrovaná rovina) + AIM bridge `UNDERLAYS_LOAD`/`UNDERLAY_SAVE`; perzistencia `documents.properties._georef` (bez migrácie). Supersedovuje D-038/D-039.
+- **2026-07-14** — **D-072 (georeferencované PDF podklady):** Dalux-style „Locations" — PDF pôdorys naviazaný na podlažie (2-bodová kalibrácia → similarity transform, Z z elevácie podlažia, väzba cez IFC storey GlobalId); nový upstreamovateľný balík `@ifc-lite/drawing-underlay` vo forku (WGSL textúrovaná rovina) + AIM bridge `UNDERLAYS_LOAD`/`UNDERLAY_SAVE`; perzistencia `_georef` v `objects.properties` dokumentu (bez migrácie). Supersedovuje D-038/D-039.
 - **2026-07-12** — **Dodatok D-066 (výber podľa vlastnosti psetu):** `style_in_3d` dostal `property`+`value`(+`pset`) — psety z `v_property_dictionary`, match `or()` nad JSONB cestami na `v_asset_effective` (dedičnosť z typu), case-insensitive presná zhoda; prompt zakazuje aproximovať vlastnosť triedami (fix „nosné prvky" izolovali aj LoadBearing=false).
 - **2026-07-12** — **D-071 (stratégia forku IFClite):** fork `AssetinSpace/ifc-lite` originálu `LTplus-AG/ifc-lite` konzumujeme ako optimalizovaný fork — vlastná AIM vrstva v `apps/viewer/src/aim/`, wiring obalený `// >>> AIM-FORK … // <<< AIM-FORK`, upstream sa preberá periodickým **merge** (nie rebase) cez `upstream` remote, sync spúšťa bot-PR (`.github/workflows/upstream-sync.yml`) vo vlastnom repe (fetch je read-only voči originálu); CI heavy joby na forku bežia na `ubuntu-latest` (Depot upstream-only), release/docs/docker guardnuté upstream-only. Recept: `ifc-lite/docs/FORK_MAINTENANCE.md`.
 - **2026-07-12** — **D-070 dodatok (aplikované na AIMviewer):** kit v0.1.0 pushnutý do `AssetinSpace/design-kit` (vetva `claude/design-system-archive-8iy6go`); AIMviewer prebrandovaný — kit ako git závislosť, `shadcn.css` import namiesto defaultných tokenov, Inter namiesto Geist, assetin mark v sidebar hlavičke + favicon. Overené devtest+Playwright (light/dark), tsc, vitest 22/22.

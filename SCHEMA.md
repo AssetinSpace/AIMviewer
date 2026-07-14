@@ -390,8 +390,11 @@ sem NEPATRIA (sú stĺpce).
 | 2 — štandardné psety | `properties[<názov>]` | názov `Pset_` / `Qto_` |
 | 3 — custom psety | `properties[<názov>]` | čokoľvek iné (bez `Pset_`/`Qto_`) |
 
-**Rezervované `_kľúče`:** názvy začínajúce `_` nie sú psety, ale meta/zachytené dáta
-(napr. `_contact`, `_org` pri capture-don't-structure — §7). Psety nikdy nezačínajú `_`.
+**Rezervované `_kľúče`:** názvy začínajúce `_` nie sú psety, ale meta/zachytené dáta.
+Psety nikdy nezačínajú `_`. Aktuálne používané (deklarované extenzie, D-046):
+`_contact`, `_org` (capture-don't-structure — §7), `_drawing_links` (klikateľné
+regióny výkresov, D-042, zapisuje `etl/pdf_link.py`), `_georef` (georeferencia
+PDF podkladu na podlažie, D-072, zapisuje `PATCH /api/underlay`).
 
 ---
 

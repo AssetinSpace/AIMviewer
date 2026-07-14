@@ -166,8 +166,13 @@ export function isValidGeorefV1(raw: unknown): boolean {
   if (!num(g.storey_z)) return false;
   if (!num(g.page) || !Number.isInteger(g.page) || (g.page as number) < 1) return false;
   if (!tuple(g.page_size, 2)) return false;
+  const pageSize = g.page_size as number[];
+  if (pageSize[0] <= 0 || pageSize[1] <= 0) return false;
   if (!tuple(g.affine, 6)) return false;
-  if (!Array.isArray(g.calibration)) return false;
+  // Server je hranica zápisu — prísnejší než viewer: presne 2 kalibračné
+  // body (základ 2-bodovej similarity, D-072), inak placement nie je
+  // re-editovateľný.
+  if (!Array.isArray(g.calibration) || g.calibration.length !== 2) return false;
   for (const c of g.calibration as { pdf_pt?: unknown; ifc_m?: unknown }[]) {
     if (!c || typeof c !== "object" || !tuple(c.pdf_pt, 2) || !tuple(c.ifc_m, 2)) return false;
   }
@@ -181,6 +186,9 @@ export function isValidGeorefV1(raw: unknown): boolean {
 async function fetchUnderlayDrawingsImpl(): Promise<UnderlayDrawingWire[]> {
   const supabase = getSupabaseAdmin();
 
+  // Bez stránkovania (fetchAllPages) zámerne: kardinalita je ohraničená —
+  // podlaží je jednotky a floor→drawing väzieb/dokumentov ~13 (E3), hlboko
+  // pod PostgREST capom 1000. Pri multi-projekte (D-033) prehodnotiť.
   // 1) podlažia → ich výkresy (E3 väzba floor→drawing, role='drawing';
   //    E4 element-väzby `pdf_link (E4)` sem nepatria).
   const { data: floors, error: fErr } = await supabase
@@ -193,16 +201,14 @@ async function fetchUnderlayDrawingsImpl(): Promise<UnderlayDrawingWire[]> {
 
   const { data: rels, error: rErr } = await supabase
     .from("rel_associates_document")
-    .select("to_id, source")
+    .select("to_id")
     .in("from_id", floorIds)
     .eq("role", "drawing")
     .is("valid_until", null);
   if (rErr) throw new Error(rErr.message);
 
   const docIds = [
-    ...new Set(
-      ((rels ?? []) as { to_id: string; source: string | null }[]).map((r) => r.to_id)
-    ),
+    ...new Set(((rels ?? []) as { to_id: string }[]).map((r) => r.to_id)),
   ];
   if (docIds.length === 0) return [];
 
