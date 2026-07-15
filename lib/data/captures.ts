@@ -9,8 +9,11 @@ import {
   type CaptureKind,
   type CaptureMediaWire,
   type CapturePlacement,
+  type CapturePlanAnchor,
+  type CapturePlanPinWire,
   type CapturePointWire,
   type CaptureViewerWire,
+  type CaptureWorldAnchor,
 } from "@/lib/data/capture-placement";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
@@ -43,6 +46,7 @@ export type {
   CaptureWorldAnchor,
   CapturePlacement,
   CaptureMediaWire,
+  CapturePlanPinWire,
   CapturePointWire,
   CaptureViewerWire,
 } from "@/lib/data/capture-placement";
@@ -252,6 +256,121 @@ export const fetchCapturePins = unstable_cache(
   ["fetch-capture-pins"],
   AIM_CACHE
 );
+
+async function fetchCapturesForDocumentImpl(documentId: string): Promise<CapturePlanPinWire[]> {
+  const points = await fetchAllCapturePointsImpl();
+  const out: CapturePlanPinWire[] = [];
+  for (const p of points) {
+    const plan = p.placement?.plan;
+    if (!plan || plan.documentId !== documentId) continue;
+    const current = p.media[0];
+    out.push({
+      id: p.id,
+      kind: p.kind,
+      name: p.name ?? undefined,
+      spaceId: p.spaceId,
+      thumbUrl: current?.thumbLocation ?? undefined,
+      page: plan.page,
+      u: plan.u,
+      v: plan.v,
+    });
+  }
+  return out;
+}
+
+/** Capture piny s 2D plán ukotvením na daný dokument (overlay v drawing vieweri). */
+export const fetchCapturesForDocument = unstable_cache(
+  fetchCapturesForDocumentImpl,
+  ["fetch-captures-for-document"],
+  AIM_CACHE
+);
+
+/**
+ * Dokument pôdorysu podlažia, na ktorom leží priestor (pre „umiestniť na pláne").
+ * space → floor (`rel_aggregates`) → drawing (`rel_associates_document` role='drawing').
+ * Vráti `objects.id` výkresu, alebo null ak podlažie nemá pôdorys.
+ */
+export async function fetchPlanDocumentForSpace(spaceId: string): Promise<string | null> {
+  const supabase = getSupabaseAdmin();
+  const { data: parent, error: pErr } = await supabase
+    .from("rel_aggregates")
+    .select("to_id")
+    .eq("from_id", spaceId)
+    .is("valid_until", null)
+    .maybeSingle();
+  if (pErr) throw new Error(pErr.message);
+  const floorId = parent?.to_id as string | undefined;
+  if (!floorId) return null;
+
+  const { data: docs, error: dErr } = await supabase
+    .from("rel_associates_document")
+    .select("to_id")
+    .eq("from_id", floorId)
+    .eq("role", "drawing")
+    .is("valid_until", null);
+  if (dErr) throw new Error(dErr.message);
+  const docIds = ((docs ?? []) as { to_id: string }[]).map((d) => d.to_id);
+  if (docIds.length === 0) return null;
+
+  // Uprednostni dokument so supabase PDF (má location); inak prvý.
+  const { data: withPdf } = await supabase
+    .from("documents")
+    .select("id")
+    .in("id", docIds)
+    .eq("storage_type", "supabase")
+    .limit(1)
+    .maybeSingle();
+  return (withPdf?.id as string | undefined) ?? docIds[0];
+}
+
+/** Čiastočná zmena ukotvenia — merge `plan`/`world`/`yaw` do existujúceho `_capture`. */
+export interface CapturePlacementPatch {
+  plan?: CapturePlanAnchor | null;
+  world?: CaptureWorldAnchor | null;
+  yaw?: number | null;
+}
+
+/**
+ * Aktualizuje ukotvenie capture pointu (authoring pinov, D-073). Merguje zadané
+ * kľúče do existujúceho `_capture` (null = zmazať kľúč), nič iné neprepisuje.
+ * Vráti výsledný placement. Volajúci route handler validuje vstup.
+ */
+export async function updateCapturePlacement(
+  id: string,
+  patch: CapturePlacementPatch
+): Promise<CapturePlacement> {
+  const supabase = getSupabaseAdmin();
+  const { data: obj, error: oErr } = await supabase
+    .from("objects")
+    .select("object_type, properties")
+    .eq("id", id)
+    .maybeSingle();
+  if (oErr) throw new Error(oErr.message);
+  if (!obj || obj.object_type !== "capture") throw new Error("capture not found");
+
+  const props = (obj.properties as Record<string, unknown> | null) ?? {};
+  const current = parseCapturePlacement(props["_capture"]) ?? { version: 1 };
+  const merged: CapturePlacement = { ...current, version: 1 };
+  if (patch.plan !== undefined) {
+    if (patch.plan === null) delete merged.plan;
+    else merged.plan = patch.plan;
+  }
+  if (patch.world !== undefined) {
+    if (patch.world === null) delete merged.world;
+    else merged.world = patch.world;
+  }
+  if (patch.yaw !== undefined) {
+    if (patch.yaw === null) delete merged.yaw;
+    else merged.yaw = patch.yaw;
+  }
+
+  const { error: uErr } = await supabase
+    .from("objects")
+    .update({ properties: { ...props, _capture: merged } })
+    .eq("id", id);
+  if (uErr) throw new Error(uErr.message);
+  return merged;
+}
 
 // ─── Zápis (volané z route handlerov za env bránou; nie cachované) ────────────
 

@@ -26,7 +26,7 @@ import { DocumentList } from "@/components/document-list";
 import { DrawingList } from "@/components/drawing-list";
 import { DrawingElements } from "@/components/drawing-elements";
 import { CaptureGallery } from "@/components/capture-gallery";
-import { fetchCapturesForSpace } from "@/lib/data/captures";
+import { fetchCapturesForSpace, fetchPlanDocumentForSpace } from "@/lib/data/captures";
 import { ResponsibilityList } from "@/components/responsibility-list";
 import { ResponsibilityOfList } from "@/components/responsibility-of-list";
 import { GuidHistory } from "@/components/guid-history";
@@ -216,8 +216,12 @@ async function CapturesSection({
   spaceId: string;
   spaceName: string | null;
 }) {
-  const captures = await fetchCapturesForSpace(spaceId);
   const canUpload = process.env.CAPTURE_WRITE_ENABLED === "true";
+  const [captures, planDocumentId] = await Promise.all([
+    fetchCapturesForSpace(spaceId),
+    // Pôdorys podlažia (cieľ „umiestniť na pláne") načítaj len keď je upload povolený.
+    canUpload ? fetchPlanDocumentForSpace(spaceId) : Promise.resolve(null),
+  ]);
   if (captures.length === 0 && !canUpload) return null;
   return (
     <Card className="mb-6">
@@ -233,6 +237,7 @@ async function CapturesSection({
           spaceName={spaceName}
           initialCaptures={captures}
           canUpload={canUpload}
+          planDocumentId={planDocumentId}
         />
       </CardContent>
     </Card>
