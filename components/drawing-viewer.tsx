@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 
 import type { DrawingRegion, SelectedElement } from "@/lib/data/drawing";
+import { CapturePlanOverlay } from "@/components/capture-plan-overlay";
 
 // Worker self-hostovaný z vlastného originu (D-030 perf, dodatok): bundler ho vyrieši z
 // nainštalovaného `pdfjs-dist` (verzia automaticky zhodná s API → žiadny version
@@ -688,6 +689,8 @@ export function DrawingViewer({
                     />
                   );
                 })}
+                {/* Reality Capture piny na pláne (D-073) — čítanie + authoring (?placeCapture). */}
+                <CapturePlanOverlay page={page} dims={dims} />
               </div>
             )}
           </div>

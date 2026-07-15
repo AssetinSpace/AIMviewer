@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
-import { Camera, ImageIcon, Orbit, Plus, X } from "lucide-react";
+import { Camera, ImageIcon, MapPin, Orbit, Plus, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { CaptureUploadDialog } from "@/components/capture-upload-dialog";
@@ -28,11 +28,14 @@ export function CaptureGallery({
   spaceName,
   initialCaptures,
   canUpload,
+  planDocumentId,
 }: {
   spaceId: string;
   spaceName: string | null;
   initialCaptures: CapturePointWire[];
   canUpload: boolean;
+  /** Pôdorys podlažia priestoru — cieľ „umiestniť na pláne" (D-073). */
+  planDocumentId?: string | null;
 }) {
   const router = useRouter();
   const [captures, setCaptures] = useState<CapturePointWire[]>(initialCaptures);
@@ -79,7 +82,26 @@ export function CaptureGallery({
             const current = point.media[0] ?? null;
             const thumb = current?.thumbLocation ?? current?.previewLocation ?? current?.location;
             return (
-              <li key={point.id}>
+              <li key={point.id} className="relative">
+                {canUpload && planDocumentId && (
+                  <button
+                    type="button"
+                    title={
+                      point.placement?.plan
+                        ? "Zmeniť pozíciu na pláne"
+                        : "Umiestniť na pláne"
+                    }
+                    onClick={() =>
+                      router.push(`/drawing/${planDocumentId}?placeCapture=${point.id}`)
+                    }
+                    className={cn(
+                      "absolute top-1.5 right-1.5 z-10 flex size-6 items-center justify-center rounded-full border border-white/70 text-white shadow transition-colors",
+                      point.placement?.plan ? "bg-sky-500 hover:bg-sky-600" : "bg-black/50 hover:bg-black/70"
+                    )}
+                  >
+                    <MapPin className="size-3" />
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={() => current && setActive({ point, mediaIdx: 0 })}

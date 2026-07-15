@@ -8,6 +8,7 @@ import {
 } from "@/lib/api-guard";
 import {
   createCapturePoint,
+  fetchCapturesForDocument,
   fetchCapturesForSpace,
   isValidCaptureV1,
   spaceExists,
@@ -47,15 +48,29 @@ const KINDS: CaptureKind[] = ["photo", "pano360"];
 export async function GET(req: Request) {
   const url = new URL(req.url);
   const space = url.searchParams.get("space");
-  if (!space || !UUID_RE.test(space)) {
-    return NextResponse.json({ error: "invalid space id" }, { status: 400 });
-  }
+  const document = url.searchParams.get("document");
   try {
-    const captures = await fetchCapturesForSpace(space);
-    return NextResponse.json(
-      { captures },
-      { headers: { "Cache-Control": "public, max-age=60, s-maxage=60, stale-while-revalidate=300" } }
-    );
+    if (space) {
+      if (!UUID_RE.test(space)) {
+        return NextResponse.json({ error: "invalid space id" }, { status: 400 });
+      }
+      const captures = await fetchCapturesForSpace(space);
+      return NextResponse.json(
+        { captures },
+        { headers: { "Cache-Control": "public, max-age=60, s-maxage=60, stale-while-revalidate=300" } }
+      );
+    }
+    if (document) {
+      if (!UUID_RE.test(document)) {
+        return NextResponse.json({ error: "invalid document id" }, { status: 400 });
+      }
+      const pins = await fetchCapturesForDocument(document);
+      return NextResponse.json(
+        { pins },
+        { headers: { "Cache-Control": "public, max-age=60, s-maxage=60, stale-while-revalidate=300" } }
+      );
+    }
+    return NextResponse.json({ error: "missing space or document" }, { status: 400 });
   } catch (err) {
     console.error("[api/captures GET]", err);
     return NextResponse.json({ error: "server error" }, { status: 500 });

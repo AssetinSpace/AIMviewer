@@ -70,6 +70,21 @@ export interface CaptureViewerWire {
   spaceId: string | null;
 }
 
+/**
+ * Wire tvar capture pinu na 2D pláne (D-073) — pre overlay v drawing vieweri.
+ * `page`/`u`/`v` sú z `_capture.plan` (normalizované, v = 0 hore … 1 dole).
+ */
+export interface CapturePlanPinWire {
+  id: string;
+  kind: CaptureKind;
+  name?: string;
+  spaceId: string | null;
+  thumbUrl?: string;
+  page: number;
+  u: number;
+  v: number;
+}
+
 /** Wire tvar capture pointu vrátane (aktívnych) médií. */
 export interface CapturePointWire {
   id: string;
