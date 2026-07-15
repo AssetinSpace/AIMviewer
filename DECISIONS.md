@@ -1936,9 +1936,10 @@ ako maintainable assets, povrchy ako properties priestoru), nové `rel_*` hrany,
 events (vzor `ifc_guid_history` s `valid_from`/`valid_until`) + integračná vetva na Odoo =
 všetko aditívne. Model z D-018 to drží.
 
-**Otvorené (do potvrdenia zákazky):** granularita provenance (objekt vs session batch),
-stavebný pasport (povrchy ako properties priestoru vs samostatné objects), mapa vlastníctva
-polí pasport↔Odoo, metóda zamerania (3D scan/Matterport/ručne — zatiaľ neurčené).
+**Otvorené (do potvrdenia zákazky):** ~~granularita provenance~~, ~~metóda zamerania~~,
+~~povrchy vs samostatné objects~~ *(→ vizuálny zber rozhodnutý ako **D-073**: metóda =
+manuálny upload fotky + equirect 360, provenance na úrovni capture/survey-session, capture =
+samostatné `objects` riadky)*; ostáva mapa vlastníctva polí pasport↔Odoo.
 
 **Závislosť:** Vyžaduje reálnu zákazku (field study) + funkčný ETL pipeline (D-031).
 
@@ -2200,11 +2201,84 @@ viacstranové PDF.
 
 **Závislosti:** D-044 (IFClite viewer), D-049/D-050 (federácia), D-071 (fork), E3 (documents).
 
+### D-073 — Reality Capture v1 (fotky + statické 360° panorámy)
+**Status:** rozhodnuté (2026-07-14), v implementácii — konkretizuje a **zatvára otvorené
+body D-065** (metóda zamerania, granularita provenance, povrchy vs samostatné objects).
+
+**Kontext:** Modul reálneho zberu (inšpirácia Dalux Capture). v1 rieši dve veci — **klasické
+fotky** a **statické 360° equirectangular panorámy** — obe ukotvené **naraz troma spôsobmi**
+(2D PDF plán · 3D web-ifc scéna · sémantika = IfcSpace/asset) a **obojsmerne prepojené**
+(klik na priestor → jeho snímky; otvorenie snímky → navigácia na priestor + pin na pláne aj
+v 3D). Je to „platform feature" už načrtnutá v D-065 (360°/2D/3D naviazané na IFC ako vizuálna
+provenance zamerania). Prieskum repa vyvrátil pôvodné predpoklady (žiadny Express/Railway/R2/
+three.js-in-app/bitemporal/multi-tenancy) — stavia sa na existujúcich vzoroch: `_georef`
+(D-072), `documents` (D-014/D-032), GUID bridge (D-044/D-067), guarded write route (D-068/D-072).
+
+**Rozhodnuté:**
+1. **Dátový model „ako dokumenty" (D-018), žiadna prestavba schémy:** capture point =
+   `objects` riadok `object_type='capture'` + tenká prípona `captures(kind)`. Ukotvenie
+   (2D `plan`{documentId,page,u,v} + 3D `world`{x,y,z} + `yaw`) v rezervovanom
+   `properties._capture` JSONB (versioned, validované; presný vzor `_georef`, §4). Jednotlivá
+   snímka/verzia = `objects` riadok `object_type='capture_media'` + prípona `capture_media`
+   (analóg `IfcDocumentInformation`: `location`, `storage_type`, rozmery, `captured_at`,
+   `valid_from`/`valid_until`). Migrácia `20260716120000_reality_capture.sql`.
+2. **Hrany — prvé `aim_` položky manifestu (D-051/D-048):** `aim_rel_capture_located`
+   (capture → space|floor, unique-active) a `aim_rel_capture_media` (capture → capture_media,
+   1:N append-only). IFC pre „reality-capture bod s verzovaným médiom" nemá čistý koncept →
+   `aim_` namespace + `export_path='icdd'` (ICDD linkset, D-015). **Zámerne NErozširujeme**
+   `rel_contained_in_spatial_structure` o `capture` — držíme captures mimo IFC-kanonických
+   asset/priestorových čítaní (žiadny leak do „prvky v priestore", zachovaná unique-active
+   sémantika assetov). *(Odchýlka od pôvodného plánu „reuse bez zmeny manifestu": validačný
+   trigger z manifestu (D-051) by `capture` ako `from` typ inak odmietol.)*
+3. **Verzovanie v čase = append-only** (D-065 „lifecycle events" vzor): nová snímka lokácie =
+   nový `capture_media` + `aim_rel_capture_media` hrana; „aktuálna" = `valid_until IS NULL`
+   (+ najnovší `captured_at`), stará sa uzavrie `valid_until`, needituje sa in-place.
+   **Granularita provenance = capture/survey-session** (nie per-property) cez `source` na
+   hrane — zatvára otvorený bod D-065.
+4. **Úložisko = Supabase Storage** (nie R2 — v repe neexistuje): verejný bucket `captures`
+   (vzor `documents`/`ifc`), idempotentne založený z upload route; kľúče
+   `captures/<capturePointId>/<mediaId>_{orig,preview,thumb}`. **Server-side `sharp`** (priama
+   závislosť; už tranzitívne cez Next) generuje `preview` (rýchle načítanie, 360 downscale pod
+   GPU limit) + `thumb`. Serving = priama public CDN URL, žiadne signovanie (viewer je public
+   read-only, D-025/D-026).
+5. **360° viewer = Photo Sphere Viewer** (MIT, three.js) cez `react-photo-sphere-viewer`,
+   **host-side** v Next.js modáli (pluginy Markers/Compass/Gallery/Plan; `VirtualTour` NIE —
+   to je SiteWalk fáza). Kľúčové: BIM engine forku je **WebGPU** a AIM host neimportuje žiadny
+   `three` → PSV len „oživí" dnes mŕtvy `three` dep, žiadna koexistenčná kolízia s rendererom.
+   Textúry: `orig` do 16K + generovaný `preview` (equirect 2:1) pod GPU limit (~8K mobil / 16K
+   desktop); tiling super-panorám (`EquirectangularTilesAdapter`) je mimo v1.
+6. **Zápis = browser upload za env bránou** (vzor D-072): route handlery `POST /api/captures`
+   (+ `[id]/media`) sú default VYPNUTÉ (`CAPTURE_WRITE_ENABLED`), origin guard + per-IP rate
+   limit (D-068). **Single-project** ako zvyšok appky; autor best-effort (bez auth). Čítanie
+   server-only cez `service_role` + ISR tag `aim` (D-026/D-030).
+7. **3D piny vo forku (D-071):** capture pins ako AIM vrstva v `apps/viewer/src/aim/`
+   (`CapturePinLayer` — reuse `annotationsSlice`/`AnnotationLayer` billboard nad WebGPU
+   canvasom, standalone `capturePinsStore`), bridge správy `CAPTURES_LOAD` (host→viewer, render)
+   a `CAPTURE_PIN_CLICK` (viewer→host, otvor priestor so snímkami). **Authoring pinov**
+   (raycast 3D pick → world coords; klik na 2D plán → normalizované u,v; auto-odvodenie
+   plán↔3D cez `@ifc-lite/drawing-underlay` `world-transform` `worldToIfcMetres`→`ifcMetresToPage`
+   kde má podlažie `_georef`) je **aditívny follow-up** — dátový/render/bridge kontrakt ho už
+   drží (`_capture.plan`/`.world` sú nepovinné, dopĺňajú sa neskôr bez migrácie).
+
+**Dôsledok:** nové `object_type` hodnoty `capture`/`capture_media` (aditívne, D-018), 2 nové
+`aim_rel_*` v manifeste, nový rezervovaný `_capture` kľúč, nový bucket, `sharp` +
+`react-photo-sphere-viewer`/`@photo-sphere-viewer/*` závislosti, redeploy forku (AIM vrstva).
+Geometria sa DB nedotýka (D-044). Obojsmernosť = jedna hrana čítaná z oboch strán.
+
+**Vedomé limity / mimo v1:** SiteWalk / prepojená virtuálna prehliadka (Street-View nódy,
+`VirtualTour`); priama in-app/in-browser capture (v1 je čistý upload); extrakcia snímok z 360
+videa; BIM compare (realita vs model); multi-tenancy/project scoping + auth (prerekvizita mimo
+modulu — `project` entita D-033/D-064); tiling super-panorám.
+
+**Závislosti:** D-018 (objects model), D-051 (manifest hrán), D-072 (`_georef`/world-transform,
+guarded write), D-044/D-067 (GUID bridge, AIM karta), D-071 (fork), E3 (documents/Storage vzor).
+
 ---
 
 > Kompaktný reverse-chrono log pridaných/zmenených rozhodnutí. Plný kontext = príslušný
 > D-záznam vyššie.
 
+- **2026-07-14** — **D-073 (Reality Capture v1):** modul fotiek + statických 360° panorám ukotvených 2D/3D/IfcSpace, obojsmerne. Model „ako dokumenty" (D-018): `object_type='capture'` + prípona `captures`, `object_type='capture_media'` + prípona `capture_media` (analóg `documents`), ukotvenie v rezervovanom `properties._capture` (vzor `_georef`). Prvé `aim_` hrany manifestu (`aim_rel_capture_located`, `aim_rel_capture_media`, export ICDD). Úložisko = Supabase bucket `captures` + server-side `sharp` thumbnaily; 360 = Photo Sphere Viewer host-side (BIM engine je WebGPU → žiadna three.js kolízia). Zápis za env bránou `CAPTURE_WRITE_ENABLED` (D-068/D-072), single-project. 3D piny vo forku (reuse `annotationsSlice`/`AnnotationLayer`). Migrácia `20260716120000`. Zatvára otvorené body D-065.
 - **2026-07-14** — **D-072 (georeferencované PDF podklady):** Dalux-style „Locations" — PDF pôdorys naviazaný na podlažie (2-bodová kalibrácia → similarity transform, Z z elevácie podlažia, väzba cez IFC storey GlobalId); nový upstreamovateľný balík `@ifc-lite/drawing-underlay` vo forku (WGSL textúrovaná rovina) + AIM bridge `UNDERLAYS_LOAD`/`UNDERLAY_SAVE`; perzistencia `_georef` v `objects.properties` dokumentu (bez migrácie). Supersedovuje D-038/D-039.
 - **2026-07-12** — **Dodatok D-066 (výber podľa vlastnosti psetu):** `style_in_3d` dostal `property`+`value`(+`pset`) — psety z `v_property_dictionary`, match `or()` nad JSONB cestami na `v_asset_effective` (dedičnosť z typu), case-insensitive presná zhoda; prompt zakazuje aproximovať vlastnosť triedami (fix „nosné prvky" izolovali aj LoadBearing=false).
 - **2026-07-12** — **D-071 (stratégia forku IFClite):** fork `AssetinSpace/ifc-lite` originálu `LTplus-AG/ifc-lite` konzumujeme ako optimalizovaný fork — vlastná AIM vrstva v `apps/viewer/src/aim/`, wiring obalený `// >>> AIM-FORK … // <<< AIM-FORK`, upstream sa preberá periodickým **merge** (nie rebase) cez `upstream` remote, sync spúšťa bot-PR (`.github/workflows/upstream-sync.yml`) vo vlastnom repe (fetch je read-only voči originálu); CI heavy joby na forku bežia na `ubuntu-latest` (Depot upstream-only), release/docs/docker guardnuté upstream-only. Recept: `ifc-lite/docs/FORK_MAINTENANCE.md`.

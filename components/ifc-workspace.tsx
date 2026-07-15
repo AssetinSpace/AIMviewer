@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
 
 import type { UnderlayDrawingWire } from "@/lib/data/drawing";
+import type { CaptureViewerWire } from "@/lib/data/captures";
 import type { GuidMap, IfcModel } from "@/lib/data/ifc";
 import type { ViewerApi } from "@/lib/viewer-api";
 
@@ -37,6 +38,7 @@ export default function IFCWorkspace({
   focusNonce,
   ops,
   underlays,
+  captures,
 }: {
   models: IfcModel[];
   guidMap: GuidMap;
@@ -47,6 +49,8 @@ export default function IFCWorkspace({
   ops?: string;
   /** Georeferencované PDF podklady pre embed viewer (D-072). */
   underlays?: UnderlayDrawingWire[];
+  /** Reality Capture piny s 3D ukotvením (D-073). */
+  captures?: CaptureViewerWire[];
 }) {
   const router = useRouter();
   const viewerApiRef = useRef<ViewerApi | null>(null);
@@ -83,9 +87,16 @@ export default function IFCWorkspace({
         focusNonce={focusNonce}
         ops={ops}
         underlays={underlays}
+        captures={captures}
         apiRef={viewerApiRef}
         onPickedElement={handlePickedElement}
         onNavigate={(href) => router.push(href)}
+        onCaptureClick={(captureId) => {
+          // 3D → host: klik na capture pin → otvor priestor so snímkami (galéria
+          // na /node/[space]). Obojsmernosť „snímka ↔ priestor" (D-073).
+          const pin = captures?.find((c) => c.id === captureId);
+          if (pin?.spaceId) router.push(`/node/${pin.spaceId}`);
+        }}
       />
 
       {siblingLoading && (

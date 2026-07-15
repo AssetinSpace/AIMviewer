@@ -25,6 +25,8 @@ import { ClassificationList } from "@/components/classification-list";
 import { DocumentList } from "@/components/document-list";
 import { DrawingList } from "@/components/drawing-list";
 import { DrawingElements } from "@/components/drawing-elements";
+import { CaptureGallery } from "@/components/capture-gallery";
+import { fetchCapturesForSpace } from "@/lib/data/captures";
 import { ResponsibilityList } from "@/components/responsibility-list";
 import { ResponsibilityOfList } from "@/components/responsibility-of-list";
 import { GuidHistory } from "@/components/guid-history";
@@ -197,6 +199,41 @@ async function FloorDrawingsSection({ id }: { id: string }) {
       </CardHeader>
       <CardContent>
         <DrawingElements drawings={drawings} />
+      </CardContent>
+    </Card>
+  );
+}
+
+/**
+ * Reality Capture galéria priestoru (D-073, F1): fotky + 360° panorámy naviazané na
+ * IfcSpace, obojsmerne (klik na priestor → jeho snímky). Skryje sa pre priestor bez
+ * snímok, ak nie je povolený upload (`CAPTURE_WRITE_ENABLED`).
+ */
+async function CapturesSection({
+  spaceId,
+  spaceName,
+}: {
+  spaceId: string;
+  spaceName: string | null;
+}) {
+  const captures = await fetchCapturesForSpace(spaceId);
+  const canUpload = process.env.CAPTURE_WRITE_ENABLED === "true";
+  if (captures.length === 0 && !canUpload) return null;
+  return (
+    <Card className="mb-6">
+      <CardHeader>
+        <CardTitle>
+          Reality Capture{" "}
+          <span className="text-muted-foreground">({captures.length})</span>
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        <CaptureGallery
+          spaceId={spaceId}
+          spaceName={spaceName}
+          initialCaptures={captures}
+          canUpload={canUpload}
+        />
       </CardContent>
     </Card>
   );
@@ -389,6 +426,12 @@ function SpatialView({ detail }: { detail: NodeDetail }) {
               )}
             </CardContent>
           </Card>
+
+          {node.object_type === "space" && (
+            <Suspense fallback={null}>
+              <CapturesSection spaceId={node.id} spaceName={node.name} />
+            </Suspense>
+          )}
 
           <Suspense fallback={null}>
             <FloorDrawingsSection id={node.id} />
