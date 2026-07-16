@@ -2146,9 +2146,37 @@ ho odstránil (podklad pre neskoršie upstream PR).
 
 ---
 
+### D-072 — Zoskupenie prvkov v strome podľa IFC triedy
+**Status:** rozhodnuté (2026-07-16).
+
+**Kontext:** priestorový strom (S1, D-018/D-021) vysypal pod podlažie všetkých potomkov naplocho
+v jednom zozname — na 3NP je to 210 riadkov, kde sa priestory miešajú s dverami, oknami,
+koncovými elementmi VZT atď. Z názvu ani ikony nie je vidieť, čo je `IfcSpace` a čo prvok;
+orientácia v podlaží znamenala scrollovať celý zoznam.
+
+**Rozhodnutie:** medzi uzol a jeho potomkov sa vkladá **rozbaľovacia skupina podľa `ifc_type`**
+(`IfcSpace`, `IfcWall`, …) s počtom členov.
+- Zoskupuje sa **len tam, kde sú medzi deťmi assety** a tried je aspoň 2 — čisto štruktúrne
+  úrovne (site→building→floor) ostávajú ploché.
+- Poradie: priestorová štruktúra (`IfcSpace`) prvá, potom triedy abecedne (`sk` collation).
+- Skupina **nie je objekt v AIM** — nemá `/node/` odkaz, len rozbaľuje; open-stav drží pod
+  syntetickým id `${parentId}::${ifcType}`, takže funguje aj „Rozbaliť/Zbaliť všetko".
+- Štítok = surová IFC trieda; slovník ľudských názvov zámerne nezavádzame (nemáme ho a bol by
+  ďalší zdroj pravdy navyše).
+
+**Dôvod:** `ifc_type` už je v `objects` aj v `SpatialNode` — zoskupenie je čistá prezentačná
+vrstva v `components/spatial-tree.tsx`, bez zásahu do data vrstvy, DB a bez ďalších dotazov.
+
+**Dôsledok:** prvok je o jeden klik hlbšie (skupiny sú default zbalené). `TYPE_ORDER` je
+v klientskom komponente zduplikovaný oproti `SPATIAL_TYPES` — `lib/data/spatial.ts` je
+`server-only` modul, import hodnoty by zhodil klientský build.
+
+---
+
 > Kompaktný reverse-chrono log pridaných/zmenených rozhodnutí. Plný kontext = príslušný
 > D-záznam vyššie.
 
+- **2026-07-16** — **D-072 (zoskupenie stromu podľa IFC triedy):** pod uzlom s assetmi (≥2 triedy) sa potomkovia zoskupia do rozbaľovacích skupín podľa `ifc_type` s počtom členov (`IfcSpace` prvá, zvyšok abecedne); skupina nie je AIM objekt (bez `/node/` odkazu, open-stav pod `${parentId}::${ifcType}`); čisto prezentačná vrstva v `components/spatial-tree.tsx`, bez zmien data vrstvy/DB.
 - **2026-07-12** — **Dodatok D-066 (výber podľa vlastnosti psetu):** `style_in_3d` dostal `property`+`value`(+`pset`) — psety z `v_property_dictionary`, match `or()` nad JSONB cestami na `v_asset_effective` (dedičnosť z typu), case-insensitive presná zhoda; prompt zakazuje aproximovať vlastnosť triedami (fix „nosné prvky" izolovali aj LoadBearing=false).
 - **2026-07-12** — **D-071 (stratégia forku IFClite):** fork `AssetinSpace/ifc-lite` originálu `LTplus-AG/ifc-lite` konzumujeme ako optimalizovaný fork — vlastná AIM vrstva v `apps/viewer/src/aim/`, wiring obalený `// >>> AIM-FORK … // <<< AIM-FORK`, upstream sa preberá periodickým **merge** (nie rebase) cez `upstream` remote, sync spúšťa bot-PR (`.github/workflows/upstream-sync.yml`) vo vlastnom repe (fetch je read-only voči originálu); CI heavy joby na forku bežia na `ubuntu-latest` (Depot upstream-only), release/docs/docker guardnuté upstream-only. Recept: `ifc-lite/docs/FORK_MAINTENANCE.md`.
 - **2026-07-12** — **D-070 dodatok (aplikované na AIMviewer):** kit v0.1.0 pushnutý do `AssetinSpace/design-kit` (vetva `claude/design-system-archive-8iy6go`); AIMviewer prebrandovaný — kit ako git závislosť, `shadcn.css` import namiesto defaultných tokenov, Inter namiesto Geist, assetin mark v sidebar hlavičke + favicon. Overené devtest+Playwright (light/dark), tsc, vitest 22/22.
