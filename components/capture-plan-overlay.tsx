@@ -145,15 +145,26 @@ export function CapturePlanOverlay({
           res.status === 403 ? "Zápis je vypnutý (CAPTURE_WRITE_ENABLED)." : (j.error ?? "Uloženie zlyhalo.")
         );
       }
+      // Optimisticky vykresli pin ihneď — nezávisle od refetchu/cache/re-render
+      // timingu. Pri presune existujúceho pinu zachovaj ostatné polia
+      // (kind/urls/name), pri novom použij minimálny tvar; `refetch()` nižšie ich
+      // následne dopl­ní reálnymi dátami.
+      const { u, v } = draft;
+      setPins((prev) => {
+        const existing = prev.find((p) => p.id === placeId);
+        const next: CapturePlanPinWire = existing
+          ? { ...existing, page, u, v }
+          : { id: placeId, kind: "photo", page, u, v, spaceId: null };
+        return [...prev.filter((p) => p.id !== placeId), next];
+      });
       exitPlacement();
       await refetch();
-      router.refresh();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Neznáma chyba.");
     } finally {
       setBusy(false);
     }
-  }, [documentId, placeId, draft, busy, page, exitPlacement, refetch, router]);
+  }, [documentId, placeId, draft, busy, page, exitPlacement, refetch]);
 
   if (!documentId) return null;
   const pagePins = pins.filter((p) => p.page === page && p.id !== placeId);
