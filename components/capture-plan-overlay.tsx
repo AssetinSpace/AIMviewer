@@ -1,10 +1,19 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { createPortal } from "react-dom";
+import dynamic from "next/dynamic";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { Camera, Orbit } from "lucide-react";
+import { Camera, ImageIcon, Orbit, X } from "lucide-react";
 
+import { Button } from "@/components/ui/button";
 import type { CapturePlanPinWire } from "@/lib/data/captures";
+
+// PSV je čisto klientský (three.js) — dynamický import bez SSR (rovnako ako galéria).
+const PanoramaViewer = dynamic(
+  () => import("@/components/panorama-viewer").then((m) => m.PanoramaViewer),
+  { ssr: false }
+);
 
 /**
  * Reality Capture overlay nad 2D plánom (D-073) — v drawing vieweri (`/drawing/[id]`).
@@ -32,6 +41,7 @@ export function CapturePlanOverlay({
   const placeId = searchParams.get("placeCapture");
 
   const [pins, setPins] = useState<CapturePlanPinWire[]>([]);
+  const [openPin, setOpenPin] = useState<CapturePlanPinWire | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -51,6 +61,13 @@ export function CapturePlanOverlay({
   useEffect(() => {
     void refetch();
   }, [refetch]);
+
+  useEffect(() => {
+    if (!openPin) return;
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setOpenPin(null);
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [openPin]);
 
   const place = useCallback(
     async (u: number, v: number) => {
@@ -110,7 +127,7 @@ export function CapturePlanOverlay({
             onClick={(e) => {
               e.preventDefault();
               e.stopPropagation();
-              if (pin.spaceId) router.push(`/node/${pin.spaceId}`);
+              setOpenPin(pin); // klik na pin → otvor rovno fotku/360°
             }}
             className="pointer-events-auto absolute flex size-6 items-center justify-center rounded-full border-2 border-white bg-sky-500 text-white shadow-md transition-transform hover:scale-110"
             style={{ left: pin.u * dims.width, top: pin.v * dims.height, transform: "translate(-50%, -100%)" }}
@@ -136,6 +153,66 @@ export function CapturePlanOverlay({
           </div>
         </>
       )}
+
+      {/* Klik na pin → otvor rovno fotku / 360°. Portál do body, lebo drawing
+          wrapper má počas zoomu CSS transform (rozbil by `fixed` modal). */}
+      {openPin &&
+        typeof document !== "undefined" &&
+        createPortal(
+          openPin.kind === "pano360" && openPin.origUrl ? (
+            <PanoramaViewer
+              open
+              onClose={() => setOpenPin(null)}
+              src={openPin.origUrl}
+              preview={openPin.previewUrl}
+              yaw={openPin.yaw ?? 0}
+              title={openPin.name}
+            />
+          ) : (
+            <div
+              className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-black/90 p-4"
+              role="dialog"
+              aria-modal="true"
+              onClick={() => setOpenPin(null)}
+            >
+              <Button
+                variant="secondary"
+                size="icon-sm"
+                onClick={() => setOpenPin(null)}
+                aria-label="Zavrieť"
+                className="absolute top-3 right-3"
+              >
+                <X />
+              </Button>
+              {openPin.previewUrl ?? openPin.origUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={openPin.previewUrl ?? openPin.origUrl}
+                  alt={openPin.name ?? "snímka"}
+                  className="max-h-[85vh] max-w-full rounded-lg object-contain"
+                  onClick={(e) => e.stopPropagation()}
+                />
+              ) : (
+                <span className="flex flex-col items-center gap-2 text-white/70">
+                  <ImageIcon className="size-8" /> Snímka sa nenačítala
+                </span>
+              )}
+              {openPin.spaceId && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    router.push(`/node/${openPin.spaceId}`);
+                  }}
+                  className="mt-3 text-sm text-white/80 underline hover:text-white"
+                >
+                  Otvoriť priestor so všetkými snímkami
+                </button>
+              )}
+            </div>
+          ),
+          document.body
+        )}
     </div>
   );
 }
