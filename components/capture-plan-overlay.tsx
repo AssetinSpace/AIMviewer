@@ -1,10 +1,10 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import dynamic from "next/dynamic";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { Camera, ImageIcon, Orbit, X } from "lucide-react";
+import { Camera, Check, ImageIcon, Orbit, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import type { CapturePlanPinWire } from "@/lib/data/captures";
@@ -18,13 +18,17 @@ const PanoramaViewer = dynamic(
 /**
  * Reality Capture overlay nad 2D plánom (D-073) — v drawing vieweri (`/drawing/[id]`).
  * Číta capture piny s plán ukotvením na tento dokument a vykreslí ich na strane
- * (normalizované u,v → pixely renderovanej strany). Klik na pin → priestor so
- * snímkami (obojsmernosť „plán → snímky").
+ * (normalizované u,v → pixely renderovanej strany). Klik na pin → otvorí rovno
+ * fotku / 360° panorámu (obojsmernosť „plán → snímka").
  *
  * Authoring: s `?placeCapture=<id>` v URL sa zapne umiestňovací režim — klik na
- * plán vypočíta u,v a uloží ich (PATCH `/api/captures/{id}` `{plan}`). DocumentId
- * sa odvodí z route (`/drawing/<id>`), takže komponent je self-contained.
+ * plán položí **draft** pin, ktorý sa dá **ťahať** na presné miesto, a tlačidlom
+ * **Uložiť** sa uloží (PATCH `/api/captures/{id}` `{plan}`). Existujúca pozícia sa
+ * predvyplní (edit/„presunúť"). DocumentId sa odvodí z route → self-contained.
  */
+
+const clamp01 = (n: number) => Math.min(1, Math.max(0, n));
+
 export function CapturePlanOverlay({
   page,
   dims,
@@ -42,8 +46,13 @@ export function CapturePlanOverlay({
 
   const [pins, setPins] = useState<CapturePlanPinWire[]>([]);
   const [openPin, setOpenPin] = useState<CapturePlanPinWire | null>(null);
+  const [draft, setDraft] = useState<{ u: number; v: number } | null>(null);
+  const [dirty, setDirty] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const containerRef = useRef<HTMLDivElement>(null);
+  const draggingRef = useRef(false);
 
   const refetch = useCallback(async () => {
     if (!documentId) return;
@@ -69,54 +78,90 @@ export function CapturePlanOverlay({
     return () => window.removeEventListener("keydown", onKey);
   }, [openPin]);
 
-  const place = useCallback(
-    async (u: number, v: number) => {
-      if (!documentId || !placeId || busy) return;
-      setBusy(true);
-      setError(null);
-      try {
-        const res = await fetch(`/api/captures/${placeId}`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ plan: { documentId, page, u, v } }),
-        });
-        if (!res.ok) {
-          const j = await res.json().catch(() => ({}));
-          throw new Error(
-            res.status === 403 ? "Zápis je vypnutý (CAPTURE_WRITE_ENABLED)." : (j.error ?? "Uloženie zlyhalo.")
-          );
-        }
-        // Vyčisti umiestňovací režim z URL + obnov.
-        const sp = new URLSearchParams(searchParams.toString());
-        sp.delete("placeCapture");
-        router.replace(sp.toString() ? `${pathname}?${sp}` : pathname);
-        await refetch();
-        router.refresh();
-      } catch (e) {
-        setError(e instanceof Error ? e.message : "Neznáma chyba.");
-      } finally {
-        setBusy(false);
-      }
-    },
-    [documentId, placeId, page, busy, searchParams, pathname, router, refetch]
-  );
+  // Vstup/výstup umiestňovacieho režimu: reset; predvyplň draft z existujúcej
+  // pozície pinu (edit/„presunúť"), kým používateľ neinteragoval (`dirty`).
+  useEffect(() => {
+    if (!placeId) {
+      setDraft(null);
+      setDirty(false);
+      return;
+    }
+    if (dirty) return;
+    const existing = pins.find((p) => p.id === placeId && p.page === page);
+    if (existing) setDraft({ u: existing.u, v: existing.v });
+  }, [placeId, pins, page, dirty]);
+
+  const uvFromEvent = useCallback((clientX: number, clientY: number) => {
+    const rect = containerRef.current?.getBoundingClientRect();
+    if (!rect || rect.width === 0 || rect.height === 0) return null;
+    return {
+      u: clamp01((clientX - rect.left) / rect.width),
+      v: clamp01((clientY - rect.top) / rect.height),
+    };
+  }, []);
 
   const onPlaceClick = useCallback(
-    (e: React.MouseEvent<HTMLDivElement>) => {
-      const rect = e.currentTarget.getBoundingClientRect();
-      const u = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width));
-      const v = Math.min(1, Math.max(0, (e.clientY - rect.top) / rect.height));
-      void place(u, v);
+    (e: React.MouseEvent) => {
+      const uv = uvFromEvent(e.clientX, e.clientY);
+      if (uv) {
+        setDraft(uv);
+        setDirty(true);
+      }
     },
-    [place]
+    [uvFromEvent]
   );
 
+  const onDraftPointerMove = useCallback(
+    (e: React.PointerEvent) => {
+      if (!draggingRef.current) return;
+      const uv = uvFromEvent(e.clientX, e.clientY);
+      if (uv) {
+        setDraft(uv);
+        setDirty(true);
+      }
+    },
+    [uvFromEvent]
+  );
+
+  const exitPlacement = useCallback(() => {
+    const sp = new URLSearchParams(searchParams.toString());
+    sp.delete("placeCapture");
+    router.replace(sp.toString() ? `${pathname}?${sp}` : pathname);
+  }, [searchParams, router, pathname]);
+
+  const save = useCallback(async () => {
+    if (!documentId || !placeId || !draft || busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/captures/${placeId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ plan: { documentId, page, u: draft.u, v: draft.v } }),
+      });
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}));
+        throw new Error(
+          res.status === 403 ? "Zápis je vypnutý (CAPTURE_WRITE_ENABLED)." : (j.error ?? "Uloženie zlyhalo.")
+        );
+      }
+      exitPlacement();
+      await refetch();
+      router.refresh();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Neznáma chyba.");
+    } finally {
+      setBusy(false);
+    }
+  }, [documentId, placeId, draft, busy, page, exitPlacement, refetch, router]);
+
   if (!documentId) return null;
-  const pagePins = pins.filter((p) => p.page === page);
+  const pagePins = pins.filter((p) => p.page === page && p.id !== placeId);
 
   return (
-    <div className="absolute inset-0 overflow-hidden">
-      {/* Piny (čítanie) */}
+    <div ref={containerRef} className="absolute inset-0 overflow-hidden">
+      {/* Uložené piny — klik otvorí fotku/360°. V placement móde ich prekryje
+          klikacia vrstva (nezasahujú), takže netreba osobitne vypínať. */}
       {pagePins.map((pin) => {
         const Icon = pin.kind === "pano360" ? Orbit : Camera;
         return (
@@ -127,7 +172,7 @@ export function CapturePlanOverlay({
             onClick={(e) => {
               e.preventDefault();
               e.stopPropagation();
-              setOpenPin(pin); // klik na pin → otvor rovno fotku/360°
+              setOpenPin(pin);
             }}
             className="pointer-events-auto absolute flex size-6 items-center justify-center rounded-full border-2 border-white bg-sky-500 text-white shadow-md transition-transform hover:scale-110"
             style={{ left: pin.u * dims.width, top: pin.v * dims.height, transform: "translate(-50%, -100%)" }}
@@ -137,7 +182,7 @@ export function CapturePlanOverlay({
         );
       })}
 
-      {/* Umiestňovací režim (authoring) */}
+      {/* Umiestňovací režim (authoring): klikacia vrstva + draft pin + toolbar. */}
       {placeId && (
         <>
           <div
@@ -146,10 +191,45 @@ export function CapturePlanOverlay({
             onClick={onPlaceClick}
             className="pointer-events-auto absolute inset-0 cursor-crosshair bg-sky-500/5"
           />
-          <div className="pointer-events-none absolute inset-x-0 top-0 flex justify-center p-2">
+
+          {draft && (
+            <button
+              type="button"
+              aria-label="Presuň capture pin"
+              onPointerDown={(e) => {
+                e.stopPropagation();
+                e.preventDefault();
+                (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+                draggingRef.current = true;
+              }}
+              onPointerMove={onDraftPointerMove}
+              onPointerUp={(e) => {
+                draggingRef.current = false;
+                (e.currentTarget as HTMLElement).releasePointerCapture?.(e.pointerId);
+              }}
+              className="pointer-events-auto absolute flex size-7 cursor-grab touch-none items-center justify-center rounded-full border-2 border-white bg-orange-500 text-white shadow-lg active:cursor-grabbing"
+              style={{ left: draft.u * dims.width, top: draft.v * dims.height, transform: "translate(-50%, -100%)" }}
+            >
+              <Camera className="size-3.5" />
+            </button>
+          )}
+
+          <div className="pointer-events-none absolute inset-x-0 top-0 flex flex-col items-center gap-2 p-2">
             <span className="rounded-full bg-sky-600 px-3 py-1 text-xs font-medium text-white shadow">
-              {busy ? "Ukladám…" : error ?? "Klikni na plán pre umiestnenie capture bodu"}
+              {error
+                ? error
+                : draft
+                  ? "Potiahni pin na presné miesto, potom Uložiť"
+                  : "Klikni na plán pre umiestnenie capture bodu"}
             </span>
+            <div className="pointer-events-auto flex gap-2">
+              <Button size="sm" onClick={save} disabled={!draft || busy}>
+                <Check /> {busy ? "Ukladám…" : "Uložiť"}
+              </Button>
+              <Button size="sm" variant="outline" onClick={exitPlacement} disabled={busy}>
+                <X /> Zrušiť
+              </Button>
+            </div>
           </div>
         </>
       )}

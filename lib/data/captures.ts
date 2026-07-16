@@ -478,9 +478,14 @@ export async function uploadCaptureObject(
 ): Promise<string> {
   await ensureCapturesBucket();
   const supabase = getSupabaseAdmin();
+  // Blob (nie raw Node Buffer): supabase-js `upload` s Bufferom vie na serverless
+  // (undici) uložiť 0-bajtový súbor → broken <img>. Blob nesie definitívnu veľkosť.
+  // Cast: Node Buffer je Uint8Array<ArrayBufferLike> — za behu platný BlobPart,
+  // len DOM lib typ chce Uint8Array<ArrayBuffer>.
+  const blob = new Blob([body as unknown as BlobPart], { type: contentType });
   const { error } = await supabase.storage
     .from(CAPTURES_BUCKET)
-    .upload(key, body, { contentType, upsert: true });
+    .upload(key, blob, { contentType, upsert: true });
   if (error) throw new Error(error.message);
   return capturesPublicUrl(key);
 }
