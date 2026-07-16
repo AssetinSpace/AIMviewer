@@ -1,13 +1,16 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useRef, useState } from "react";
+import { X } from "lucide-react";
 
 import type { UnderlayDrawingWire } from "@/lib/data/drawing";
 import type { CaptureViewerWire } from "@/lib/data/captures";
 import type { GuidMap, IfcModel } from "@/lib/data/ifc";
 import type { ViewerApi } from "@/lib/viewer-api";
+import { CaptureGallery } from "@/components/capture-gallery";
+import { Button } from "@/components/ui/button";
 
 // 3D viewer je embed-nutý ifc-lite viewer cez iframe (postMessage bridge),
 // nie in-process three.js. Rovnaké Props + ViewerApi, takže workspace je bez zmeny.
@@ -53,8 +56,18 @@ export default function IFCWorkspace({
   captures?: CaptureViewerWire[];
 }) {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const viewerApiRef = useRef<ViewerApi | null>(null);
   const [siblingLoading, setSiblingLoading] = useState(false);
+
+  // Reality Capture (D-073): AIM karta v 3D odkazuje na /ifc?captures=<spaceId>
+  // (soft-nav, iframe sa neremountuje) → galéria priestoru ako overlay nad 3D.
+  const captureSpaceId = searchParams.get("captures");
+  function closeCaptures() {
+    const sp = new URLSearchParams(searchParams.toString());
+    sp.delete("captures");
+    router.replace(sp.toString() ? `/ifc?${sp}` : "/ifc");
+  }
 
   // 3D → DB: po picku dotiahni súrodencov v priestore a zvýrazni ich.
   async function handlePickedElement(objectId: string) {
@@ -102,6 +115,38 @@ export default function IFCWorkspace({
       {siblingLoading && (
         <div className="pointer-events-none absolute left-3 top-3 z-10 rounded-full bg-background/80 px-3 py-1 text-xs text-muted-foreground shadow backdrop-blur-sm">
           Načítavam priestorový kontext…
+        </div>
+      )}
+
+      {captureSpaceId && (
+        <div
+          className="absolute inset-0 z-40 flex items-center justify-center bg-black/60 p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Reality Capture"
+          onClick={closeCaptures}
+        >
+          <div
+            className="flex max-h-[85vh] w-full max-w-2xl flex-col overflow-hidden rounded-xl bg-card text-card-foreground shadow-xl ring-1 ring-foreground/10"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b px-4 py-3">
+              <h2 className="font-heading text-base font-semibold">Reality Capture</h2>
+              <Button variant="ghost" size="icon-sm" onClick={closeCaptures} aria-label="Zavrieť">
+                <X />
+              </Button>
+            </div>
+            <div className="overflow-y-auto p-4">
+              <CaptureGallery
+                key={captureSpaceId}
+                spaceId={captureSpaceId}
+                spaceName={null}
+                initialCaptures={[]}
+                canUpload={false}
+                autoLoad
+              />
+            </div>
+          </div>
         </div>
       )}
     </div>

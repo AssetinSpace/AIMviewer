@@ -5,7 +5,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { nodeSummaryToAimPanel } from "@/lib/aim-panel";
 import type { SelectedElement } from "@/lib/data/drawing";
 import type { UnderlayDrawingWire } from "@/lib/data/drawing";
-import type { CaptureViewerWire } from "@/lib/data/captures";
+import type { CaptureSummary, CaptureViewerWire } from "@/lib/data/captures";
 import type { GuidMap, IfcModel } from "@/lib/data/ifc";
 import type { NodeSummary } from "@/lib/data/object";
 import type { ViewerApi } from "@/lib/viewer-api";
@@ -239,14 +239,19 @@ export function IFCViewer({
 
     const controller = new AbortController();
     aimAbortRef.current = controller;
-    fetch(`/api/element/${objectId}`, { signal: controller.signal })
-      .then((r) => {
+    Promise.all([
+      fetch(`/api/element/${objectId}`, { signal: controller.signal }).then((r) => {
         if (!r.ok) throw new Error(String(r.status));
-        return r.json();
-      })
-      .then((summary: NodeSummary) => {
+        return r.json() as Promise<NodeSummary>;
+      }),
+      // Reality Capture súhrn (D-073) — best-effort; nesmie zhodiť AIM kartu.
+      fetch(`/api/captures/summary?object=${objectId}`, { signal: controller.signal })
+        .then((r) => (r.ok ? (r.json() as Promise<CaptureSummary>) : null))
+        .catch(() => null),
+    ])
+      .then(([summary, captures]) => {
         if (aimGuidRef.current !== guid) return; // medzičasom iná selekcia
-        post({ type: "AIM_PANEL_DATA", guid, data: nodeSummaryToAimPanel(summary, guid) });
+        post({ type: "AIM_PANEL_DATA", guid, data: nodeSummaryToAimPanel(summary, guid, captures) });
       })
       .catch((err: unknown) => {
         if (controller.signal.aborted || aimGuidRef.current !== guid) return;

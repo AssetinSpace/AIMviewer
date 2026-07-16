@@ -29,6 +29,7 @@ export function CaptureGallery({
   initialCaptures,
   canUpload,
   planDocumentId,
+  autoLoad = false,
 }: {
   spaceId: string;
   spaceName: string | null;
@@ -36,6 +37,8 @@ export function CaptureGallery({
   canUpload: boolean;
   /** Pôdorys podlažia priestoru — cieľ „umiestniť na pláne" (D-073). */
   planDocumentId?: string | null;
+  /** Fetchni snímky na mount (pre overlay bez server-preloadnutých dát, D-073). */
+  autoLoad?: boolean;
 }) {
   const router = useRouter();
   const [captures, setCaptures] = useState<CapturePointWire[]>(initialCaptures);
@@ -44,7 +47,7 @@ export function CaptureGallery({
 
   useEffect(() => setCaptures(initialCaptures), [initialCaptures]);
 
-  const refetch = useCallback(async () => {
+  const load = useCallback(async () => {
     try {
       const res = await fetch(`/api/captures?space=${spaceId}`, { cache: "no-store" });
       if (res.ok) {
@@ -52,10 +55,19 @@ export function CaptureGallery({
         setCaptures(fresh);
       }
     } catch {
-      /* ignoruj — router.refresh() aj tak re-fetchne server */
+      /* ignoruj */
     }
+  }, [spaceId]);
+
+  // Overlay (autoLoad) nemá server-preloadnuté captures — dotiahni ich na mount.
+  useEffect(() => {
+    if (autoLoad) void load();
+  }, [autoLoad, load]);
+
+  const refetch = useCallback(async () => {
+    await load();
     router.refresh();
-  }, [spaceId, router]);
+  }, [load, router]);
 
   const activeMedia: CaptureMediaWire | null = active
     ? active.point.media[active.mediaIdx] ?? null

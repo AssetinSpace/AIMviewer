@@ -1,4 +1,5 @@
 import type { NodeSummary } from "@/lib/data/object";
+import type { CaptureSummary } from "@/lib/data/capture-placement";
 
 /**
  * AIM karta v natívnom paneli ifclite — render schéma posielaná cez
@@ -30,8 +31,16 @@ const TYPE_LABEL: Record<string, string> = {
   asset_type: "Typ assetu",
 };
 
-/** NodeSummary (GET /api/element/[id]) → render schéma AIM karty. */
-export function nodeSummaryToAimPanel(summary: NodeSummary, guid: string): AimPanelData {
+/**
+ * NodeSummary (GET /api/element/[id]) → render schéma AIM karty. `captures`
+ * (voliteľné, D-073) pridá akciu „Reality Capture (N)" ktorá otvorí galériu
+ * priestoru priamo v 3D (`/ifc?captures=<spaceId>` — soft-nav → overlay).
+ */
+export function nodeSummaryToAimPanel(
+  summary: NodeSummary,
+  guid: string,
+  captures?: CaptureSummary | null
+): AimPanelData {
   const ifcRows: NonNullable<AimPanelData["sections"]>[number]["rows"] = [];
   if (summary.ifcType) ifcRows.push({ label: "IFC typ", value: summary.ifcType, mono: true });
   if (summary.predefinedType)
@@ -72,6 +81,15 @@ export function nodeSummaryToAimPanel(summary: NodeSummary, guid: string): AimPa
     })),
     actions: [
       { label: "Otvoriť celý detail", href: `/${summary.route}/${summary.id}`, primary: true },
+      // Reality Capture (D-073) — otvorí galériu priestoru ako overlay nad 3D.
+      ...(captures && captures.count > 0 && captures.spaceId
+        ? [
+            {
+              label: `Reality Capture (${captures.count})`,
+              href: `/ifc?captures=${captures.spaceId}`,
+            },
+          ]
+        : []),
     ],
   };
 }
