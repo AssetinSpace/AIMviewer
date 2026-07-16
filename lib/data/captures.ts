@@ -259,7 +259,16 @@ export const fetchCapturePins = unstable_cache(
   AIM_CACHE
 );
 
-async function fetchCapturesForDocumentImpl(documentId: string): Promise<CapturePlanPinWire[]> {
+/**
+ * Capture piny s 2D plán ukotvením na daný dokument (overlay v drawing vieweri).
+ *
+ * ZÁMERNE NECACHOVANÉ: volá to len klientský `CapturePlanOverlay` a hneď po
+ * umiestnení pinu (PATCH `/api/captures/[id]`) musí `refetch()` vidieť čerstvý
+ * stav (read-after-write na rovnakej DB). `unstable_cache` + `revalidateTag` sa
+ * na legacy tagu správa ako stale-while-revalidate a prvý refetch by vrátil starý
+ * (bezpinový) zoznam → pin by sa nezobrazil (vzor pozn. v `/api/underlay`).
+ */
+export async function fetchCapturesForDocument(documentId: string): Promise<CapturePlanPinWire[]> {
   const points = await fetchAllCapturePointsImpl();
   const out: CapturePlanPinWire[] = [];
   for (const p of points) {
@@ -279,13 +288,6 @@ async function fetchCapturesForDocumentImpl(documentId: string): Promise<Capture
   }
   return out;
 }
-
-/** Capture piny s 2D plán ukotvením na daný dokument (overlay v drawing vieweri). */
-export const fetchCapturesForDocument = unstable_cache(
-  fetchCapturesForDocumentImpl,
-  ["fetch-captures-for-document"],
-  AIM_CACHE
-);
 
 async function fetchCaptureSummaryForObjectImpl(objectId: string): Promise<CaptureSummary> {
   const supabase = getSupabaseAdmin();
