@@ -85,6 +85,15 @@ export interface CapturePlanPinWire {
   v: number;
 }
 
+/** Súhrn Reality Capture pre vybraný objekt (AIM karta v 3D, D-073). */
+export interface CaptureSummary {
+  /** `objects.id` priestoru (IfcSpace) objektu, alebo null ak sa nedá určiť. */
+  spaceId: string | null;
+  spaceName: string | null;
+  /** Počet capture bodov naviazaných na priestor. */
+  count: number;
+}
+
 /** Wire tvar capture pointu vrátane (aktívnych) médií. */
 export interface CapturePointWire {
   id: string;

@@ -12,6 +12,7 @@ import {
   type CapturePlanAnchor,
   type CapturePlanPinWire,
   type CapturePointWire,
+  type CaptureSummary,
   type CaptureViewerWire,
   type CaptureWorldAnchor,
 } from "@/lib/data/capture-placement";
@@ -48,6 +49,7 @@ export type {
   CaptureMediaWire,
   CapturePlanPinWire,
   CapturePointWire,
+  CaptureSummary,
   CaptureViewerWire,
 } from "@/lib/data/capture-placement";
 
@@ -282,6 +284,66 @@ async function fetchCapturesForDocumentImpl(documentId: string): Promise<Capture
 export const fetchCapturesForDocument = unstable_cache(
   fetchCapturesForDocumentImpl,
   ["fetch-captures-for-document"],
+  AIM_CACHE
+);
+
+async function fetchCaptureSummaryForObjectImpl(objectId: string): Promise<CaptureSummary> {
+  const supabase = getSupabaseAdmin();
+  const empty: CaptureSummary = { spaceId: null, spaceName: null, count: 0 };
+
+  const { data: obj, error } = await supabase
+    .from("objects")
+    .select("id, object_type, name")
+    .eq("id", objectId)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!obj) return empty;
+
+  // Priestor objektu: sám (space) alebo obsahujúci priestor prvku (asset →
+  // rel_contained_in_spatial_structure, vzor fetchSpaceSiblings v filter.ts).
+  let spaceId: string;
+  let spaceName: string | null;
+  if (obj.object_type === "space") {
+    spaceId = obj.id as string;
+    spaceName = (obj.name as string | null) ?? null;
+  } else {
+    const { data: parent, error: pErr } = await supabase
+      .from("rel_contained_in_spatial_structure")
+      .select("to_id")
+      .eq("from_id", objectId)
+      .is("valid_until", null)
+      .limit(1)
+      .maybeSingle();
+    if (pErr) throw new Error(pErr.message);
+    if (!parent) return empty;
+    const { data: sp, error: sErr } = await supabase
+      .from("objects")
+      .select("id, object_type, name")
+      .eq("id", parent.to_id)
+      .maybeSingle();
+    if (sErr) throw new Error(sErr.message);
+    if (!sp || sp.object_type !== "space") return empty;
+    spaceId = sp.id as string;
+    spaceName = (sp.name as string | null) ?? null;
+  }
+
+  const { count, error: cErr } = await supabase
+    .from("aim_rel_capture_located")
+    .select("*", { count: "exact", head: true })
+    .eq("to_id", spaceId)
+    .is("valid_until", null);
+  if (cErr) throw new Error(cErr.message);
+
+  return { spaceId, spaceName, count: count ?? 0 };
+}
+
+/**
+ * Súhrn Reality Capture pre objekt vybraný v 3D (AIM karta, D-073): priestor +
+ * počet snímok. Prvok (asset) sa mapuje na svoj obsahujúci priestor. ISR tag `aim`.
+ */
+export const fetchCaptureSummaryForObject = unstable_cache(
+  fetchCaptureSummaryForObjectImpl,
+  ["fetch-capture-summary-for-object"],
   AIM_CACHE
 );
 
