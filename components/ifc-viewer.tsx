@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { nodeSummaryToAimPanel } from "@/lib/aim-panel";
 import type { SelectedElement } from "@/lib/data/drawing";
 import type { UnderlayDrawingWire } from "@/lib/data/drawing";
+import type { DocumentWire } from "@/lib/data/documents";
 import type { CaptureSummary, CaptureViewerWire } from "@/lib/data/captures";
 import type { GuidMap, IfcModel } from "@/lib/data/ifc";
 import type { NodeSummary } from "@/lib/data/object";
@@ -50,7 +51,9 @@ type OutboundMessage =
   // Kalibrácia PDF podkladu uložená vo viewri (D-072) — host ju perzistuje.
   | { source: typeof SOURCE; type: "UNDERLAY_SAVE"; documentId: string; georef: unknown }
   // Klik na Reality Capture pin v 3D (D-073) — host otvorí galériu/panorámu.
-  | { source: typeof SOURCE; type: "CAPTURE_PIN_CLICK"; captureId: string };
+  | { source: typeof SOURCE; type: "CAPTURE_PIN_CLICK"; captureId: string }
+  // Karta dokumentu otvorená/zavretá vo viewri (D-075) — recents/analytics.
+  | { source: typeof SOURCE; type: "DOCUMENT_EVENT"; documentId: string; event: "opened" | "closed"; page?: number };
 
 /**
  * Viewer operácia AI docku (D-066) — kompaktný wire formát v URL parametri
@@ -141,6 +144,10 @@ interface Props {
   ops?: string;
   /** Georeferencované PDF podklady (D-072) — poslané do viewera po MODELS_LOADED. */
   underlays?: UnderlayDrawingWire[];
+  /** Knižnica dokumentov pre in-viewer Documents panel (D-075) — po MODELS_LOADED. */
+  documents?: DocumentWire[];
+  /** Deep link (D-075): id dokumentu, ktorý sa má otvoriť ako karta (`?doc=`). */
+  openDocumentId?: string;
   /** Reality Capture piny s 3D ukotvením (D-073) — poslané po MODELS_LOADED. */
   captures?: CaptureViewerWire[];
   apiRef?: React.RefObject<ViewerApi | null>;
@@ -159,6 +166,8 @@ export function IFCViewer({
   focusNonce,
   ops,
   underlays,
+  documents,
+  openDocumentId,
   captures,
   apiRef,
   onSelect,
@@ -327,6 +336,15 @@ export function IFCViewer({
           if (underlays && underlays.length > 0) {
             post({ type: "UNDERLAYS_LOAD", drawings: underlays });
           }
+          // Knižnica dokumentov (D-075) — rovnaký timing slot; kalibrované
+          // výkresy idú v oboch správach (prepojenie cez documentId/storeyGuid).
+          if (documents && documents.length > 0) {
+            post({ type: "DOCUMENTS_LOAD", documents });
+            // Deep link `?doc=<id>` — otvor kartu až keď viewer knižnicu má.
+            if (openDocumentId) {
+              post({ type: "DOCUMENT_OPEN", documentId: openDocumentId });
+            }
+          }
           // Reality Capture piny (D-073) — world-ukotvené capture pointy; spaceId
           // je host-only (navigácia po kliku), do viewera sa neposiela.
           if (captures && captures.length > 0) {
@@ -359,6 +377,11 @@ export function IFCViewer({
           if (typeof e.data.captureId === "string" && e.data.captureId.length > 0) {
             onCaptureClick?.(e.data.captureId);
           }
+          break;
+        case "DOCUMENT_EVENT":
+          // D-075: zatiaľ bez host-side využitia (kandidát: recents/analytics).
+          // Prijíma sa naschvál — neznámy typ by inak skončil ako šum v konzole
+          // budúceho stricter handlera.
           break;
         case "UNDERLAY_SAVE": {
           // Kalibrácia z viewera → perzistuj _georef (D-072). Server payload

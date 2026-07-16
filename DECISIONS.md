@@ -2301,8 +2301,9 @@ v klientskom komponente zduplikovaný oproti `SPATIAL_TYPES` — `lib/data/spati
 `server-only` modul, import hodnoty by zhodil klientský build.
 
 ### D-075 — Projektová dokumentácia v jednom rozhraní (2D/3D prepínač, dokumenty v kartách)
-**Status:** kandidát na diskusiu (2026-07-16) — koncept a fázovanie; implementácia až po
-odsúhlasení. Stavia na D-072 (kalibrácia + split view sú hotové na vetve F7).
+**Status:** rozhodnuté (2026-07-16) — koncept odsúhlasený, **M1–M3 implementované na vetve**
+`claude/pdf-rendering-document-view-v6nivv` (oba repá; stav → ROADMAP F9). Stavia na D-072
+(kalibrácia + split view, F7).
 
 **Kontext:** Cieľ je Dalux-like zážitok — celá projektová dokumentácia (PDF výkresy,
 textové PDF, fotky/skeny) prehliadateľná priamo v ifc-lite viewri, aby 2D výkresy a 3D
@@ -2381,6 +2382,14 @@ v upstream súboroch → jednoriadkové inzercie + logika v nových súboroch + 
 append (Alt mapping frozen), kandidát na upstream PR do LTplus-AG; mobil bez center pane,
 pop-out len desktop (PiP API); PostgREST 1000-row cap pri raste počtu dokumentov.
 
+**Dodatok — odchýlky implementácie M1–M3 od návrhu (2026-07-16):** `document-pane-panel`
+je NAPRAVO od `viewport-3d-panel` (nie vedľa plan pane) — resize handle tak nikdy nesusedí
+s kolabovaným prázdnym panelom a pôvodný split handle ostáva nedotknutý; karty sú kľúčované
+`docId` (dokument = max 1 karta, dedupe→focus), nie `tabId`; tab strip je vlastný flex row
+(Radix Tabs by pre close buttons pridával ceremóniu); `DOCUMENT_EVENT` sa pre `local:` súbory
+hostovi neposiela (nemá ich ako resolvnúť); LRU canvasov nikdy nevyprázdni canvas pripojený
+v DOM. Host `DOCUMENT_EVENT` zatiaľ len prijíma (no-op) — recents/analytics je kandidát.
+
 **Závislosti:** D-072 (kalibrácia/split/`_georef`), D-071 (fork vrstvenie), D-044/D-067
 (bridge/AIM karta), D-042/D-054 (`/drawing/[id]` + `_drawing_links`), D-063 (full-text
 deep-linky), E3/D-032/D-036 (documents + Storage).
@@ -2390,6 +2399,7 @@ deep-linky), E3/D-032/D-036 (documents + Storage).
 > Kompaktný reverse-chrono log pridaných/zmenených rozhodnutí. Plný kontext = príslušný
 > D-záznam vyššie.
 
+- **2026-07-16** — **D-075 M1–M3 implementované (projektová dokumentácia v jednom rozhraní):** fork — prepínač 3D|2D|Split v `MainToolbar`/`MobileToolbar` (`ViewModeSwitcher` + `useViewMode`, derivovaný režim; `underlayPlanFull`/`underlayLastStoreyGuid` v `drawingUnderlaySlice`, `enterPlanView` v `useFloorplanView`, kolabovateľný `viewport-3d-panel`, výber výkresu pri >1 v `DrawingPlanPane`); documents workspace (`documentsSlice` + testy, panel `documents` v registry, `DocumentsPanel` drag&drop, `DocumentPane` karty napravo od 3D, `PdfDocumentView` virtualizovaný ≤2400 px LRU ≤4, `ImageDocumentView`, mobil overlay); bridge `DOCUMENTS_LOAD`/`DOCUMENT_OPEN`/`DOCUMENT_EVENT` (+ testy). AIMviewer — `lib/data/documents.ts` `fetchProjectDocuments()` (kind podľa E3 role/prípony, folder = Výkresy/podlažie alebo purpose, meta revision/status/purpose), push v `ifc-viewer.tsx` po MODELS_LOADED, `?doc=` deep link cez `/ifc` page. Odchýlky v dodatku D-075.
 - **2026-07-16** — **D-075 (kandidát: projektová dokumentácia v jednom rozhraní):** koncept z analýzy CDE prístupov (Dalux/Revizto/ACC/Procore) — prvotriedny prepínač 3D|2D|Split v toolbare ifc-lite (derivovaný režim nad D-072 flagmi, `underlayPlanFull`), documents panel + karty dokumentov v resizable center pane (textové PDF virtualizovane, obrázky), bridge `DOCUMENTS_LOAD`/`DOCUMENT_OPEN`/`DOCUMENT_EVENT`; genericky vo forku (standalone s lokálnymi súbormi), AIMviewer dodá dáta; `/drawing/[id]` ostáva. Fázy M1–M4; implementácia až po diskusii.
 - **2026-07-16** — **D-074 (zoskupenie stromu podľa IFC triedy):** pod uzlom s assetmi (≥2 triedy) sa potomkovia zoskupia do rozbaľovacích skupín podľa `ifc_type` s počtom členov (`IfcSpace` prvá, zvyšok abecedne); skupina nie je AIM objekt (bez `/node/` odkazu, open-stav pod `${parentId}::${ifcType}`); čisto prezentačná vrstva v `components/spatial-tree.tsx`, bez zmien data vrstvy/DB.
 - **2026-07-14** — **D-073 (Reality Capture v1):** modul fotiek + statických 360° panorám ukotvených 2D/3D/IfcSpace, obojsmerne. Model „ako dokumenty" (D-018): `object_type='capture'` + prípona `captures`, `object_type='capture_media'` + prípona `capture_media` (analóg `documents`), ukotvenie v rezervovanom `properties._capture` (vzor `_georef`). Prvé `aim_` hrany manifestu (`aim_rel_capture_located`, `aim_rel_capture_media`, export ICDD). Úložisko = Supabase bucket `captures` + server-side `sharp` thumbnaily; 360 = Photo Sphere Viewer host-side (BIM engine je WebGPU → žiadna three.js kolízia). Zápis za env bránou `CAPTURE_WRITE_ENABLED` (D-068/D-072), single-project. 3D piny vo forku (reuse `annotationsSlice`/`AnnotationLayer`). Migrácia `20260716120000`. Zatvára otvorené body D-065.
