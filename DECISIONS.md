@@ -2275,9 +2275,37 @@ guarded write), D-044/D-067 (GUID bridge, AIM karta), D-071 (fork), E3 (document
 
 ---
 
+### D-074 — Zoskupenie prvkov v strome podľa IFC triedy
+**Status:** rozhodnuté (2026-07-16).
+
+**Kontext:** priestorový strom (S1, D-018/D-021) vysypal pod podlažie všetkých potomkov naplocho
+v jednom zozname — na 3NP je to 210 riadkov, kde sa priestory miešajú s dverami, oknami,
+koncovými elementmi VZT atď. Z názvu ani ikony nie je vidieť, čo je `IfcSpace` a čo prvok;
+orientácia v podlaží znamenala scrollovať celý zoznam.
+
+**Rozhodnutie:** medzi uzol a jeho potomkov sa vkladá **rozbaľovacia skupina podľa `ifc_type`**
+(`IfcSpace`, `IfcWall`, …) s počtom členov.
+- Zoskupuje sa **len tam, kde sú medzi deťmi assety** a tried je aspoň 2 — čisto štruktúrne
+  úrovne (site→building→floor) ostávajú ploché.
+- Poradie: priestorová štruktúra (`IfcSpace`) prvá, potom triedy abecedne (`sk` collation).
+- Skupina **nie je objekt v AIM** — nemá `/node/` odkaz, len rozbaľuje; open-stav drží pod
+  syntetickým id `${parentId}::${ifcType}`, takže funguje aj „Rozbaliť/Zbaliť všetko".
+- Štítok = surová IFC trieda; slovník ľudských názvov zámerne nezavádzame (nemáme ho a bol by
+  ďalší zdroj pravdy navyše).
+
+**Dôvod:** `ifc_type` už je v `objects` aj v `SpatialNode` — zoskupenie je čistá prezentačná
+vrstva v `components/spatial-tree.tsx`, bez zásahu do data vrstvy, DB a bez ďalších dotazov.
+
+**Dôsledok:** prvok je o jeden klik hlbšie (skupiny sú default zbalené). `TYPE_ORDER` je
+v klientskom komponente zduplikovaný oproti `SPATIAL_TYPES` — `lib/data/spatial.ts` je
+`server-only` modul, import hodnoty by zhodil klientský build.
+
+---
+
 > Kompaktný reverse-chrono log pridaných/zmenených rozhodnutí. Plný kontext = príslušný
 > D-záznam vyššie.
 
+- **2026-07-16** — **D-074 (zoskupenie stromu podľa IFC triedy):** pod uzlom s assetmi (≥2 triedy) sa potomkovia zoskupia do rozbaľovacích skupín podľa `ifc_type` s počtom členov (`IfcSpace` prvá, zvyšok abecedne); skupina nie je AIM objekt (bez `/node/` odkazu, open-stav pod `${parentId}::${ifcType}`); čisto prezentačná vrstva v `components/spatial-tree.tsx`, bez zmien data vrstvy/DB.
 - **2026-07-14** — **D-073 (Reality Capture v1):** modul fotiek + statických 360° panorám ukotvených 2D/3D/IfcSpace, obojsmerne. Model „ako dokumenty" (D-018): `object_type='capture'` + prípona `captures`, `object_type='capture_media'` + prípona `capture_media` (analóg `documents`), ukotvenie v rezervovanom `properties._capture` (vzor `_georef`). Prvé `aim_` hrany manifestu (`aim_rel_capture_located`, `aim_rel_capture_media`, export ICDD). Úložisko = Supabase bucket `captures` + server-side `sharp` thumbnaily; 360 = Photo Sphere Viewer host-side (BIM engine je WebGPU → žiadna three.js kolízia). Zápis za env bránou `CAPTURE_WRITE_ENABLED` (D-068/D-072), single-project. 3D piny vo forku (reuse `annotationsSlice`/`AnnotationLayer`). Migrácia `20260716120000`. Zatvára otvorené body D-065.
 - **2026-07-14** — **D-072 (georeferencované PDF podklady):** Dalux-style „Locations" — PDF pôdorys naviazaný na podlažie (2-bodová kalibrácia → similarity transform, Z z elevácie podlažia, väzba cez IFC storey GlobalId); nový upstreamovateľný balík `@ifc-lite/drawing-underlay` vo forku (WGSL textúrovaná rovina) + AIM bridge `UNDERLAYS_LOAD`/`UNDERLAY_SAVE`; perzistencia `_georef` v `objects.properties` dokumentu (bez migrácie). Supersedovuje D-038/D-039.
 - **2026-07-12** — **Dodatok D-066 (výber podľa vlastnosti psetu):** `style_in_3d` dostal `property`+`value`(+`pset`) — psety z `v_property_dictionary`, match `or()` nad JSONB cestami na `v_asset_effective` (dedičnosť z typu), case-insensitive presná zhoda; prompt zakazuje aproximovať vlastnosť triedami (fix „nosné prvky" izolovali aj LoadBearing=false).

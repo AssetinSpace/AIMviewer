@@ -13,6 +13,7 @@ import {
   Layers,
   Loader2,
   MapPin,
+  Shapes,
   type LucideIcon,
 } from "lucide-react";
 
@@ -26,6 +27,49 @@ const ICONS: Record<SpatialType, LucideIcon> = {
   space: DoorOpen,
   asset: Box,
 };
+
+/** Poradie typov v strome (`SPATIAL_TYPES` je v server-only module). */
+const TYPE_ORDER: SpatialType[] = ["site", "building", "floor", "space", "asset"];
+
+/** Uzly bez `ifc_type` (nemalo by nastať) spadnú do zberného koša. */
+const UNCLASSIFIED = "Bez IFC triedy";
+
+/**
+ * Deti zoskupené podľa IFC triedy — medzivrstva stromu (napr. `IfcSpace`,
+ * `IfcWall`) nad prvkami podlažia/priestoru.
+ */
+interface ClassGroup {
+  /** Syntetické id pre open-stav: `${parentId}::${ifcType}`. */
+  id: string;
+  label: string;
+  members: SpatialNode[];
+}
+
+/**
+ * Rozdelí deti podľa `ifc_type`. Vracia `null`, keď zoskupovať netreba —
+ * čisto štruktúrne úrovne (site→building→floor) ostávajú ploché, medzivrstva
+ * má zmysel až tam, kde sa miešajú priestory s prvkami.
+ */
+function groupByIfcClass(parentId: string, children: SpatialNode[]): ClassGroup[] | null {
+  if (!children.some((c) => c.object_type === "asset")) return null;
+
+  const groups = new Map<string, ClassGroup>();
+  for (const child of children) {
+    const label = child.ifc_type ?? UNCLASSIFIED;
+    const group = groups.get(label);
+    if (group) group.members.push(child);
+    else groups.set(label, { id: `${parentId}::${label}`, label, members: [child] });
+  }
+  if (groups.size < 2) return null;
+
+  // Poradie: priestorová štruktúra (IfcSpace) pred prvkami, potom abecedne.
+  return [...groups.values()].sort((a, b) => {
+    const ra = TYPE_ORDER.indexOf(a.members[0].object_type);
+    const rb = TYPE_ORDER.indexOf(b.members[0].object_type);
+    if (ra !== rb) return ra - rb;
+    return a.label.localeCompare(b.label, "sk");
+  });
+}
 
 // Default: rozbalené po podlažia (site→building→floor viditeľné, space a nižšie zbalené).
 const DEFAULT_OPEN_DEPTH = 2;
@@ -67,12 +111,63 @@ function useTree() {
   return ctx;
 }
 
+/**
+ * Riadok skupiny IFC triedy — nie je to objekt v AIM, takže na rozdiel od
+ * `TreeNode` nemá odkaz na detail, len rozbaľuje svojich členov.
+ */
+function ClassGroupNode({ group, depth }: { group: ClassGroup; depth: number }) {
+  const { isOpen, toggle } = useTree();
+  const open = isOpen(group.id, depth);
+
+  return (
+    <li>
+      <div
+        className="group/row flex items-center gap-1 rounded-md pr-1 text-sm hover:bg-sidebar-accent/60"
+        style={{ paddingLeft: `${depth * 12 + 4}px` }}
+      >
+        <button
+          type="button"
+          onClick={() => toggle(group.id, depth)}
+          aria-label={open ? "Zbaliť" : "Rozbaliť"}
+          aria-expanded={open}
+          className="flex size-5 shrink-0 items-center justify-center rounded text-muted-foreground hover:text-foreground"
+        >
+          <ChevronRight
+            className={cn("size-3.5 transition-transform", open && "rotate-90")}
+          />
+        </button>
+
+        <button
+          type="button"
+          onClick={() => toggle(group.id, depth)}
+          className="flex min-w-0 flex-1 items-center gap-2 py-1.5 text-left"
+        >
+          <Shapes className="size-4 shrink-0 text-muted-foreground" />
+          <span className="truncate font-medium">{group.label}</span>
+          <span className="ml-auto shrink-0 font-mono text-[0.7rem] text-muted-foreground">
+            {group.members.length}
+          </span>
+        </button>
+      </div>
+
+      {open && (
+        <ul>
+          {group.members.map((member) => (
+            <TreeNode key={member.id} node={member} depth={depth + 1} />
+          ))}
+        </ul>
+      )}
+    </li>
+  );
+}
+
 function TreeNode({ node, depth }: { node: SpatialNode; depth: number }) {
   const pathname = usePathname();
   const { isOpen, toggle } = useTree();
   const isActive = pathname === `/node/${node.id}`;
   const hasChildren = node.children.length > 0;
   const open = isOpen(node.id, depth);
+  const groups = groupByIfcClass(node.id, node.children);
 
   return (
     <li>
@@ -120,9 +215,13 @@ function TreeNode({ node, depth }: { node: SpatialNode; depth: number }) {
 
       {hasChildren && open && (
         <ul>
-          {node.children.map((child) => (
-            <TreeNode key={child.id} node={child} depth={depth + 1} />
-          ))}
+          {groups
+            ? groups.map((group) => (
+                <ClassGroupNode key={group.id} group={group} depth={depth + 1} />
+              ))
+            : node.children.map((child) => (
+                <TreeNode key={child.id} node={child} depth={depth + 1} />
+              ))}
         </ul>
       )}
     </li>
