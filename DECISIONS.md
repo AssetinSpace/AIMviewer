@@ -2302,9 +2302,31 @@ v klientskom komponente zduplikovaný oproti `SPATIAL_TYPES` — `lib/data/spati
 
 ---
 
+### D-075 — CI brána (GitHub Actions)
+**Status:** rozhodnuté (2026-07-16).
+
+**Kontext:** repo nemalo žiadne CI — lint, `tsc`, vitest aj ETL pytest bežali len manuálne,
+hoci sa aktívne mergujú PR (#28–#31). Regresia mohla prejsť do `main` bez povšimnutia.
+
+**Rozhodnutie:** `.github/workflows/ci.yml` s dvoma jobmi na každý push do `main` a PR:
+- **web:** `npm ci` → `npm run lint` → `npm run typecheck` (nový skript `tsc --noEmit`) → `npm run test` (vitest).
+- **etl:** Python 3.11, `pip install -r etl/requirements-dev.txt` → `python -m pytest etl/tests -q`.
+
+LLM evaly (`npm run eval`) v CI zámerne nebežia — potrebujú bežiaci dev server + DB;
+ich kadencia ostáva podľa D-057 (pred commitom zmien LLM vrstvy).
+
+**Dôsledok:** pravidlo `react-hooks/set-state-in-effect` (eslint-config-next) je preladené na
+`warn` — 7 existujúcich výskytov sú legitímne vzory (reset stavu pri zmene propu, fetch-on-mount)
+a ich refaktor by bol rizikový bez úžitku; nové výskyty riešiť podľa
+react.dev/learn/you-might-not-need-an-effect. `@typescript-eslint/no-unused-vars` ignoruje
+`_`-prefix (zámerne nepoužité, napr. fázované API v `hooks/use-ifc-query.ts`).
+
+---
+
 > Kompaktný reverse-chrono log pridaných/zmenených rozhodnutí. Plný kontext = príslušný
 > D-záznam vyššie.
 
+- **2026-07-16** — **D-075 (CI brána):** GitHub Actions workflow `ci.yml` — lint + typecheck + vitest + ETL pytest na push/PR; nový skript `npm run typecheck`; `react-hooks/set-state-in-effect` preladené na warn (7 legitímnych výskytov), `no-unused-vars` ignoruje `_`-prefix. Evaly ostávajú mimo CI (D-057).
 - **2026-07-16** — **D-074 (zoskupenie stromu podľa IFC triedy):** pod uzlom s assetmi (≥2 triedy) sa potomkovia zoskupia do rozbaľovacích skupín podľa `ifc_type` s počtom členov (`IfcSpace` prvá, zvyšok abecedne); skupina nie je AIM objekt (bez `/node/` odkazu, open-stav pod `${parentId}::${ifcType}`); čisto prezentačná vrstva v `components/spatial-tree.tsx`, bez zmien data vrstvy/DB.
 - **2026-07-14** — **D-073 (Reality Capture v1):** modul fotiek + statických 360° panorám ukotvených 2D/3D/IfcSpace, obojsmerne. Model „ako dokumenty" (D-018): `object_type='capture'` + prípona `captures`, `object_type='capture_media'` + prípona `capture_media` (analóg `documents`), ukotvenie v rezervovanom `properties._capture` (vzor `_georef`). Prvé `aim_` hrany manifestu (`aim_rel_capture_located`, `aim_rel_capture_media`, export ICDD). Úložisko = Supabase bucket `captures` + server-side `sharp` thumbnaily; 360 = Photo Sphere Viewer host-side (BIM engine je WebGPU → žiadna three.js kolízia). Zápis za env bránou `CAPTURE_WRITE_ENABLED` (D-068/D-072), single-project. 3D piny vo forku (reuse `annotationsSlice`/`AnnotationLayer`). Migrácia `20260716120000`. Zatvára otvorené body D-065.
 - **2026-07-14** — **D-072 (georeferencované PDF podklady):** Dalux-style „Locations" — PDF pôdorys naviazaný na podlažie (2-bodová kalibrácia → similarity transform, Z z elevácie podlažia, väzba cez IFC storey GlobalId); nový upstreamovateľný balík `@ifc-lite/drawing-underlay` vo forku (WGSL textúrovaná rovina) + AIM bridge `UNDERLAYS_LOAD`/`UNDERLAY_SAVE`; perzistencia `_georef` v `objects.properties` dokumentu (bez migrácie). Supersedovuje D-038/D-039.
