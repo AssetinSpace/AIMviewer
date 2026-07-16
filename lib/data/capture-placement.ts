@@ -80,6 +80,12 @@ export interface CapturePlanPinWire {
   name?: string;
   spaceId: string | null;
   thumbUrl?: string;
+  /** Náhľad aktuálnej snímky — na priame otvorenie fotky/360° z pinu. */
+  previewUrl?: string;
+  /** Originál aktuálnej snímky (HD / equirect pre 360°). */
+  origUrl?: string;
+  /** Orientácia pohľadu pre 360° (radiány). */
+  yaw?: number;
   page: number;
   u: number;
   v: number;

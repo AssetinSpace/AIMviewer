@@ -281,6 +281,9 @@ export async function fetchCapturesForDocument(documentId: string): Promise<Capt
       name: p.name ?? undefined,
       spaceId: p.spaceId,
       thumbUrl: current?.thumbLocation ?? undefined,
+      previewUrl: current?.previewLocation ?? current?.location ?? undefined,
+      origUrl: current?.location ?? undefined,
+      yaw: p.placement?.yaw,
       page: plan.page,
       u: plan.u,
       v: plan.v,
@@ -440,7 +443,12 @@ export async function updateCapturePlacement(
 
 let bucketEnsured = false;
 
-/** Idempotentne založí verejný bucket `captures` (vzor `etl/doc_upload.py`). */
+/**
+ * Idempotentne zabezpečí VEREJNÝ bucket `captures` (vzor `etl/doc_upload.py`).
+ * Ak bucket neexistuje → vytvor public. Ak existuje ale NIE je public →
+ * `updateBucket` na public (inak by `getPublicUrl` vracal 400 a `<img>` by boli
+ * broken — self-heal aj pre bucket vytvorený skôr/privátne).
+ */
 export async function ensureCapturesBucket(): Promise<void> {
   if (bucketEnsured) return;
   const supabase = getSupabaseAdmin();
@@ -449,6 +457,9 @@ export async function ensureCapturesBucket(): Promise<void> {
     const { error } = await supabase.storage.createBucket(CAPTURES_BUCKET, { public: true });
     // Konkurenčný vznik (409) toleruj — bucket už existuje.
     if (error && !/exist/i.test(error.message)) throw new Error(error.message);
+  } else if (!data.public) {
+    const { error } = await supabase.storage.updateBucket(CAPTURES_BUCKET, { public: true });
+    if (error) throw new Error(error.message);
   }
   bucketEnsured = true;
 }
