@@ -3,6 +3,7 @@ import { fetchSidebarNav } from "@/lib/data/nav";
 import { SpatialTree } from "@/components/spatial-tree";
 import { SidebarNav } from "@/components/sidebar-nav";
 import { SidebarShell } from "@/components/sidebar-shell";
+import { SidebarGate } from "@/components/sidebar-gate";
 import { AskDock } from "@/components/ask-dock";
 
 // ISR: viewer je verejný read-only (žiadne auth/cookies), tak render cachujeme
@@ -19,10 +20,14 @@ export default async function ViewerLayout({
 
   return (
     <div className="flex flex-1 overflow-hidden">
-      <SidebarShell>
-        <SpatialTree tree={tree} />
-        <SidebarNav nav={nav} />
-      </SidebarShell>
+      {/* Na /ifc sa sidebar nerenderuje (D-076 viewer-first) — jediný strom je
+          natívny HierarchyPanel embed viewera s AIM dekoráciami. */}
+      <SidebarGate>
+        <SidebarShell>
+          <SpatialTree tree={tree} />
+          <SidebarNav nav={nav} />
+        </SidebarShell>
+      </SidebarGate>
 
       {/* Stránky s koreňom `.full-bleed` (3D viewer) dostanú celú plochu bez
           paddingu a bez scrollu — obsah si výšku manažuje sám. */}
