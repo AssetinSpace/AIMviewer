@@ -2396,6 +2396,13 @@ prekryje base canvas — zoom je ostrý na ľubovoľnej úrovni ako v natívnom 
 scroll/zoom gesta, zahodenie pri opustení render okna. Overené Playwright testom
 (overlay density 1.0 pri ~9× aj ~14×, odstránenie pri oddialení).
 
+**Dodatok — textová vrstva (2026-07-17):** PDF čítačka dostala selekčnú textovú vrstvu
+(pdf.js `TextLayer` cez `renderPdfTextLayer`, scoped CSS `.pdf-doc-text-layer`):
+označovanie a kopírovanie textu ponad canvas ako v natívnom prehliadači. Spany sú
+v percentách strany a fonty cez `--total-scale-factor`, takže zoom je len CSS update
+bez re-renderu; vrstva sa renderuje len pre stránky v render okne a pri opustení sa
+zahodí. Overené Playwright testom (dvojklik/drag selekcia, zarovnanie po zoome).
+
 **Dodatok — odchýlky implementácie M1–M3 od návrhu (2026-07-16):** `document-pane-panel`
 je NAPRAVO od `viewport-3d-panel` (nie vedľa plan pane) — resize handle tak nikdy nesusedí
 s kolabovaným prázdnym panelom a pôvodný split handle ostáva nedotknutý; karty sú kľúčované
