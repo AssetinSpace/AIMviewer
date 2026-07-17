@@ -2485,6 +2485,13 @@ nespájajú, pri viacerých kandidátoch vyhráva najbližší fragment. GlobalI
 `_`/`$` sú payload): index kľúčuje trimmed raw hodnotu a lookup skúša normalizovaný
 aj exaktný kľúč.
 
+**Dodatok (2026-07-17, live feedback):** linky fungujú aj v **PDF čítačke dokumentov**
+(karty dokumentov, `PageIdentifierLinks` — skenuje sa len render okno virtualizácie),
+nie len v kalibrovanom 2D/Split pláne; zhodné kódy majú **jemné bledozelené
+podsvietenie s podčiarknutím** (zdieľaný `IdentifierLinkBoxes` pre obe plochy);
+nastavenia sa otvárajú **ozubeným kolieskom v hlavičke Documents panelu**
+(enable + mapovanie atribútu/property, regex live-test), nie sekciou pod zoznamom.
+
 **Závislosti:** D-072 (plan pane + `storeyGuid`), D-075 (pdf.js infra), D-071 (fork),
 D-044 (GUID bridge); referenčné správanie D-042/D-054 (`_drawing_links`).
 
