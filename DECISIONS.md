@@ -2384,9 +2384,17 @@ pop-out len desktop (PiP API); PostgREST 1000-row cap pri raste počtu dokumento
 
 **Dodatok — ostrý zoom PDF čítačky (2026-07-17):** pôvodný raster strop ≤2400 px robil
 hlboký zoom rozmazaným (CSS upscaling) a portrait strany sa pod-rastrovali (target sa
-viazal na najdlhšiu hranu namiesto šírky). Po oprave raster sleduje zoom až po 4096 px
-(ZOOM_MAX 4→10), portrait target sa koriguje pomerom strán a LRU canvasov je riadená
-pixel budgetom (~32 MP + count cap) namiesto fixného počtu — pamäťová mitigácia ostáva.
+viazal na najdlhšiu hranu namiesto šírky). Po oprave raster sleduje zoom až po 4096 px,
+portrait target sa koriguje pomerom strán a LRU canvasov je riadená pixel budgetom
+(~32 MP + count cap) namiesto fixného počtu — pamäťová mitigácia ostáva.
+
+**Dodatok — vektorový zoom (2026-07-17):** nad base raster pribudol **sharp-crop overlay**:
+keď layout prerastie strop base rastra, viditeľný výrez strany sa re-renderuje z PDF
+vektorov v presnej device mierke (`rasterizePdfRegion`, viewport offsety pdf.js) a
+prekryje base canvas — zoom je ostrý na ľubovoľnej úrovni ako v natívnom PDF prehliadači
+(ZOOM_MAX 16). Crop = viewport + 50 % margin, cap 4096/hranu, prepočet po ustálení
+scroll/zoom gesta, zahodenie pri opustení render okna. Overené Playwright testom
+(overlay density 1.0 pri ~9× aj ~14×, odstránenie pri oddialení).
 
 **Dodatok — odchýlky implementácie M1–M3 od návrhu (2026-07-16):** `document-pane-panel`
 je NAPRAVO od `viewport-3d-panel` (nie vedľa plan pane) — resize handle tak nikdy nesusedí
