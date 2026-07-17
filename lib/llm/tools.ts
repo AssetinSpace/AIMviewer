@@ -3,6 +3,17 @@ import "server-only";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { PDF_LINK_SOURCE } from "@/lib/data/constants";
 import { fetchAllPages } from "@/lib/data/pagination";
+import {
+  COLUMN_RE,
+  DEFAULT_LIMIT,
+  MAX_LIMIT,
+  QUERY_OPS,
+  clampLimit,
+  isUuid,
+  sanitizeIfcType,
+  sanitizeModelName,
+  sanitizeQuery,
+} from "./sanitize";
 import type { ToolDefinition } from "./provider";
 
 /**
@@ -17,8 +28,6 @@ import type { ToolDefinition } from "./provider";
  * nezávisí od formátovania modelu.
  */
 
-const DEFAULT_LIMIT = 20;
-const MAX_LIMIT = 100;
 /** Koľko prvkov naraz zvládne show_in_3d (embed viewer unesie aj stovky GUIDov). */
 const SHOW_3D_CAP = 100;
 /** Max dĺžka JSON payloadu tool výsledku (ochrana kontextu). */
@@ -71,12 +80,6 @@ const DOMAIN_IFC_TYPES: Record<string, string[]> = {
   ],
 };
 
-/** Wire-safe očista selektorových hodnôt (ops formát používa : ; ~ . ako oddeľovače). */
-const sanitizeIfcType = (raw: unknown): string =>
-  String(raw ?? "").replace(/[^A-Za-z0-9]/g, "").trim();
-const sanitizeModelName = (raw: unknown): string =>
-  String(raw ?? "").replace(/[:;~.]/g, "").trim();
-
 /**
  * Whitelist relácií pre generický query_view (celá čitateľná DB, D-056 dodatok).
  * Base `relationships` zámerne chýba — LLM dotazuje len kanonické views (D-051).
@@ -105,12 +108,6 @@ const QUERY_RELATIONS = new Set([
   "rel_assigns_to_group",
   "rel_member_of",
 ]);
-
-/** Povolené operátory filtra query_view (PostgREST). */
-const QUERY_OPS = new Set(["eq", "neq", "gt", "gte", "lt", "lte", "like", "ilike", "is", "in"]);
-
-/** Stĺpec alebo JSONB cesta (properties->Pset_X->>Kľúč) — nič iné neprejde. */
-const COLUMN_RE = /^[a-zA-Z_][a-zA-Z0-9_]*(->>?[a-zA-Z0-9_ .-]+)*$/;
 
 /** Whitelist kanonických views vzťahov (D-051) — jediné povolené `rel_type`. */
 const REL_VIEWS = new Set([
@@ -168,20 +165,6 @@ function routeFor(objectType: string): AskSource["route"] {
   if (objectType === "asset_type") return "type";
   if (objectType === "document") return "drawing";
   return "node";
-}
-
-function clampLimit(raw: unknown): number {
-  const n = typeof raw === "number" && Number.isFinite(raw) ? Math.floor(raw) : DEFAULT_LIMIT;
-  return Math.min(Math.max(n, 1), MAX_LIMIT);
-}
-
-/** Sanitizácia textu do PostgREST `or=`/`ilike` filtra (čiarky/zátvorky = syntax). */
-function sanitizeQuery(raw: unknown): string {
-  return String(raw ?? "").replace(/[,()%]/g, " ").trim().slice(0, 100);
-}
-
-function isUuid(v: string): boolean {
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v);
 }
 
 export const TOOL_DEFINITIONS: ToolDefinition[] = [
