@@ -2468,11 +2468,19 @@ celá klient-side — žiadne ETL, žiadna DB:
 6. **Settings UI** v paneli drawing-underlays: zdroje s poradím, regex s live-test
    poľom, enable/debug prepínače, stav indexu.
 
-**Vedomé limity:** len horizontálny text (rotované popisky sa preskakujú); kód
-rozdelený do viacerých text items sa nespája (SNIM proximity-join z `pdf_link.py` je
-ETL-špecialita, generická verzia by strieľala falošné zhody); sub-token bbox je
-proporčná aproximácia (bez glyph metrík); IFC anotácie/generované 2D labely zatiaľ
-neskenované — matcher je čistá funkcia, dá sa na ne neskôr nasadiť.
+**Vedomé limity:** sub-token bbox je proporčná aproximácia (bez glyph metrík); IFC
+anotácie/generované 2D labely zatiaľ neskenované — matcher je čistá funkcia, dá sa
+na ne neskôr nasadiť; proximity-join spája max. dvojice fragmentov (vzor bare+frag
+z `pdf_link.py`), nie troj- a viacdielne kódy.
+
+**Dodatok (2026-07-17):** na požiadavku doplnené: (1) zdroj identifikátora aj
+**GlobalId (GUID)** atribút — popri Name/Description/ObjectType/Tag/Pset; (2)
+**rotované texty** sa matchujú (box = axis-aligned obal skutočného glyph quadu,
+vertikálne popisky sú klikateľné); (3) **proximity-join rozsekaných kódov** ako v
+`pdf_link.py`: kód rozdelený do dvoch text runs v bubline (`DD01` nad `02.03`,
+alebo vedľa seba) sa spojí v čítacom poradí (zhora nadol / zľava doprava) do
+vzdialenosti `PROXIMITY_PT = 28 pt` a re-testuje voči vzoru; plné zhody sa nikdy
+nespájajú, pri viacerých kandidátoch vyhráva najbližší fragment.
 
 **Závislosti:** D-072 (plan pane + `storeyGuid`), D-075 (pdf.js infra), D-071 (fork),
 D-044 (GUID bridge); referenčné správanie D-042/D-054 (`_drawing_links`).
