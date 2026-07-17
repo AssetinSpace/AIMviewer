@@ -2396,6 +2396,13 @@ prekryje base canvas — zoom je ostrý na ľubovoľnej úrovni ako v natívnom 
 scroll/zoom gesta, zahodenie pri opustení render okna. Overené Playwright testom
 (overlay density 1.0 pri ~9× aj ~14×, odstránenie pri oddialení).
 
+**Dodatok — auto-prepínanie režimu pri dokumentoch (2026-07-17):** klik na **kalibrovaný
+výkres** v Documents paneli otvára rovno Split view jeho podlažia (Dalux správanie;
+plochá PDF karta ostáva ako sekundárna ikona v riadku); nekalibrované výkresy, texty a
+obrázky otvárajú kartu. Otvorenie/fokus karty už nikdy neprebehne neviditeľne: v 2D
+režime sa automaticky klesne do Split (doc pane sa vráti vedľa plánu) a na mobile sa
+split overlay zavrie, aby sa karta ukázala (na telefóne jedna plocha naraz).
+
 **Dodatok — mobile pinch-zoom (2026-07-17):** dvojprstový pinch na mobile predtým padal
 do browser page-zoomu (rozmazané natiahnutie bitmapy — nahlásené zo živého nasadenia
 na iPhone). PDF čítačka aj image viewer teraz pinch zachytávajú samy (pointer events +
