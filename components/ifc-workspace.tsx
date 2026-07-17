@@ -8,6 +8,7 @@ import { X } from "lucide-react";
 import type { UnderlayDrawingWire } from "@/lib/data/drawing";
 import type { DocumentWire } from "@/lib/data/documents";
 import type { CaptureViewerWire } from "@/lib/data/captures";
+import type { TreeDecorations } from "@/lib/data/decoration-counts";
 import type { GuidMap, IfcModel } from "@/lib/data/ifc";
 import type { ViewerApi } from "@/lib/viewer-api";
 import { CaptureGallery } from "@/components/capture-gallery";
@@ -45,6 +46,7 @@ export default function IFCWorkspace({
   documents,
   openDocumentId,
   captures,
+  decorations,
 }: {
   models: IfcModel[];
   guidMap: GuidMap;
@@ -61,6 +63,8 @@ export default function IFCWorkspace({
   openDocumentId?: string;
   /** Reality Capture piny s 3D ukotvením (D-073). */
   captures?: CaptureViewerWire[];
+  /** AIM dekorácie stromu (D-077) — per-GUID badge counts pre embed viewer. */
+  decorations?: TreeDecorations;
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -110,6 +114,7 @@ export default function IFCWorkspace({
         documents={documents}
         openDocumentId={openDocumentId}
         captures={captures}
+        decorations={decorations}
         apiRef={viewerApiRef}
         onPickedElement={handlePickedElement}
         onNavigate={(href) => router.push(href)}

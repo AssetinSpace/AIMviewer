@@ -2499,11 +2499,55 @@ medzera slova = space, väčšia medzera = nový run); PyMuPDF to v referenčnej
 **Závislosti:** D-072 (plan pane + `storeyGuid`), D-075 (pdf.js infra), D-071 (fork),
 D-044 (GUID bridge); referenčné správanie D-042/D-054 (`_drawing_links`).
 
+### D-077 — AIM inspector: viewer-first konsolidácia info vrstvy
+**Status:** rozhodnuté + implementované na vetve (2026-07-17).
+
+**Kontext:** audit (`AUDIT-KONSOLIDACIA-2026-07-17.md`) potvrdil zvyškové duplicity po
+D-067: na `/ifc` dva ľavé stromy elementov (host `spatial-tree.tsx` z DB + fork
+`HierarchyPanel` z IFC súboru), dva vzory detailu prvku (AIM karta v 3D vs
+`ElementInfoPanel` v 2D), psety z dvoch zdrojov bez prepojenia, dve vyhľadávania, mŕtvy
+`filter-bar.tsx`. Rešerš CDE nástrojov (ACC, iTwin, Trimble, Dalux, Solibri, Speckle,
+Bimplus) ukázala konvergentný vzor „link v paneli, záznam v module" — natívne IFC dáta
+a DB dáta sa nikdy nemiešajú do jedného zoznamu.
+
+**Rozhodnutie (viewer-first):** IFC-lite UI je jediná vstupná brána do AIM dát v 3D
+kontexte; celá dátová logika ostáva v hoste.
+1. **AIM inspector:** `AimPanelData` `version: 2` (aditívne typované sekcie
+   `responsibilities`/`captures`/`history` popri v1 poliach) + tab lišta **AIM | IFC**
+   v `PropertiesPanel` forku (`aim/AimInspectorTabs.tsx`; natívny obsah pod AIM tabom
+   skrytý `display:contents` wrapperom — standalone režim bez zmeny). `/api/element/[id]`
+   obohatený reuse-om `fetchNodeSections` + `fetchCaptureSummaryForObject` (NodeSummary
+   polia aditívne zachované); drill-down `AIM_NAVIGATE` → `/node/[id]` bez zmeny.
+2. **Jeden strom:** natívny `HierarchyPanel` dekorovaný per-GUID badges (dokumenty/
+   zodpovednosti/snímky) — bridge `AIM_TREE_DECORATIONS` (Record<guid,{d,r,c}>, po
+   `MODELS_LOADED` + reaktívne), fork `aimDecorationsStore`, rezolúcia riadok→GlobalId
+   cez `guidForEntity`. Host: `lib/data/decorations.ts` (agregácia existujúcich `rel_*`
+   views, **bez migrácie**; pure `buildDecorations` s testami). Host sidebar sa na
+   `/ifc` nerenderuje (`components/sidebar-gate.tsx`); mimo `/ifc` ostáva.
+3. **Jeden render detailu:** `components/aim-panel-view.tsx` (host render AimPanelData,
+   Next `<Link>`); `ElementInfoPanel` v 2D mapuje cez `nodeSummaryToAimPanel` — obsah
+   detailu sa mení už len v `lib/aim-panel.ts`, 2D aj 3D ho zobrazia zhodne.
+4. `filter-bar.tsx` zmazaný (mŕtvy od D-066).
+
+**Dôvod:** rieši dvojstrom štrukturálne (jeden strom, nie skrytý druhý), drží fork
+disciplínu D-071 (do forku idú len dáta/dekorácie ako JSON, žiadna logika) a zodpovedá
+overenému vzoru trhu. Hranica proti „viewer = celá appka": *IFC-lite renderuje len
+generické schémy/dekorácie; dátová logika, plné záznamy a navigácia ostávajú v hoste.*
+
+**Dôsledky:** `/ifc` je hlavný vchod do aplikácie (prehliadanie štruktúry vyžaduje
+načítaný model); `/node`/`/type` = „záznam na preklik" (breadcrumb). Bitemporalita má
+prvé UI využitie (sekcia História GUID, read-only). **Deploy order fork-first** (fork
+toleruje v2 skôr, než ju host posiela; starý viewer neznáme správy ignoruje). Vedomé
+odklady: vstupný bod pre ne-priestorové uzly (typy/osoby/systémy) vo viewri — zatiaľ
+linky v inspectore; psety ostávajú z dvoch zdrojov (file vs DB) bez diffu; mŕtvy
+`ifc-viewer-embed.tsx` je kandidát na upratanie.
+
 ---
 
 > Kompaktný reverse-chrono log pridaných/zmenených rozhodnutí. Plný kontext = príslušný
 > D-záznam vyššie.
 
+- **2026-07-17** — **D-077 (AIM inspector — viewer-first konsolidácia):** audit duplicít (dva ľavé stromy na `/ifc`, dva vzory detailu prvku) + rešerš 7 CDE nástrojov → rozhodnutie viewer-first: `AimPanelData v2` (zodpovednosti/captures/história) + tab lišta AIM | IFC v `PropertiesPanel` forku, per-GUID badge dekorácie natívneho stromu (`AIM_TREE_DECORATIONS`, `lib/data/decorations.ts` bez migrácie), host sidebar sa na `/ifc` nerenderuje (`SidebarGate`), jednotný render detailu `AimPanelView` (2D `ElementInfoPanel` = tá istá schéma), `/api/element` obohatený (reuse `fetchNodeSections`), `filter-bar.tsx` zmazaný. Logika ostáva v hoste (D-071); deploy fork-first. Implementované na vetve `claude/aim-viewer-ifc-consolidation-r7z04q` (oba repá).
 - **2026-07-17** — **D-076 (identifikátorové hyperlinky v 2D IFC-lite prehliadači):** kódy prvkov v texte PDF pôdorysu (pdf.js text items) sa rozpoznávajú konfigurovateľným regexom a renderujú ako klikateľné linky v `DrawingPlanPane`; klik = tie isté selection akcie ako pick v scéne (select + Information panel). Zdroj identifikátora konfigurovateľný per projekt (Name/Description/ObjectType/Tag/Pset.property, fallback poradie), index kód→GlobalId nad všetkými modelmi budovaný raz s cache, duplicity preferujú podlažie výkresu + výber kandidátov, not-found = plain text (debug obrys). Celé genericky vo forku ifc-lite (`lib/identifier-links/`, `identifierLinksSlice`, `IdentifierLinkLayer`, settings v underlay paneli), AIMviewer bez zmien kódu. Testy 27/27 nové, viewer 1768 pass, typecheck čistý.
 - **2026-07-17** — **D-070 dodatok (aplikované na IFClite fork):** viewer fork prebrandovaný cez design kit — `@assetinspace/design-kit` git závislosť v `apps/viewer`, nová vrstva `src/aim/assetin-theme.css` (import po `index.css`): remap upstream Tokyo Night palety (`--tokyo-*`) na semantické `--ds-*` aliasy (povrchy navy, primary/ring brand green, cyan→info, teal/green→success, red→danger, yellow→warning) + shadcn `--color-*` a hierarchy/tabs premenné pre light aj dark; Inter font, assetin favicony a brand `theme-color` v `index.html` (AIM-FORK markery). `.colorful` režim ostáva zámerne upstream. AIMviewer už zmeny nepotreboval.
 - **2026-07-16** — **D-075 M1–M3 implementované (projektová dokumentácia v jednom rozhraní):** fork — prepínač 3D|2D|Split v `MainToolbar`/`MobileToolbar` (`ViewModeSwitcher` + `useViewMode`, derivovaný režim; `underlayPlanFull`/`underlayLastStoreyGuid` v `drawingUnderlaySlice`, `enterPlanView` v `useFloorplanView`, kolabovateľný `viewport-3d-panel`, výber výkresu pri >1 v `DrawingPlanPane`); documents workspace (`documentsSlice` + testy, panel `documents` v registry, `DocumentsPanel` drag&drop, `DocumentPane` karty napravo od 3D, `PdfDocumentView` virtualizovaný ≤2400 px LRU ≤4, `ImageDocumentView`, mobil overlay); bridge `DOCUMENTS_LOAD`/`DOCUMENT_OPEN`/`DOCUMENT_EVENT` (+ testy). AIMviewer — `lib/data/documents.ts` `fetchProjectDocuments()` (kind podľa E3 role/prípony, folder = Výkresy/podlažie alebo purpose, meta revision/status/purpose), push v `ifc-viewer.tsx` po MODELS_LOADED, `?doc=` deep link cez `/ifc` page. Odchýlky v dodatku D-075.

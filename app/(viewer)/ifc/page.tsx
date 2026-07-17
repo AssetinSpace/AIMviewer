@@ -1,6 +1,7 @@
 import { fetchUnderlayDrawings } from "@/lib/data/drawing";
 import { fetchProjectDocuments } from "@/lib/data/documents";
 import { fetchCapturePins } from "@/lib/data/captures";
+import { fetchTreeDecorations } from "@/lib/data/decorations";
 import { fetchGuidMap, getIfcModels } from "@/lib/data/ifc";
 import IFCWorkspace from "@/components/ifc-workspace";
 
@@ -18,7 +19,7 @@ export default async function IFCPage({
 }) {
   const { focus, ops, r, doc } = await searchParams;
 
-  const [models, guidMap, underlays, documents, captures] = await Promise.all([
+  const [models, guidMap, underlays, documents, captures, decorations] = await Promise.all([
     Promise.resolve(getIfcModels()),
     fetchGuidMap(),
     // Georeferencované PDF podklady (D-072) — viewer ich dostane po MODELS_LOADED.
@@ -27,13 +28,15 @@ export default async function IFCPage({
     fetchProjectDocuments(),
     // Reality Capture piny (D-073) — world-ukotvené capture pointy do 3D.
     fetchCapturePins(),
+    // AIM dekorácie stromu (D-077) — per-GUID badge counts pre embed viewer.
+    fetchTreeDecorations(),
   ]);
 
   // Full-bleed: viewer zaberá celú plochu main-u (layout zruší padding aj
   // scroll cez :has(.full-bleed)); navigácia a strom ostávajú v ľavom sidebari.
   return (
     <div className="full-bleed h-full">
-      <IFCWorkspace models={models} guidMap={guidMap} focus={focus} focusNonce={r} ops={ops} underlays={underlays} documents={documents} openDocumentId={doc} captures={captures} />
+      <IFCWorkspace models={models} guidMap={guidMap} focus={focus} focusNonce={r} ops={ops} underlays={underlays} documents={documents} openDocumentId={doc} captures={captures} decorations={decorations} />
     </div>
   );
 }
