@@ -274,6 +274,33 @@ nerenderuje vôbec.
 - **Dopad na dátový model:** žiadny (číta existujúci `fetchSpatialTree`).
 - **Náročnosť:** stredná (1–2 týždne vrátane fork testov a sync réžie).
 
+### Variant B′ — Viewer-first: natívny IFC strom = jediný strom, AIM ho len dekoruje
+
+**Popis:** alternatíva k B (po diskusii 2026-07-17 preferovaná). Neposiela sa
+paralelný DB strom — jediným stromom je natívny `HierarchyPanel` IFC-lite
+(postavený zo súboru) a host ho po `MODELS_LOADED` **dekoruje** cez bridge
+(`AIM_TREE_DECORATIONS`: per-GUID badges „dokumenty (n) / zodpovednosti / fotky",
+prípadne AIM názov). Klik = selekcia + AIM inspector (A); drill-down =
+`AIM_NAVIGATE` → `/node/[id]`. Celá logika (graf, queries, SSR záznamy, AI)
+ostáva v hoste — IFC-lite UI je len vstupná brána. Host `SpatialTree` sa na
+`/ifc` prestane renderovať.
+
+- **Výhody:** skutočne jeden strom (nie dva prepínateľné); najmenší možný fork
+  zásah spomedzi B/C (dekorácie riadkov, žiadna nová hierarchia); jedna
+  navigačná cesta strom → inspector → záznam.
+- **Nevýhody / vedomé straty:**
+  1. **Ne-priestorové uzly** (`SidebarNav`: typy assetov, osoby, organizácie,
+     systémy, dokumenty) a budúce DB-only assety bez geometrie (D-065) v IFC
+     strome nikdy nebudú — potrebujú nový vstupný bod (sekcie/linky v AIM
+     inspectore, register stránka, alebo neskôr vlastný „AIM" panel v panel
+     registry viewera).
+  2. **Prehliadanie štruktúry vyžaduje načítaný model** (WASM parse) — `/ifc`
+     sa týmto stáva hlavným vchodom do aplikácie, `/node` stránky klesajú na
+     „záznam na preklik" (navigácia tam = breadcrumb, bez stromu).
+- **Dopad na dátový model:** žiadny.
+- **Náročnosť:** stredná-nízka (A + dni až týždeň na dekorácie a vypnutie
+  host stromu; + práca na novom domove pre ne-priestorové uzly).
+
 ### Variant C — Full workspace convergence: viewer = celé UI
 
 **Popis:** celé AIM UI presunúť do forku — viewer sa stane shellom (stromy, detail,
@@ -292,11 +319,15 @@ postupne deprecated v prospech in-viewer záznamov.
 
 ### Odporúčanie
 
-**Variant A hneď, B ako nadstavbu keď bude bolieť dvojstrom, C nerobiť.**
-A je najkratšia cesta k „jednej zjednotenej vrstve s drill-downom", nemení dátový
-model, drží fork disciplínu D-071 a zodpovedá konvergentnému vzoru trhu („link
-v paneli, záznam v module"). B riešiť až po validácii A na používateľoch — pridáva
-fork náklad, ktorý sa oplatí len ak dvojstrom reálne prekáža aj po zbalení sidebaru.
+**A + B′ ako jeden smer (viewer-first), C nerobiť.** *(Aktualizované po diskusii
+2026-07-17: pôvodné odporúčanie „A hneď, B neskôr" sa posunulo — primárny problém
+je dvojstrom a zámer je otvárať AIM logiku z IFC-lite UI, pričom celá logika
+ostáva v hoste.)* Poradie: (1) A — AIM inspector, bez neho nemá strom kam
+drill-downovať; (2) B′ — dekorácie stromu + vypnutie host stromu na `/ifc`;
+(3) nový domov pre ne-priestorové uzly (najprv lacno: linky v inspectore,
+`SidebarNav` ostáva na ne-3D stránkach). Hranica proti C platí ďalej: *IFC-lite
+renderuje len generické schémy/dekorácie; dátová logika, plné záznamy a navigácia
+ostávajú v hoste.*
 
 ---
 
@@ -314,7 +345,8 @@ Speckle, Bimplus) ukazuje konvergentný vzor: natívne IFC dáta a DB dáta sa n
 nemiešajú do jedného zoznamu; dokumenty/zodpovednosti/fotky sa viažu na element
 ako „link v paneli, záznam v module" s tabovaným inspectorom.
 
-**Rozhodnutie:**
+**Rozhodnutie (viewer-first, A + B′):** IFC-lite UI je jediná vstupná brána do
+AIM dát v 3D kontexte; celá dátová logika ostáva v hoste.
 1. AIM karta (D-067) sa povýši na **AIM inspector**: `AimPanelData` `version: 2`
    s typovanými sekciami (documents, persons, captures, history) a tab layoutom
    **AIM | IFC** v natívnom `PropertiesPanel` forku (render v `aim/`, existujúce
@@ -322,16 +354,23 @@ ako „link v paneli, záznam v module" s tabovaným inspectorom.
    s drill-down cez `AIM_NAVIGATE` na `/node/[id]`.
 2. `ElementInfoPanel` (2D) renderuje tú istú `AimPanelData` schému — jeden zdroj
    pravdy pre „detail prvku" naprieč 2D/3D.
-3. Host sidebar (strom + nav) sa na `/ifc` defaultne zbalí; mimo `/ifc` ostáva.
-4. `filter-bar.tsx` sa maže.
-5. Zjednotenie stromov (DB hierarchia ako prepínateľná hierarchia vo fork
-   `HierarchyPanel`, bridge `AIM_TREE_LOAD`) sa odkladá ako nadstavbový míľnik —
-   podmienený UX validáciou po bode 3.
+3. **Jediný strom = natívny `HierarchyPanel`** IFC-lite, dekorovaný cez bridge
+   `AIM_TREE_DECORATIONS` (per-GUID badges: dokumenty/zodpovednosti/fotky,
+   voliteľne AIM názov). Host `SpatialTree` sa na `/ifc` nerenderuje;
+   na `/node`/`/type` stránkach sidebar (strom + nav) zatiaľ ostáva.
+4. Ne-priestorové uzly (typy, osoby, systémy, dokumenty; budúce DB-only assety
+   D-065) dostanú vstupný bod v AIM inspectore (linky/sekcie); väčšie riešenie
+   (register / „AIM" panel v panel registry viewera) sa odkladá podľa potreby.
+5. `filter-bar.tsx` sa maže.
 
-**Dôvod:** najkratšia cesta k jednej info vrstve bez zmeny dátového modelu a bez
-rozširovania fork touchpointov (D-071); zodpovedá overenému vzoru trhu.
+**Dôvod:** rieši potvrdený dvojstrom štrukturálne (jeden strom, nie skrytý
+druhý), drží fork disciplínu D-071 (do forku idú len dáta a dekorácie, žiadna
+logika) a zodpovedá overenému vzoru trhu („link v paneli, záznam v module").
 
-**Dôsledok:** bitemporalita dostane prvé UI využitie (sekcia História z
-`guid_history` + `valid_from/valid_until`), zatiaľ read-only. Psety zostávajú
-z dvoch zdrojov (file vs DB) — vedomé; prípadný diff/indikátor rozdielov je
-samostatný budúci bod.
+**Dôsledok:** `/ifc` sa stáva hlavným vchodom do aplikácie — prehliadanie
+štruktúry vyžaduje načítaný model; `/node` stránky sú „záznam na preklik"
+(breadcrumb navigácia). Bitemporalita dostane prvé UI využitie (sekcia História
+z `guid_history` + `valid_from/valid_until`), zatiaľ read-only. Psety zostávajú
+z dvoch zdrojov (file vs DB) — vedomé; diff/indikátor rozdielov je samostatný
+budúci bod. Hranica proti variantu C: *IFC-lite renderuje len generické
+schémy/dekorácie; dátová logika, plné záznamy a navigácia ostávajú v hoste.*
