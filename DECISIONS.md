@@ -2396,6 +2396,14 @@ prekryje base canvas — zoom je ostrý na ľubovoľnej úrovni ako v natívnom 
 scroll/zoom gesta, zahodenie pri opustení render okna. Overené Playwright testom
 (overlay density 1.0 pri ~9× aj ~14×, odstránenie pri oddialení).
 
+**Dodatok — mobile pinch-zoom (2026-07-17):** dvojprstový pinch na mobile predtým padal
+do browser page-zoomu (rozmazané natiahnutie bitmapy — nahlásené zo živého nasadenia
+na iPhone). PDF čítačka aj image viewer teraz pinch zachytávajú samy (pointer events +
+`touch-action: pan-x pan-y`, iOS `gesturestart` preventDefault) a ženú ním vlastný ostrý
+zoom s kotvou na midpoint prstov; double-tap prepína fit ↔ 3×; zoom tlačidlá a Ctrl+wheel
+kotvia na stred/kurzor. Overené CDP touch testom (pinch 8.3× rozostup → 833 % zoom,
+canvas re-raster 363→2173 px, double-tap 100 %↔300 %).
+
 **Dodatok — textová vrstva (2026-07-17):** PDF čítačka dostala selekčnú textovú vrstvu
 (pdf.js `TextLayer` cez `renderPdfTextLayer`, scoped CSS `.pdf-doc-text-layer`):
 označovanie a kopírovanie textu ponad canvas ako v natívnom prehliadači. Spany sú
