@@ -2480,7 +2480,10 @@ vertikálne popisky sú klikateľné); (3) **proximity-join rozsekaných kódov*
 `pdf_link.py`: kód rozdelený do dvoch text runs v bubline (`DD01` nad `02.03`,
 alebo vedľa seba) sa spojí v čítacom poradí (zhora nadol / zľava doprava) do
 vzdialenosti `PROXIMITY_PT = 28 pt` a re-testuje voči vzoru; plné zhody sa nikdy
-nespájajú, pri viacerých kandidátoch vyhráva najbližší fragment.
+nespájajú, pri viacerých kandidátoch vyhráva najbližší fragment. GlobalId zdroj je
+**case-sensitívny** (výnimka z normalizácie — IFC GUID rozlišuje veľkosť písmen,
+`_`/`$` sú payload): index kľúčuje trimmed raw hodnotu a lookup skúša normalizovaný
+aj exaktný kľúč.
 
 **Závislosti:** D-072 (plan pane + `storeyGuid`), D-075 (pdf.js infra), D-071 (fork),
 D-044 (GUID bridge); referenčné správanie D-042/D-054 (`_drawing_links`).
