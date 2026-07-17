@@ -2430,11 +2430,59 @@ v DOM. Host `DOCUMENT_EVENT` zatiaľ len prijíma (no-op) — recents/analytics 
 (bridge/AIM karta), D-042/D-054 (`/drawing/[id]` + `_drawing_links`), D-063 (full-text
 deep-linky), E3/D-032/D-036 (documents + Storage).
 
+### D-076 — Identifikátorové hyperlinky v 2D IFC-lite prehliadači
+**Status:** rozhodnuté + implementované (2026-07-17), vetva
+`claude/ifc-identifier-hyperlinks-jzd5p5` (fork ifc-lite; AIMviewer len docs).
+
+**Kontext:** PDF prehliadačka dokumentov (Assetin Archives, `/drawing/[id]`) už má
+identifikátor → hyperlink → preview: kódy prvkov (SNIM `DD02.05.04`) detekuje ETL
+(`etl/pdf_link.py`, PyMuPDF + regexy zo schémy), regióny persistuje do
+`objects.properties._drawing_links` a klient (`RegionBox` → `onSelect` →
+`ElementInfoPanel`) ich renderuje ako klikateľné hotspoty — rovnaká akcia ako klik na
+prvok v 3D modeli. Rovnaké správanie chceme v 2D IFC-lite prehliadači (plan pane s PDF
+underlay, D-072/D-075).
+
+**Rozhodnutie:** feature žije **genericky vo forku ifc-lite** (línia D-071/D-075),
+celá klient-side — žiadne ETL, žiadna DB:
+1. **Konfigurovateľný zdroj identifikátora** (rôzni BIM koordinátori ukladajú kód
+   inak): `Name` / `Description` / `ObjectType` / `Tag` / custom **Pset + property**
+   (napr. `Pset_Custom.ElementCode`), s **fallback poradím** (prvý zdroj, ktorého
+   hodnota po normalizácii matchuje vzor, vyhráva). Per-projekt persistencia
+   (localStorage kľúčovaný názvom primárneho modelu); host push cez bridge je
+   neskorší kandidát.
+2. **Tvar kódu = konfigurovateľný regex** (default pokrýva `DD.01.02.003` aj
+   `DD01.06.03`), aby sa nechytali náhodné zhody (kóty, mierky). Normalizácia:
+   case-insensitive, trim, medzery/pomlčky/podčiarkovníky → bodky.
+3. **Index `normalizovaný kód → GlobalId(y)`** sa buduje raz nad všetkými
+   federovanými modelmi (chunkované s yieldom, signature-guard proti duplicitným
+   buildom, cache v store, invalidácia pri zmene configu/modelov). Lacné stĺpcové
+   zdroje čítajú columnar EntityTable; `Tag`/pset idú cez on-demand extraktory.
+4. **Matchovanie nad výkresom:** pdf.js text items stránky (`getPdfPageTextItems`)
+   → tokeny → regex → klikateľné boxy v page-point súradniciach
+   (`IdentifierLinkLayer` v `DrawingPlanPane`). Klik volá **presne tie isté store
+   akcie ako pick v scéne** (`setSelectedEntityId` + `setSelectedEntity` +
+   `showWorkspacePanel('properties')`) — jeden zdroj pravdy, iný vstupný trigger.
+5. **Duplicitné kódy:** preferencia prvkov na podlaží výkresu
+   (`placement.storeyGuid`); zvyšná nejednoznačnosť = malý výber kandidátov.
+   **Kód bez zhody v modeli** = bežný text; v debug móde čiarkovaný obrys.
+6. **Settings UI** v paneli drawing-underlays: zdroje s poradím, regex s live-test
+   poľom, enable/debug prepínače, stav indexu.
+
+**Vedomé limity:** len horizontálny text (rotované popisky sa preskakujú); kód
+rozdelený do viacerých text items sa nespája (SNIM proximity-join z `pdf_link.py` je
+ETL-špecialita, generická verzia by strieľala falošné zhody); sub-token bbox je
+proporčná aproximácia (bez glyph metrík); IFC anotácie/generované 2D labely zatiaľ
+neskenované — matcher je čistá funkcia, dá sa na ne neskôr nasadiť.
+
+**Závislosti:** D-072 (plan pane + `storeyGuid`), D-075 (pdf.js infra), D-071 (fork),
+D-044 (GUID bridge); referenčné správanie D-042/D-054 (`_drawing_links`).
+
 ---
 
 > Kompaktný reverse-chrono log pridaných/zmenených rozhodnutí. Plný kontext = príslušný
 > D-záznam vyššie.
 
+- **2026-07-17** — **D-076 (identifikátorové hyperlinky v 2D IFC-lite prehliadači):** kódy prvkov v texte PDF pôdorysu (pdf.js text items) sa rozpoznávajú konfigurovateľným regexom a renderujú ako klikateľné linky v `DrawingPlanPane`; klik = tie isté selection akcie ako pick v scéne (select + Information panel). Zdroj identifikátora konfigurovateľný per projekt (Name/Description/ObjectType/Tag/Pset.property, fallback poradie), index kód→GlobalId nad všetkými modelmi budovaný raz s cache, duplicity preferujú podlažie výkresu + výber kandidátov, not-found = plain text (debug obrys). Celé genericky vo forku ifc-lite (`lib/identifier-links/`, `identifierLinksSlice`, `IdentifierLinkLayer`, settings v underlay paneli), AIMviewer bez zmien kódu. Testy 27/27 nové, viewer 1768 pass, typecheck čistý.
 - **2026-07-16** — **D-075 M1–M3 implementované (projektová dokumentácia v jednom rozhraní):** fork — prepínač 3D|2D|Split v `MainToolbar`/`MobileToolbar` (`ViewModeSwitcher` + `useViewMode`, derivovaný režim; `underlayPlanFull`/`underlayLastStoreyGuid` v `drawingUnderlaySlice`, `enterPlanView` v `useFloorplanView`, kolabovateľný `viewport-3d-panel`, výber výkresu pri >1 v `DrawingPlanPane`); documents workspace (`documentsSlice` + testy, panel `documents` v registry, `DocumentsPanel` drag&drop, `DocumentPane` karty napravo od 3D, `PdfDocumentView` virtualizovaný ≤2400 px LRU ≤4, `ImageDocumentView`, mobil overlay); bridge `DOCUMENTS_LOAD`/`DOCUMENT_OPEN`/`DOCUMENT_EVENT` (+ testy). AIMviewer — `lib/data/documents.ts` `fetchProjectDocuments()` (kind podľa E3 role/prípony, folder = Výkresy/podlažie alebo purpose, meta revision/status/purpose), push v `ifc-viewer.tsx` po MODELS_LOADED, `?doc=` deep link cez `/ifc` page. Odchýlky v dodatku D-075.
 - **2026-07-16** — **D-075 (kandidát: projektová dokumentácia v jednom rozhraní):** koncept z analýzy CDE prístupov (Dalux/Revizto/ACC/Procore) — prvotriedny prepínač 3D|2D|Split v toolbare ifc-lite (derivovaný režim nad D-072 flagmi, `underlayPlanFull`), documents panel + karty dokumentov v resizable center pane (textové PDF virtualizovane, obrázky), bridge `DOCUMENTS_LOAD`/`DOCUMENT_OPEN`/`DOCUMENT_EVENT`; genericky vo forku (standalone s lokálnymi súbormi), AIMviewer dodá dáta; `/drawing/[id]` ostáva. Fázy M1–M4; implementácia až po diskusii.
 - **2026-07-16** — **D-074 (zoskupenie stromu podľa IFC triedy):** pod uzlom s assetmi (≥2 triedy) sa potomkovia zoskupia do rozbaľovacích skupín podľa `ifc_type` s počtom členov (`IfcSpace` prvá, zvyšok abecedne); skupina nie je AIM objekt (bez `/node/` odkazu, open-stav pod `${parentId}::${ifcType}`); čisto prezentačná vrstva v `components/spatial-tree.tsx`, bez zmien data vrstvy/DB.
