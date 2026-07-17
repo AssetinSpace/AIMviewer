@@ -28,14 +28,24 @@ export interface DocumentWire {
 }
 
 const IMAGE_EXT_RE = /\.(png|jpe?g|gif|webp|avif|bmp|svg)$/i;
+const PDF_EXT_RE = /\.pdf($|\?)/i;
+
+/** Mime podľa prípony verejnej URL — viewer podľa neho routuje viewery. */
+function mimeFor(location: string): string | null {
+  if (PDF_EXT_RE.test(location)) return "application/pdf";
+  const m = IMAGE_EXT_RE.exec(location);
+  if (!m) return null;
+  const ext = m[1].toLowerCase();
+  return `image/${ext === "jpg" ? "jpeg" : ext === "svg" ? "svg+xml" : ext}`;
+}
 
 async function fetchProjectDocumentsImpl(): Promise<DocumentWire[]> {
   const supabase = getSupabaseAdmin();
 
   // Bez stránkovania zámerne (vzor fetchUnderlayDrawings): dokumentov je ~13
   // (E3), hlboko pod PostgREST capom 1000. Pri multi-projekte (D-033) prehodnotiť.
-  // 1) všetky dokumenty s verejným súborom v Supabase Storage.
-  const [objsRes, docsRes] = await Promise.all([
+  // Tri nezávislé selecty naraz — len rel dotaz nižšie potrebuje floorIds.
+  const [objsRes, docsRes, floorsRes] = await Promise.all([
     supabase
       .from("objects")
       .select("id, name")
@@ -44,20 +54,20 @@ async function fetchProjectDocumentsImpl(): Promise<DocumentWire[]> {
       .from("documents")
       .select("id, location, storage_type, revision, status, purpose")
       .eq("storage_type", "supabase"),
+    supabase
+      .from("objects")
+      .select("id, name, ifc_guid")
+      .eq("object_type", "floor"),
   ]);
   if (objsRes.error) throw new Error(objsRes.error.message);
   if (docsRes.error) throw new Error(docsRes.error.message);
+  if (floorsRes.error) throw new Error(floorsRes.error.message);
   const docById = new Map((docsRes.data ?? []).map((d) => [d.id as string, d]));
 
-  // 2) väzba podlažie → výkres (E3, role='drawing') určuje kind='drawing',
-  //    storeyGuid (IFC GlobalId podlažia) a folder (názov podlažia).
-  const { data: floors, error: fErr } = await supabase
-    .from("objects")
-    .select("id, name, ifc_guid")
-    .eq("object_type", "floor");
-  if (fErr) throw new Error(fErr.message);
+  // Väzba podlažie → výkres (E3, role='drawing') určuje kind='drawing',
+  // storeyGuid (IFC GlobalId podlažia) a folder (názov podlažia).
   const floorById = new Map(
-    (floors ?? []).map((f) => [
+    (floorsRes.data ?? []).map((f) => [
       f.id as string,
       { name: (f.name as string | null) ?? "", guid: (f.ifc_guid as string | null) ?? "" },
     ])
@@ -87,11 +97,16 @@ async function fetchProjectDocumentsImpl(): Promise<DocumentWire[]> {
     const doc = docById.get(id);
     const location = (doc?.location as string | null) ?? null;
     if (!doc || !location) continue; // bez verejného súboru niet čo zobraziť
+    // D-075 v1 = PDF + obrázky. Iné formáty (docx, dwg, zip…) sa neposielajú —
+    // viewer by ich kŕmil do pdf.js a ukázal rozbitú kartu; ostávajú dostupné
+    // cez /drawing/[id] resp. priamy link, kým nepríde ich viewer.
+    const mime = mimeFor(location);
+    if (!mime) continue;
     const name = (obj.name as string | null) ?? id;
     const floor = drawingFloorByDocId.get(id);
     const kind: DocumentWire["kind"] = floor
       ? "drawing"
-      : IMAGE_EXT_RE.test(location)
+      : mime.startsWith("image/")
         ? "image"
         : "document";
 
@@ -113,6 +128,7 @@ async function fetchProjectDocumentsImpl(): Promise<DocumentWire[]> {
       name,
       kind,
       url: location,
+      mime,
       ...(floor?.guid ? { storeyGuid: floor.guid } : {}),
       ...(folder ? { folder } : {}),
       ...(Object.keys(meta).length > 0 ? { meta } : {}),

@@ -53,7 +53,7 @@ type OutboundMessage =
   // Klik na Reality Capture pin v 3D (D-073) — host otvorí galériu/panorámu.
   | { source: typeof SOURCE; type: "CAPTURE_PIN_CLICK"; captureId: string }
   // Karta dokumentu otvorená/zavretá vo viewri (D-075) — recents/analytics.
-  | { source: typeof SOURCE; type: "DOCUMENT_EVENT"; documentId: string; event: "opened" | "closed"; page?: number };
+  | { source: typeof SOURCE; type: "DOCUMENT_EVENT"; documentId: string; event: "opened" | "closed" };
 
 /**
  * Viewer operácia AI docku (D-066) — kompaktný wire formát v URL parametri
@@ -460,6 +460,23 @@ export function IFCViewer({
     post({ type: "CAPTURES_LOAD", captures: toCapturePins(captures ?? []) });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [captures]);
+
+  // ── Dokumenty (D-075) — re-send po zmene (router.refresh po ETL/uploade).
+  // Pred MODELS_LOADED ich pošle handler MODELS_LOADED vyššie.
+  useEffect(() => {
+    if (!loadedRef.current) return;
+    post({ type: "DOCUMENTS_LOAD", documents: documents ?? [] });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [documents]);
+
+  // ── `?doc=` deep link pri soft-navigácii (D-075): handler MODELS_LOADED ho
+  // pokrýva len pri prvom otvorení stránky — na už načítanej scéne sa iframe
+  // neremountuje a MODELS_LOADED znova nepríde, takže sa posiela reaktívne.
+  useEffect(() => {
+    if (!loadedRef.current || !openDocumentId) return;
+    post({ type: "DOCUMENT_OPEN", documentId: openDocumentId });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openDocumentId]);
 
   // Misconfigurácia (nevalidná NEXT_PUBLIC_IFC_VIEWER_URL) — fail-closed UI.
   if (!viewerOrigin || !src) {
