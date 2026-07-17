@@ -2,13 +2,13 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import { nodeSummaryToAimPanel } from "@/lib/aim-panel";
+import { nodeSummaryToAimPanel, type ElementDetail } from "@/lib/aim-panel";
 import type { SelectedElement } from "@/lib/data/drawing";
 import type { UnderlayDrawingWire } from "@/lib/data/drawing";
 import type { DocumentWire } from "@/lib/data/documents";
-import type { CaptureSummary, CaptureViewerWire } from "@/lib/data/captures";
+import type { CaptureViewerWire } from "@/lib/data/captures";
+import type { TreeDecorations } from "@/lib/data/decoration-counts";
 import type { GuidMap, IfcModel } from "@/lib/data/ifc";
-import type { NodeSummary } from "@/lib/data/object";
 import type { ViewerApi } from "@/lib/viewer-api";
 
 /**
@@ -150,6 +150,8 @@ interface Props {
   openDocumentId?: string;
   /** Reality Capture piny s 3D ukotvením (D-073) — poslané po MODELS_LOADED. */
   captures?: CaptureViewerWire[];
+  /** AIM dekorácie stromu (D-076) — per-GUID badge counts, po MODELS_LOADED. */
+  decorations?: TreeDecorations;
   apiRef?: React.RefObject<ViewerApi | null>;
   onSelect?: (element: SelectedElement) => void;
   onPickedElement?: (objectId: string, guid: string) => void;
@@ -169,6 +171,7 @@ export function IFCViewer({
   documents,
   openDocumentId,
   captures,
+  decorations,
   apiRef,
   onSelect,
   onPickedElement,
@@ -248,19 +251,16 @@ export function IFCViewer({
 
     const controller = new AbortController();
     aimAbortRef.current = controller;
-    Promise.all([
-      fetch(`/api/element/${objectId}`, { signal: controller.signal }).then((r) => {
+    // Jeden fetch: /api/element vracia od D-076 obohatený detail vrátane
+    // capture súhrnu (paralelný /api/captures/summary z D-073 už netreba).
+    fetch(`/api/element/${objectId}`, { signal: controller.signal })
+      .then((r) => {
         if (!r.ok) throw new Error(String(r.status));
-        return r.json() as Promise<NodeSummary>;
-      }),
-      // Reality Capture súhrn (D-073) — best-effort; nesmie zhodiť AIM kartu.
-      fetch(`/api/captures/summary?object=${objectId}`, { signal: controller.signal })
-        .then((r) => (r.ok ? (r.json() as Promise<CaptureSummary>) : null))
-        .catch(() => null),
-    ])
-      .then(([summary, captures]) => {
+        return r.json() as Promise<ElementDetail>;
+      })
+      .then((detail) => {
         if (aimGuidRef.current !== guid) return; // medzičasom iná selekcia
-        post({ type: "AIM_PANEL_DATA", guid, data: nodeSummaryToAimPanel(summary, guid, captures) });
+        post({ type: "AIM_PANEL_DATA", guid, data: nodeSummaryToAimPanel(detail, guid) });
       })
       .catch((err: unknown) => {
         if (controller.signal.aborted || aimGuidRef.current !== guid) return;
@@ -349,6 +349,10 @@ export function IFCViewer({
           // je host-only (navigácia po kliku), do viewera sa neposiela.
           if (captures && captures.length > 0) {
             post({ type: "CAPTURES_LOAD", captures: toCapturePins(captures) });
+          }
+          // AIM dekorácie stromu (D-076) — badge counts per GUID.
+          if (decorations && Object.keys(decorations).length > 0) {
+            post({ type: "AIM_TREE_DECORATIONS", decorations });
           }
           break;
         case "ENTITY_SELECTED": {
@@ -468,6 +472,14 @@ export function IFCViewer({
     post({ type: "DOCUMENTS_LOAD", documents: documents ?? [] });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [documents]);
+
+  // ── AIM dekorácie stromu (D-076) — re-send po zmene (router.refresh po ETL).
+  // Pred MODELS_LOADED ich pošle handler MODELS_LOADED vyššie.
+  useEffect(() => {
+    if (!loadedRef.current) return;
+    post({ type: "AIM_TREE_DECORATIONS", decorations: decorations ?? {} });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [decorations]);
 
   // ── `?doc=` deep link pri soft-navigácii (D-075): handler MODELS_LOADED ho
   // pokrýva len pri prvom otvorení stránky — na už načítanej scéne sa iframe

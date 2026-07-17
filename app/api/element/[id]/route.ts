@@ -1,11 +1,15 @@
 import { NextResponse } from "next/server";
 
 import { fetchNodeSummary } from "@/lib/data/object";
+import { fetchNodeSections } from "@/lib/data/relations";
+import { fetchCaptureSummaryForObject } from "@/lib/data/captures";
+import type { ElementDetail } from "@/lib/aim-panel";
 
 /**
- * Kompaktný súhrn prvku pre bočný info-panel prehliadačky výkresov (D-042 D).
- * Klient (panel) ho volá pri kliknutí na región — zobrazí detail bez opustenia
- * výkresu. Server-side cez `service_role` (D-026), cachované (ISR).
+ * Detail prvku pre AIM inspector v 3D (D-076) a bočný info-panel prehliadačky
+ * výkresov (D-042 D). Od D-076 obohatený o sekcie uzla (zodpovednosti, história
+ * GUID) a capture súhrn — NodeSummary polia ostávajú aditívne zachované.
+ * Server-side cez `service_role` (D-026), cachované (ISR).
  */
 
 const UUID_RE =
@@ -22,14 +26,24 @@ export async function GET(
   }
 
   try {
-    const summary = await fetchNodeSummary(id);
+    const [summary, sections, captures] = await Promise.all([
+      fetchNodeSummary(id),
+      fetchNodeSections(id),
+      fetchCaptureSummaryForObject(id),
+    ]);
     if (!summary) {
       return NextResponse.json({ error: "not found" }, { status: 404 });
     }
+    const detail: ElementDetail = {
+      ...summary,
+      responsibilities: sections.responsibilities,
+      guidHistory: sections.guidHistory,
+      captures,
+    };
     // Read-only súhrn (revaliduje sa s ostatnými AIM dátami po 60 s). Cache v
     // prehliadači + na CDN → opakovaný klik na ten istý kód vo výkrese je okamžitý,
     // bez HTTP round-tripu na server (D-030 perf, dodatok).
-    return NextResponse.json(summary, {
+    return NextResponse.json(detail, {
       headers: {
         "Cache-Control":
           "public, max-age=60, s-maxage=60, stale-while-revalidate=300",

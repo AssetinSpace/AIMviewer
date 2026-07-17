@@ -1,5 +1,6 @@
 import type { NodeSummary } from "@/lib/data/object";
 import type { CaptureSummary } from "@/lib/data/capture-placement";
+import type { NodeSectionsData } from "@/lib/data/relations";
 
 /**
  * AIM karta v natívnom paneli ifclite — render schéma posielaná cez
@@ -12,7 +13,8 @@ import type { CaptureSummary } from "@/lib/data/capture-placement";
  * AIM_NAVIGATE a parent appka naviguje.
  */
 export interface AimPanelData {
-  version: 1;
+  /** v2 (D-076) je aditívna — všetky v2 polia sú voliteľné, v1 render beží ďalej. */
+  version: 1 | 2;
   /** Echo GUID-u vybraného elementu — viewer ním zahadzuje stale odpovede. */
   guid: string;
   title: string;
@@ -24,6 +26,24 @@ export interface AimPanelData {
   }[];
   documents?: { name: string; href: string; badge?: string }[];
   actions?: { label: string; href: string; primary?: boolean }[];
+  // --- v2 typované sekcie (D-076: AIM inspector) ---
+  /** Zodpovedné osoby/organizácie (rel_assigns_to_actor). */
+  responsibilities?: { name: string; role: string; org?: string; href?: string }[];
+  /** Reality Capture súhrn — počet + host link na galériu priestoru. */
+  captures?: { count: number; href: string };
+  /** História GUID (bitemporálna platnosť; `active` = aktuálny GUID). */
+  history?: { guid: string; validFrom: string; validUntil?: string; active: boolean }[];
+}
+
+/**
+ * Obohatený detail elementu z GET /api/element/[id] (D-076): NodeSummary +
+ * sekcie uzla (zodpovednosti, história GUID) + capture súhrn. Aditívne nad
+ * NodeSummary — starší klient (ElementInfoPanel pred D-076) polia ignoruje.
+ */
+export interface ElementDetail extends NodeSummary {
+  responsibilities?: NodeSectionsData["responsibilities"];
+  guidHistory?: NodeSectionsData["guidHistory"];
+  captures?: CaptureSummary | null;
 }
 
 const TYPE_LABEL: Record<string, string> = {
@@ -31,13 +51,19 @@ const TYPE_LABEL: Record<string, string> = {
   asset_type: "Typ assetu",
 };
 
+/** `2026-07-12T09:31:00Z` → `2026-07-12` (render histórie; null → prázdny string). */
+function shortDate(ts: string | null): string {
+  return ts ? ts.slice(0, 10) : "";
+}
+
 /**
- * NodeSummary (GET /api/element/[id]) → render schéma AIM karty. `captures`
- * (voliteľné, D-073) pridá akciu „Reality Capture (N)" ktorá otvorí galériu
- * priestoru priamo v 3D (`/ifc?captures=<spaceId>` — soft-nav → overlay).
+ * ElementDetail (GET /api/element/[id]) → render schéma AIM karty/inspectora.
+ * v2 (D-076): typované sekcie zodpovedností, capture súhrnu a histórie GUID
+ * sa mapujú z obohateného detailu; `captures` parameter ostáva pre spätnú
+ * kompatibilitu volajúcich (D-073) a má prednosť pred `summary.captures`.
  */
 export function nodeSummaryToAimPanel(
-  summary: NodeSummary,
+  summary: ElementDetail,
   guid: string,
   captures?: CaptureSummary | null
 ): AimPanelData {
@@ -66,8 +92,12 @@ export function nodeSummaryToAimPanel(
   if (ifcRows.length > 0) sections.push({ label: "IFC", rows: ifcRows });
   sections.push({ label: "Prehľad", rows: overviewRows });
 
+  // Capture súhrn: explicitný parameter (D-073 volajúci) má prednosť pred
+  // hodnotou z obohateného detailu (D-076 route).
+  const cap = captures ?? summary.captures ?? null;
+
   return {
-    version: 1,
+    version: 2,
     guid,
     title: summary.name ?? guid,
     subtitle: summary.objectRef ?? undefined,
@@ -79,14 +109,31 @@ export function nodeSummaryToAimPanel(
       href: `/drawing/${d.id}`,
       badge: d.isDrawing ? "výkres" : undefined,
     })),
+    // v2 (D-076): zodpovednosti s preklikom na aktora, história GUID read-only.
+    responsibilities: summary.responsibilities?.map((r) => ({
+      name: r.actorName ?? r.actorRef ?? r.actorId,
+      role: r.role,
+      org: r.org?.name ?? undefined,
+      href: `/node/${r.actorId}`,
+    })),
+    captures:
+      cap && cap.count > 0 && cap.spaceId
+        ? { count: cap.count, href: `/ifc?captures=${cap.spaceId}` }
+        : undefined,
+    history: summary.guidHistory?.map((h) => ({
+      guid: h.ifcGuid,
+      validFrom: shortDate(h.validFrom),
+      validUntil: h.validUntil ? shortDate(h.validUntil) : undefined,
+      active: h.active,
+    })),
     actions: [
       { label: "Otvoriť celý detail", href: `/${summary.route}/${summary.id}`, primary: true },
       // Reality Capture (D-073) — otvorí galériu priestoru ako overlay nad 3D.
-      ...(captures && captures.count > 0 && captures.spaceId
+      ...(cap && cap.count > 0 && cap.spaceId
         ? [
             {
-              label: `Reality Capture (${captures.count})`,
-              href: `/ifc?captures=${captures.spaceId}`,
+              label: `Reality Capture (${cap.count})`,
+              href: `/ifc?captures=${cap.spaceId}`,
             },
           ]
         : []),
