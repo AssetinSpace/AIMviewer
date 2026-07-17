@@ -2465,7 +2465,7 @@ celá klient-side — žiadne ETL, žiadna DB:
 5. **Duplicitné kódy:** preferencia prvkov na podlaží výkresu
    (`placement.storeyGuid`); zvyšná nejednoznačnosť = malý výber kandidátov.
    **Kód bez zhody v modeli** = bežný text; v debug móde čiarkovaný obrys.
-6. **Settings UI** v paneli drawing-underlays: zdroje s poradím, regex s live-test
+6. **Settings UI** v paneli Documents (presun z drawing-underlays, 2026-07-17): zdroje s poradím, regex s live-test
    poľom, enable/debug prepínače, stav indexu.
 
 **Vedomé limity:** sub-token bbox je proporčná aproximácia (bez glyph metrík); IFC
