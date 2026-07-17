@@ -532,11 +532,13 @@ def _collect_documents(model: ifcopenshell.file, refs: _RefAllocator, staged: St
             seen[info.id()] = ref
         doc_ref = seen[info.id()]
         for obj in attr(assoc, "RelatedObjects") or []:
-            obj_guid = attr(obj, "GlobalId")
-            if obj_guid:
-                staged.edges.append(
-                    Edge("has_document", refs.ref(obj), doc_ref, role="document")
-                )
+            # Hrany len na objekty importované v tomto behu (vzor assigns_to_group):
+            # `refs.ref()` na neimportovanú entitu (otvor, sub-komponent, cudzí spatial
+            # root) by alokoval ref bez staged objektu a `_resolve_cross_file_refs`
+            # by rollbackol celý load.
+            obj_ref = refs._by_id.get(obj.id())
+            if obj_ref is not None:
+                staged.edges.append(Edge("has_document", obj_ref, doc_ref, role="document"))
 
 
 def _collect_actors(model: ifcopenshell.file, refs: _RefAllocator, staged: StagedModel) -> None:
@@ -552,9 +554,11 @@ def _collect_actors(model: ifcopenshell.file, refs: _RefAllocator, staged: Stage
         role = attr(rel, "ActingRole")
         role_name = str(attr(role, "Role")) if role else None
         for obj in attr(rel, "RelatedObjects") or []:
-            if attr(obj, "GlobalId"):
+            # Rovnaký guard ako pri dokumentoch — len importované objekty.
+            obj_ref = refs._by_id.get(obj.id())
+            if obj_ref is not None:
                 staged.edges.append(
-                    Edge("responsible_for", actor_ref, refs.ref(obj), role=role_name or "responsible")
+                    Edge("responsible_for", actor_ref, obj_ref, role=role_name or "responsible")
                 )
 
 
