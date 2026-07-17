@@ -3,6 +3,10 @@
 *Analytický dokument, 2026-07-17. Nič v kóde sa nemení; výstupom je zistený stav,
 návrh konsolidácie a draft záznamu do DECISIONS.md.*
 
+> **Stav (2026-07-17 večer):** rozhodnuté a implementované na tejto vetve ako **D-076**
+> (viď `DECISIONS.md`) — variant A + B′ (viewer-first). Draft nižšie je historický
+> podklad; záväzný je záznam v DECISIONS.md.
+
 ---
 
 ## Krok 0 — Predchádzajúci kontext
