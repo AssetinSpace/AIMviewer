@@ -2382,6 +2382,12 @@ v upstream súboroch → jednoriadkové inzercie + logika v nových súboroch + 
 append (Alt mapping frozen), kandidát na upstream PR do LTplus-AG; mobil bez center pane,
 pop-out len desktop (PiP API); PostgREST 1000-row cap pri raste počtu dokumentov.
 
+**Dodatok — ostrý zoom PDF čítačky (2026-07-17):** pôvodný raster strop ≤2400 px robil
+hlboký zoom rozmazaným (CSS upscaling) a portrait strany sa pod-rastrovali (target sa
+viazal na najdlhšiu hranu namiesto šírky). Po oprave raster sleduje zoom až po 4096 px
+(ZOOM_MAX 4→10), portrait target sa koriguje pomerom strán a LRU canvasov je riadená
+pixel budgetom (~32 MP + count cap) namiesto fixného počtu — pamäťová mitigácia ostáva.
+
 **Dodatok — odchýlky implementácie M1–M3 od návrhu (2026-07-16):** `document-pane-panel`
 je NAPRAVO od `viewport-3d-panel` (nie vedľa plan pane) — resize handle tak nikdy nesusedí
 s kolabovaným prázdnym panelom a pôvodný split handle ostáva nedotknutý; karty sú kľúčované
