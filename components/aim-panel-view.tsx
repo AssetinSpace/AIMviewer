@@ -7,7 +7,7 @@ import type { AimPanelData } from "@/lib/aim-panel";
 import { cn } from "@/lib/utils";
 
 /**
- * Host render AimPanelData (D-076) — rovnaká schéma, akú kreslí AimCard vo
+ * Host render AimPanelData (D-077) — rovnaká schéma, akú kreslí AimCard vo
  * forku (apps/viewer/src/aim/AimCard.tsx), ale s Next `<Link>` navigáciou
  * namiesto bridge `AIM_NAVIGATE`. Jeden zdroj pravdy pre „detail prvku"
  * naprieč 2D (ElementInfoPanel) a 3D (embed viewer): obsah sa mení len

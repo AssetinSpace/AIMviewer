@@ -63,7 +63,7 @@ export default function IFCWorkspace({
   openDocumentId?: string;
   /** Reality Capture piny s 3D ukotvením (D-073). */
   captures?: CaptureViewerWire[];
-  /** AIM dekorácie stromu (D-076) — per-GUID badge counts pre embed viewer. */
+  /** AIM dekorácie stromu (D-077) — per-GUID badge counts pre embed viewer. */
   decorations?: TreeDecorations;
 }) {
   const router = useRouter();

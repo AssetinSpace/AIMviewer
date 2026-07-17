@@ -13,7 +13,7 @@ import type { NodeSectionsData } from "@/lib/data/relations";
  * AIM_NAVIGATE a parent appka naviguje.
  */
 export interface AimPanelData {
-  /** v2 (D-076) je aditívna — všetky v2 polia sú voliteľné, v1 render beží ďalej. */
+  /** v2 (D-077) je aditívna — všetky v2 polia sú voliteľné, v1 render beží ďalej. */
   version: 1 | 2;
   /** Echo GUID-u vybraného elementu — viewer ním zahadzuje stale odpovede. */
   guid: string;
@@ -26,7 +26,7 @@ export interface AimPanelData {
   }[];
   documents?: { name: string; href: string; badge?: string }[];
   actions?: { label: string; href: string; primary?: boolean }[];
-  // --- v2 typované sekcie (D-076: AIM inspector) ---
+  // --- v2 typované sekcie (D-077: AIM inspector) ---
   /** Zodpovedné osoby/organizácie (rel_assigns_to_actor). */
   responsibilities?: { name: string; role: string; org?: string; href?: string }[];
   /** Reality Capture súhrn — počet + host link na galériu priestoru. */
@@ -36,9 +36,9 @@ export interface AimPanelData {
 }
 
 /**
- * Obohatený detail elementu z GET /api/element/[id] (D-076): NodeSummary +
+ * Obohatený detail elementu z GET /api/element/[id] (D-077): NodeSummary +
  * sekcie uzla (zodpovednosti, história GUID) + capture súhrn. Aditívne nad
- * NodeSummary — starší klient (ElementInfoPanel pred D-076) polia ignoruje.
+ * NodeSummary — starší klient (ElementInfoPanel pred D-077) polia ignoruje.
  */
 export interface ElementDetail extends NodeSummary {
   responsibilities?: NodeSectionsData["responsibilities"];
@@ -58,7 +58,7 @@ function shortDate(ts: string | null): string {
 
 /**
  * ElementDetail (GET /api/element/[id]) → render schéma AIM karty/inspectora.
- * v2 (D-076): typované sekcie zodpovedností, capture súhrnu a histórie GUID
+ * v2 (D-077): typované sekcie zodpovedností, capture súhrnu a histórie GUID
  * sa mapujú z obohateného detailu; `captures` parameter ostáva pre spätnú
  * kompatibilitu volajúcich (D-073) a má prednosť pred `summary.captures`.
  */
@@ -93,7 +93,7 @@ export function nodeSummaryToAimPanel(
   sections.push({ label: "Prehľad", rows: overviewRows });
 
   // Capture súhrn: explicitný parameter (D-073 volajúci) má prednosť pred
-  // hodnotou z obohateného detailu (D-076 route).
+  // hodnotou z obohateného detailu (D-077 route).
   const cap = captures ?? summary.captures ?? null;
 
   return {
@@ -109,7 +109,7 @@ export function nodeSummaryToAimPanel(
       href: `/drawing/${d.id}`,
       badge: d.isDrawing ? "výkres" : undefined,
     })),
-    // v2 (D-076): zodpovednosti s preklikom na aktora, história GUID read-only.
+    // v2 (D-077): zodpovednosti s preklikom na aktora, história GUID read-only.
     responsibilities: summary.responsibilities?.map((r) => ({
       name: r.actorName ?? r.actorRef ?? r.actorId,
       role: r.role,

@@ -20,7 +20,7 @@ export default async function ViewerLayout({
 
   return (
     <div className="flex flex-1 overflow-hidden">
-      {/* Na /ifc sa sidebar nerenderuje (D-076 viewer-first) — jediný strom je
+      {/* Na /ifc sa sidebar nerenderuje (D-077 viewer-first) — jediný strom je
           natívny HierarchyPanel embed viewera s AIM dekoráciami. */}
       <SidebarGate>
         <SidebarShell>

@@ -6,8 +6,8 @@ import { fetchCaptureSummaryForObject } from "@/lib/data/captures";
 import type { ElementDetail } from "@/lib/aim-panel";
 
 /**
- * Detail prvku pre AIM inspector v 3D (D-076) a bočný info-panel prehliadačky
- * výkresov (D-042 D). Od D-076 obohatený o sekcie uzla (zodpovednosti, história
+ * Detail prvku pre AIM inspector v 3D (D-077) a bočný info-panel prehliadačky
+ * výkresov (D-042 D). Od D-077 obohatený o sekcie uzla (zodpovednosti, história
  * GUID) a capture súhrn — NodeSummary polia ostávajú aditívne zachované.
  * Server-side cez `service_role` (D-026), cachované (ISR).
  */

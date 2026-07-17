@@ -2430,7 +2430,76 @@ v DOM. Host `DOCUMENT_EVENT` zatiaľ len prijíma (no-op) — recents/analytics 
 (bridge/AIM karta), D-042/D-054 (`/drawing/[id]` + `_drawing_links`), D-063 (full-text
 deep-linky), E3/D-032/D-036 (documents + Storage).
 
-### D-076 — AIM inspector: viewer-first konsolidácia info vrstvy
+### D-076 — Identifikátorové hyperlinky v 2D IFC-lite prehliadači
+**Status:** rozhodnuté + implementované (2026-07-17), vetva
+`claude/ifc-identifier-hyperlinks-jzd5p5` (fork ifc-lite; AIMviewer len docs).
+
+**Kontext:** PDF prehliadačka dokumentov (Assetin Archives, `/drawing/[id]`) už má
+identifikátor → hyperlink → preview: kódy prvkov (SNIM `DD02.05.04`) detekuje ETL
+(`etl/pdf_link.py`, PyMuPDF + regexy zo schémy), regióny persistuje do
+`objects.properties._drawing_links` a klient (`RegionBox` → `onSelect` →
+`ElementInfoPanel`) ich renderuje ako klikateľné hotspoty — rovnaká akcia ako klik na
+prvok v 3D modeli. Rovnaké správanie chceme v 2D IFC-lite prehliadači (plan pane s PDF
+underlay, D-072/D-075).
+
+**Rozhodnutie:** feature žije **genericky vo forku ifc-lite** (línia D-071/D-075),
+celá klient-side — žiadne ETL, žiadna DB:
+1. **Konfigurovateľný zdroj identifikátora** (rôzni BIM koordinátori ukladajú kód
+   inak): `Name` / `Description` / `ObjectType` / `Tag` / custom **Pset + property**
+   (napr. `Pset_Custom.ElementCode`), s **fallback poradím** (prvý zdroj, ktorého
+   hodnota po normalizácii matchuje vzor, vyhráva). Per-projekt persistencia
+   (localStorage kľúčovaný názvom primárneho modelu); host push cez bridge je
+   neskorší kandidát.
+2. **Tvar kódu = konfigurovateľný regex** (default pokrýva `DD.01.02.003` aj
+   `DD01.06.03`), aby sa nechytali náhodné zhody (kóty, mierky). Normalizácia:
+   case-insensitive, trim, medzery/pomlčky/podčiarkovníky → bodky.
+3. **Index `normalizovaný kód → GlobalId(y)`** sa buduje raz nad všetkými
+   federovanými modelmi (chunkované s yieldom, signature-guard proti duplicitným
+   buildom, cache v store, invalidácia pri zmene configu/modelov). Lacné stĺpcové
+   zdroje čítajú columnar EntityTable; `Tag`/pset idú cez on-demand extraktory.
+4. **Matchovanie nad výkresom:** pdf.js text items stránky (`getPdfPageTextItems`)
+   → tokeny → regex → klikateľné boxy v page-point súradniciach
+   (`IdentifierLinkLayer` v `DrawingPlanPane`). Klik volá **presne tie isté store
+   akcie ako pick v scéne** (`setSelectedEntityId` + `setSelectedEntity` +
+   `showWorkspacePanel('properties')`) — jeden zdroj pravdy, iný vstupný trigger.
+5. **Duplicitné kódy:** preferencia prvkov na podlaží výkresu
+   (`placement.storeyGuid`); zvyšná nejednoznačnosť = malý výber kandidátov.
+   **Kód bez zhody v modeli** = bežný text; v debug móde čiarkovaný obrys.
+6. **Settings UI** v paneli Documents (presun z drawing-underlays, 2026-07-17): zdroje s poradím, regex s live-test
+   poľom, enable/debug prepínače, stav indexu.
+
+**Vedomé limity:** sub-token bbox je proporčná aproximácia (bez glyph metrík); IFC
+anotácie/generované 2D labely zatiaľ neskenované — matcher je čistá funkcia, dá sa
+na ne neskôr nasadiť; proximity-join spája max. dvojice fragmentov (vzor bare+frag
+z `pdf_link.py`), nie troj- a viacdielne kódy.
+
+**Dodatok (2026-07-17):** na požiadavku doplnené: (1) zdroj identifikátora aj
+**GlobalId (GUID)** atribút — popri Name/Description/ObjectType/Tag/Pset; (2)
+**rotované texty** sa matchujú (box = axis-aligned obal skutočného glyph quadu,
+vertikálne popisky sú klikateľné); (3) **proximity-join rozsekaných kódov** ako v
+`pdf_link.py`: kód rozdelený do dvoch text runs v bubline (`DD01` nad `02.03`,
+alebo vedľa seba) sa spojí v čítacom poradí (zhora nadol / zľava doprava) do
+vzdialenosti `PROXIMITY_PT = 28 pt` a re-testuje voči vzoru; plné zhody sa nikdy
+nespájajú, pri viacerých kandidátoch vyhráva najbližší fragment. GlobalId zdroj je
+**case-sensitívny** (výnimka z normalizácie — IFC GUID rozlišuje veľkosť písmen,
+`_`/`$` sú payload): index kľúčuje trimmed raw hodnotu a lookup skúša normalizovaný
+aj exaktný kľúč.
+
+**Dodatok (2026-07-17, live feedback):** linky fungujú aj v **PDF čítačke dokumentov**
+(karty dokumentov, `PageIdentifierLinks` — skenuje sa len render okno virtualizácie),
+nie len v kalibrovanom 2D/Split pláne; zhodné kódy majú **jemné bledozelené
+podsvietenie s podčiarknutím** (zdieľaný `IdentifierLinkBoxes` pre obe plochy);
+nastavenia sa otvárajú **ozubeným kolieskom v hlavičke Documents panelu**
+(enable + mapovanie atribútu/property, regex live-test), nie sekciou pod zoznamom.
+CAD-exportované PDF emitujú text po jednotlivých glyphoch — `mergeTextItems` ich pred
+matchovaním skladá do riadkov/slov (smer baseline + kolmý offset; dotyk = spojenie,
+medzera slova = space, väčšia medzera = nový run); PyMuPDF to v referenčnej
+`pdf_link.py` robil implicitne.
+
+**Závislosti:** D-072 (plan pane + `storeyGuid`), D-075 (pdf.js infra), D-071 (fork),
+D-044 (GUID bridge); referenčné správanie D-042/D-054 (`_drawing_links`).
+
+### D-077 — AIM inspector: viewer-first konsolidácia info vrstvy
 **Status:** rozhodnuté + implementované na vetve (2026-07-17).
 
 **Kontext:** audit (`AUDIT-KONSOLIDACIA-2026-07-17.md`) potvrdil zvyškové duplicity po
@@ -2478,7 +2547,8 @@ linky v inspectore; psety ostávajú z dvoch zdrojov (file vs DB) bez diffu; mŕ
 > Kompaktný reverse-chrono log pridaných/zmenených rozhodnutí. Plný kontext = príslušný
 > D-záznam vyššie.
 
-- **2026-07-17** — **D-076 (AIM inspector — viewer-first konsolidácia):** audit duplicít (dva ľavé stromy na `/ifc`, dva vzory detailu prvku) + rešerš 7 CDE nástrojov → rozhodnutie viewer-first: `AimPanelData v2` (zodpovednosti/captures/história) + tab lišta AIM | IFC v `PropertiesPanel` forku, per-GUID badge dekorácie natívneho stromu (`AIM_TREE_DECORATIONS`, `lib/data/decorations.ts` bez migrácie), host sidebar sa na `/ifc` nerenderuje (`SidebarGate`), jednotný render detailu `AimPanelView` (2D `ElementInfoPanel` = tá istá schéma), `/api/element` obohatený (reuse `fetchNodeSections`), `filter-bar.tsx` zmazaný. Logika ostáva v hoste (D-071); deploy fork-first. Implementované na vetve `claude/aim-viewer-ifc-consolidation-r7z04q` (oba repá).
+- **2026-07-17** — **D-077 (AIM inspector — viewer-first konsolidácia):** audit duplicít (dva ľavé stromy na `/ifc`, dva vzory detailu prvku) + rešerš 7 CDE nástrojov → rozhodnutie viewer-first: `AimPanelData v2` (zodpovednosti/captures/história) + tab lišta AIM | IFC v `PropertiesPanel` forku, per-GUID badge dekorácie natívneho stromu (`AIM_TREE_DECORATIONS`, `lib/data/decorations.ts` bez migrácie), host sidebar sa na `/ifc` nerenderuje (`SidebarGate`), jednotný render detailu `AimPanelView` (2D `ElementInfoPanel` = tá istá schéma), `/api/element` obohatený (reuse `fetchNodeSections`), `filter-bar.tsx` zmazaný. Logika ostáva v hoste (D-071); deploy fork-first. Implementované na vetve `claude/aim-viewer-ifc-consolidation-r7z04q` (oba repá).
+- **2026-07-17** — **D-076 (identifikátorové hyperlinky v 2D IFC-lite prehliadači):** kódy prvkov v texte PDF pôdorysu (pdf.js text items) sa rozpoznávajú konfigurovateľným regexom a renderujú ako klikateľné linky v `DrawingPlanPane`; klik = tie isté selection akcie ako pick v scéne (select + Information panel). Zdroj identifikátora konfigurovateľný per projekt (Name/Description/ObjectType/Tag/Pset.property, fallback poradie), index kód→GlobalId nad všetkými modelmi budovaný raz s cache, duplicity preferujú podlažie výkresu + výber kandidátov, not-found = plain text (debug obrys). Celé genericky vo forku ifc-lite (`lib/identifier-links/`, `identifierLinksSlice`, `IdentifierLinkLayer`, settings v underlay paneli), AIMviewer bez zmien kódu. Testy 27/27 nové, viewer 1768 pass, typecheck čistý.
 - **2026-07-17** — **D-070 dodatok (aplikované na IFClite fork):** viewer fork prebrandovaný cez design kit — `@assetinspace/design-kit` git závislosť v `apps/viewer`, nová vrstva `src/aim/assetin-theme.css` (import po `index.css`): remap upstream Tokyo Night palety (`--tokyo-*`) na semantické `--ds-*` aliasy (povrchy navy, primary/ring brand green, cyan→info, teal/green→success, red→danger, yellow→warning) + shadcn `--color-*` a hierarchy/tabs premenné pre light aj dark; Inter font, assetin favicony a brand `theme-color` v `index.html` (AIM-FORK markery). `.colorful` režim ostáva zámerne upstream. AIMviewer už zmeny nepotreboval.
 - **2026-07-16** — **D-075 M1–M3 implementované (projektová dokumentácia v jednom rozhraní):** fork — prepínač 3D|2D|Split v `MainToolbar`/`MobileToolbar` (`ViewModeSwitcher` + `useViewMode`, derivovaný režim; `underlayPlanFull`/`underlayLastStoreyGuid` v `drawingUnderlaySlice`, `enterPlanView` v `useFloorplanView`, kolabovateľný `viewport-3d-panel`, výber výkresu pri >1 v `DrawingPlanPane`); documents workspace (`documentsSlice` + testy, panel `documents` v registry, `DocumentsPanel` drag&drop, `DocumentPane` karty napravo od 3D, `PdfDocumentView` virtualizovaný ≤2400 px LRU ≤4, `ImageDocumentView`, mobil overlay); bridge `DOCUMENTS_LOAD`/`DOCUMENT_OPEN`/`DOCUMENT_EVENT` (+ testy). AIMviewer — `lib/data/documents.ts` `fetchProjectDocuments()` (kind podľa E3 role/prípony, folder = Výkresy/podlažie alebo purpose, meta revision/status/purpose), push v `ifc-viewer.tsx` po MODELS_LOADED, `?doc=` deep link cez `/ifc` page. Odchýlky v dodatku D-075.
 - **2026-07-16** — **D-075 (kandidát: projektová dokumentácia v jednom rozhraní):** koncept z analýzy CDE prístupov (Dalux/Revizto/ACC/Procore) — prvotriedny prepínač 3D|2D|Split v toolbare ifc-lite (derivovaný režim nad D-072 flagmi, `underlayPlanFull`), documents panel + karty dokumentov v resizable center pane (textové PDF virtualizovane, obrázky), bridge `DOCUMENTS_LOAD`/`DOCUMENT_OPEN`/`DOCUMENT_EVENT`; genericky vo forku (standalone s lokálnymi súbormi), AIMviewer dodá dáta; `/drawing/[id]` ostáva. Fázy M1–M4; implementácia až po diskusii.

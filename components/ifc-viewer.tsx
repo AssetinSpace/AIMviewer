@@ -150,7 +150,7 @@ interface Props {
   openDocumentId?: string;
   /** Reality Capture piny s 3D ukotvením (D-073) — poslané po MODELS_LOADED. */
   captures?: CaptureViewerWire[];
-  /** AIM dekorácie stromu (D-076) — per-GUID badge counts, po MODELS_LOADED. */
+  /** AIM dekorácie stromu (D-077) — per-GUID badge counts, po MODELS_LOADED. */
   decorations?: TreeDecorations;
   apiRef?: React.RefObject<ViewerApi | null>;
   onSelect?: (element: SelectedElement) => void;
@@ -251,7 +251,7 @@ export function IFCViewer({
 
     const controller = new AbortController();
     aimAbortRef.current = controller;
-    // Jeden fetch: /api/element vracia od D-076 obohatený detail vrátane
+    // Jeden fetch: /api/element vracia od D-077 obohatený detail vrátane
     // capture súhrnu (paralelný /api/captures/summary z D-073 už netreba).
     fetch(`/api/element/${objectId}`, { signal: controller.signal })
       .then((r) => {
@@ -350,7 +350,7 @@ export function IFCViewer({
           if (captures && captures.length > 0) {
             post({ type: "CAPTURES_LOAD", captures: toCapturePins(captures) });
           }
-          // AIM dekorácie stromu (D-076) — badge counts per GUID.
+          // AIM dekorácie stromu (D-077) — badge counts per GUID.
           if (decorations && Object.keys(decorations).length > 0) {
             post({ type: "AIM_TREE_DECORATIONS", decorations });
           }
@@ -473,7 +473,7 @@ export function IFCViewer({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [documents]);
 
-  // ── AIM dekorácie stromu (D-076) — re-send po zmene (router.refresh po ETL).
+  // ── AIM dekorácie stromu (D-077) — re-send po zmene (router.refresh po ETL).
   // Pred MODELS_LOADED ich pošle handler MODELS_LOADED vyššie.
   useEffect(() => {
     if (!loadedRef.current) return;

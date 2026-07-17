@@ -3,7 +3,7 @@
 *Analytický dokument, 2026-07-17. Nič v kóde sa nemení; výstupom je zistený stav,
 návrh konsolidácie a draft záznamu do DECISIONS.md.*
 
-> **Stav (2026-07-17 večer):** rozhodnuté a implementované na tejto vetve ako **D-076**
+> **Stav (2026-07-17 večer):** rozhodnuté a implementované na tejto vetve ako **D-077**
 > (viď `DECISIONS.md`) — variant A + B′ (viewer-first). Draft nižšie je historický
 > podklad; záväzný je záznam v DECISIONS.md.
 
@@ -199,7 +199,7 @@ na plnohodnotný AIM inspector** v natívnom paneli viewera. AIM karta je už dn
 views (`NodeSummary`, `rel_associates_document`, `guid_history`, capture prípony).
 Bitemporalita dostane prvé UI využitie („História" sekcia z `valid_from/valid_until`
 + `guid_history`) — čisto read-only, bez migrácie. Decisions tabuľka/ADR: nový
-záznam (draft D-076 nižšie).
+záznam (draft D-077 nižšie).
 
 **Strom (ľavá strana):** konsolidácia inspectora nerieši dva stromy — to riešia
 varianty v kroku 6 (odporúčanie: na `/ifc` host sidebar defaultne zbaliť; neskôr
@@ -337,7 +337,7 @@ ostávajú v hoste.*
 
 ## Draft záznamu do DECISIONS.md
 
-### D-076 — AIM inspector: konsolidovaná info vrstva nad IFC-lite *(kandidát)*
+### D-077 — AIM inspector: konsolidovaná info vrstva nad IFC-lite *(kandidát)*
 **Status:** návrh (2026-07-17).
 
 **Kontext:** audit potvrdil zvyškové duplicity po D-067: na `/ifc` dva ľavé stromy

@@ -28,7 +28,7 @@ export default async function IFCPage({
     fetchProjectDocuments(),
     // Reality Capture piny (D-073) — world-ukotvené capture pointy do 3D.
     fetchCapturePins(),
-    // AIM dekorácie stromu (D-076) — per-GUID badge counts pre embed viewer.
+    // AIM dekorácie stromu (D-077) — per-GUID badge counts pre embed viewer.
     fetchTreeDecorations(),
   ]);
 

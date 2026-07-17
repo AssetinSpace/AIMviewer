@@ -18,7 +18,7 @@ const baseSummary: ElementDetail = {
   counts: { classifications: 2, occurrences: 0 },
 };
 
-describe("nodeSummaryToAimPanel (v2, D-076)", () => {
+describe("nodeSummaryToAimPanel (v2, D-077)", () => {
   it("mapuje v2 sekcie: zodpovednosti, capture súhrn, históriu GUID", () => {
     const detail: ElementDetail = {
       ...baseSummary,

@@ -9,7 +9,7 @@ import { fetchGuidMap } from "@/lib/data/ifc";
 import { buildDecorations, type TreeDecorations } from "@/lib/data/decoration-counts";
 
 /**
- * AIM dekorácie stromu (D-076) — per-GUID počty aktívnych väzieb (dokumenty,
+ * AIM dekorácie stromu (D-077) — per-GUID počty aktívnych väzieb (dokumenty,
  * zodpovednosti, snímky) pre badge v natívnom strome embed viewera. Číta
  * existujúce kanonické views nad `relationships` (D-051), žiadna migrácia.
  * Stránkovane (PostgREST cap 1000) a cachované (ISR tag `aim`, D-030).

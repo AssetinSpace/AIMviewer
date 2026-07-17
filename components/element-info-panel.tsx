@@ -10,7 +10,7 @@ import { AimPanelView } from "@/components/aim-panel-view";
 /**
  * Bočný info-panel prehliadačky výkresov (D-042 D): pri kliknutí na prvok vo
  * výkrese načíta jeho detail (`/api/element/[id]`) a zobrazí ho vedľa výkresu.
- * Od D-076 renderuje tú istú AimPanelData schému ako AIM inspector v 3D
+ * Od D-077 renderuje tú istú AimPanelData schému ako AIM inspector v 3D
  * (mapovanie `nodeSummaryToAimPanel` + render `AimPanelView`) — jeden zdroj
  * pravdy pre „detail prvku" naprieč 2D/3D.
  */

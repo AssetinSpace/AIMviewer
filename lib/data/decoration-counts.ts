@@ -1,7 +1,7 @@
 import type { GuidMap } from "@/lib/data/ifc";
 
 /**
- * AIM dekorácie stromu (D-076) — čistá agregácia počtov väzieb per objekt,
+ * AIM dekorácie stromu (D-077) — čistá agregácia počtov väzieb per objekt,
  * kľúčovaná IFC GlobalId pre bridge správu AIM_TREE_DECORATIONS.
  *
  * Zámerne BEZ `server-only`/DB závislostí (vzor `capture-placement.ts`):
