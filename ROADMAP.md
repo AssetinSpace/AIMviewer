@@ -7,7 +7,7 @@
 
 ---
 
-## Stav (2026-07-07)
+## Stav (2026-07-16)
 
 > **Jediné miesto s aktuálnym stavom projektu.** Rationale k jednotlivým bodom je
 > v `DECISIONS.md` (D-0xx), schéma v `SCHEMA.md`. História zmien = spodok tohto súboru.
@@ -32,7 +32,10 @@ grafom. Detail v sekcii „Program dema — F-sprinty".**
 | **F4** PDF prehliadačka rework | ✅ (kadencie 1–3) | D-054; interakcia (zoom-to-pointer, pinch+pan, fullscreen, fit-to-width, double-tap), výkon gest (CSS preview + rerastr po ustálení), mobilný bottom-sheet panela, range/lazy loading veľkých PDF (strana 1 klikateľná po ~10 % súboru) + IFC WASM cache hlavička. Ďalšie už len podľa spätnej väzby z prevádzky |
 | **F2, F3, F5, F6** Program dema | 📋 plánované | D-052/D-053/D-055/D-056; viď sekcia „Program dema — F-sprinty" |
 | **S-LLM → F6** LLM interface nad grafom | 🟢 **kritická cesta**, kadencia 1 hotová + program presnosti implementovaný | D-047/D-056 jadro (provider vrstva, tools, slučka, dock) + **program presnosti D-057–D-063**: eval harness (`npm run eval`), grounding slovníky (`v_property_dictionary`, `ifc_property_definitions`), fulltext `search_everything` (aj custom psety), agregácie `aggregate_objects`, obsah dokumentov `search_documents`. **Čaká na:** `supabase db push` migrácií `20260711…20260715` na prod, beh `etl/pdf_text.py` (lokálne PDF), doplnenie verified hodnôt v `eval/questions.json` proti prod dátam, eval porovnanie modelov (D-062) + `LLM_MODEL` env; ventilový dotaz čaká na import ÚK/ZTI |
-| **F7** Georeferencované PDF podklady (Dalux „Locations") | 🟢 M0–M4 hotové na vetve | D-072; balík `@ifc-lite/drawing-underlay` + bridge + `_georef`; vetva `claude/pdf-underlay-feature-plan-us0eqe` (oba repá), čaká na review/merge + live overenie proti nasadenému forku |
+| **F7** Georeferencované PDF podklady (Dalux „Locations") | ✅ zmergované | D-072; balík `@ifc-lite/drawing-underlay` + bridge + `_georef`; ostáva live overenie s reálnym PDF+IFC proti nasadenému forku + `UNDERLAY_WRITE_ENABLED` na demo |
+| **F8** Reality Capture | ✅ zmergované (v1) | D-073; fotky + 360° panorámy ukotvené 2D/3D/IfcSpace, migrácia `20260716120000`; ostáva in-viewer 3D-click authoring (live WebGPU overenie) |
+| **S1+** Strom zoskupený podľa IFC triedy | ✅ | D-074; prezentačná vrstva v `spatial-tree.tsx` |
+| **CI brána** (lint+typecheck+vitest+pytest) | ✅ | D-075; `.github/workflows/ci.yml` na push/PR |
 | **E5** ICDD export | ⏸️ odložené | D-015/D-032 |
 | **D-045** Pasportizácia + dynamika | 📋 kandidát | čaká na reálnu zákazku |
 
@@ -143,8 +146,8 @@ Vercel (auto-deploy z `main`). **Chýba:** vlastná doména (S4).
 | **F5 — 3D/IFClite feature port** | Ďalšie preberateľné IFClite moduly (2D výkresy, meranie, rezy, IDS validátor, IfcQuery). | D-055 | nezávislé; skorý quick-win |
 | **F6 — LLM rozhranie** 🟢 kadencia 1 | API-pluggable model, tool-calling nad whitelist views, trust-loop deep-links (3D + región vo výkrese). Headline: „ukáž prvok v 3D + na ktorých výkresoch a kde". **Kadencia 1 hotová:** provider vrstva (`lib/llm/`: Anthropic cez fetch + deterministický mock), 6 read-only tools s row-capmi (search/get/relations/spatial/drawings), agentická slučka `/api/ask` (max 8 kôl), zdroje zbierané serverom → UI `/ask` (chips karta/3D/výkres, tool trace). Overené live (Playwright, mock provider). Ďalej: nasadiť `ANTHROPIC_API_KEY`, vyladiť prompt na reálnych dátach, streaming. | D-056 | ťaží z F1/F2/D-049; beží aj na dnešnom grafe |
 | **Dáta — import vodného modelu (ÚK/ZTI)** | Federačný ETL import (vzor D-049) — odomkne ventilový use-case „najbližší uzatvárací ventil" vo F6. | D-056 | prerekvizita ventilového dotazu |
-| **F7 — Georeferencované PDF podklady** 🟢 v implementácii | Dalux-style „Locations": PDF pôdorys naviazaný na podlažie (2-bodová kalibrácia → similarity, Z z elevácie, väzba IFC storey GlobalId), PDF rovina v 3D reze (WGSL quad), Drawing view (ortho lock), jednoduchý Split 2D+3D so synchronizovanou značkou, Ctrl+scroll rez. Nový balík `@ifc-lite/drawing-underlay` vo forku (upstreamovateľný, D-071) + bridge `UNDERLAYS_LOAD`/`UNDERLAY_SAVE` + `_georef` v `documents.properties`. **Míľniky M0–M4 implementované** na vetve `claude/pdf-underlay-feature-plan-us0eqe` (ifc-lite aj AIMviewer): balík (30 unit testov), WGSL pipeline + renderer external-overlay hook, kalibračný panel + 3D pick, bridge + `PATCH /api/underlay` (env brána `UNDERLAY_WRITE_ENABLED`), Drawing view + jednoduchý split pane so značkou + Ctrl+scroll rez. Overené: `pnpm typecheck`/testy (viewer 1723, renderer 259), produkčný build + Playwright boot smoke (panel sa otvára). Ostáva: review/merge, live overenie s reálnym PDF+IFC proti nasadenému forku, nastaviť `UNDERLAY_WRITE_ENABLED` na demo. | D-072 | ťaží z D-050 (federácia) a E3 (documents); nezávislé od F2/F6 |
-| **F8 — Reality Capture** 🟢 v implementácii | Fotky + statické 360° panorámy ukotvené naraz 2D/3D/IfcSpace, obojsmerne (klik priestor → snímky; snímka → navigácia na priestor + pin na pláne aj v 3D). Model „ako dokumenty" (`object_type='capture'`/`'capture_media'` + prípony, ukotvenie v `_capture`, 2 prvé `aim_` hrany manifestu), migrácia `20260716120000`; úložisko = Supabase bucket `captures` + server-side `sharp` thumbnaily; browser upload za env bránou `CAPTURE_WRITE_ENABLED` (`POST /api/captures` + `[id]/media`); galéria na `/node/[id]`, capture pin overlay na 2D vieweri; 360 = Photo Sphere Viewer host-side; 3D piny vo forku (reuse `annotationsSlice`/`AnnotationLayer`) + bridge `CAPTURES_LOAD`/`CAPTURE_PIN_CLICK`; verzovanie append-only. **Fázy F0–F4** (docs → fotky → 3D piny+obojsmernosť → 360 → verzovanie). **Hotové na vetve `claude/reality-capture-plan-y6g8a0` (oba repá):** migrácia + `lib/data/captures.ts` (unit testy) + `/api/captures` (+`[id]/media`, sharp) + galéria/lightbox/verzie na `/node/[space]` + Photo Sphere Viewer modal + fork capture-pin billboard (bridge `CAPTURES_LOAD`→pin render, `CAPTURE_PIN_CLICK`→host navigácia na priestor) + host wiring (`ifc-viewer`/`ifc-workspace`/`/ifc`) + **2D plán pin authoring**: overlay v drawing vieweri (čítanie pinov + klik-na-umiestnenie `?placeCapture` → `PATCH /api/captures/[id]` `{plan}`), „umiestniť na pláne" v galérii (`fetchPlanDocumentForSpace`). `pnpm typecheck` (moje súbory čisté), vitest 32/32 + fork bridge testy 25/25. Prístup z 3D (AIM karta „Reality Capture (N)" → galéria overlay nad scénou) hotový. **Ostáva:** in-viewer **3D-click authoring** (raycast → world; potrebuje live WebGPU overenie pred zásahom do zdieľaného produkčného vieweru) + auto-odvodenie 3D world z 2D plánu cez georef. Zatvára otvorené body D-065. | D-073 | ťaží z D-072 (`_georef`/world-transform), D-044/D-067 (GUID bridge), D-071 (fork), E3 (documents) |
+| **F7 — Georeferencované PDF podklady** ✅ zmergované | Dalux-style „Locations": PDF pôdorys naviazaný na podlažie (2-bodová kalibrácia → similarity, Z z elevácie, väzba IFC storey GlobalId), PDF rovina v 3D reze (WGSL quad), Drawing view (ortho lock), jednoduchý Split 2D+3D so synchronizovanou značkou, Ctrl+scroll rez. Nový balík `@ifc-lite/drawing-underlay` vo forku (upstreamovateľný, D-071) + bridge `UNDERLAYS_LOAD`/`UNDERLAY_SAVE` + `_georef` v `documents.properties`. **Míľniky M0–M4 implementované** na vetve `claude/pdf-underlay-feature-plan-us0eqe` (ifc-lite aj AIMviewer): balík (30 unit testov), WGSL pipeline + renderer external-overlay hook, kalibračný panel + 3D pick, bridge + `PATCH /api/underlay` (env brána `UNDERLAY_WRITE_ENABLED`), Drawing view + jednoduchý split pane so značkou + Ctrl+scroll rez. Overené: `pnpm typecheck`/testy (viewer 1723, renderer 259), produkčný build + Playwright boot smoke (panel sa otvára). Ostáva: review/merge, live overenie s reálnym PDF+IFC proti nasadenému forku, nastaviť `UNDERLAY_WRITE_ENABLED` na demo. | D-072 | ťaží z D-050 (federácia) a E3 (documents); nezávislé od F2/F6 |
+| **F8 — Reality Capture** ✅ zmergované (v1) | Fotky + statické 360° panorámy ukotvené naraz 2D/3D/IfcSpace, obojsmerne (klik priestor → snímky; snímka → navigácia na priestor + pin na pláne aj v 3D). Model „ako dokumenty" (`object_type='capture'`/`'capture_media'` + prípony, ukotvenie v `_capture`, 2 prvé `aim_` hrany manifestu), migrácia `20260716120000`; úložisko = Supabase bucket `captures` + server-side `sharp` thumbnaily; browser upload za env bránou `CAPTURE_WRITE_ENABLED` (`POST /api/captures` + `[id]/media`); galéria na `/node/[id]`, capture pin overlay na 2D vieweri; 360 = Photo Sphere Viewer host-side; 3D piny vo forku (reuse `annotationsSlice`/`AnnotationLayer`) + bridge `CAPTURES_LOAD`/`CAPTURE_PIN_CLICK`; verzovanie append-only. **Fázy F0–F4** (docs → fotky → 3D piny+obojsmernosť → 360 → verzovanie). **Hotové na vetve `claude/reality-capture-plan-y6g8a0` (oba repá):** migrácia + `lib/data/captures.ts` (unit testy) + `/api/captures` (+`[id]/media`, sharp) + galéria/lightbox/verzie na `/node/[space]` + Photo Sphere Viewer modal + fork capture-pin billboard (bridge `CAPTURES_LOAD`→pin render, `CAPTURE_PIN_CLICK`→host navigácia na priestor) + host wiring (`ifc-viewer`/`ifc-workspace`/`/ifc`) + **2D plán pin authoring**: overlay v drawing vieweri (čítanie pinov + klik-na-umiestnenie `?placeCapture` → `PATCH /api/captures/[id]` `{plan}`), „umiestniť na pláne" v galérii (`fetchPlanDocumentForSpace`). `pnpm typecheck` (moje súbory čisté), vitest 32/32 + fork bridge testy 25/25. Prístup z 3D (AIM karta „Reality Capture (N)" → galéria overlay nad scénou) hotový. **Ostáva:** in-viewer **3D-click authoring** (raycast → world; potrebuje live WebGPU overenie pred zásahom do zdieľaného produkčného vieweru) + auto-odvodenie 3D world z 2D plánu cez georef. Zatvára otvorené body D-065. | D-073 | ťaží z D-072 (`_georef`/world-transform), D-044/D-067 (GUID bridge), D-071 (fork), E3 (documents) |
 
 ## Parkované / paralelné
 
@@ -161,6 +164,31 @@ Vercel (auto-deploy z `main`). **Chýba:** vlastná doména (S4).
   nahradí ručný seed reálnymi dátami z diplomky (vstup pre S4). **Scaffold v `etl/`**
   (extract/transform/load, idempotentný upsert, CLI) hotový a syntakticky overený;
   ostáva doladiť mapovanie (`TODO(model)`) a spustiť end-to-end na reálnom IFC.
+
+### Technický dlh (z nočného auditu 2026-07-12)
+
+> Otvorené položky z auditu (vetva `overnight-repo-audit-vky8t5`); vyriešené položky
+> auditu sú v changelogu. Odhady: S < 1 h, M = 1–4 h, L = deň+.
+
+- **`object_ref` závislý od poradia iterácie** (L, chce D-0xx) — pri kolízii mien rozhoduje
+  poradie `model.by_type()`, ktorý prvok dostane `Name` vs `Name-2` (`etl/transform.py`);
+  `object_ref` je upsert konfliktný kľúč → po re-exporte sa identita (QR kódy!) môže ticho
+  presunúť. Návrh: tie-break GlobalId-om alebo hard-fail pri ambiguite. Architektonické.
+- **Duálne viewer komponenty** (M) — `ifc-viewer.tsx` (živý) vs `ifc-viewer-embed.tsx`
+  (mŕtvy, ale so správnou FOCUS pending-queue). Rozhodnúť, ktorý prežije, preniesť queue,
+  druhý zmazať; potiahne aj mŕtvy filter reťazec (`filter-bar.tsx` → `/api/filter`)
+  a nepoužívané deps (`three`, `@ifc-lite/*` + wasm postinstall do `public/`).
+- **ETL kontakty sa zahadzujú** (M) — `_person_object` nevyplní email/telefón, adresy/roly
+  z `IfcPerson`/`IfcOrganization` sa nezachytia do `_contact`/`_org` (proti AGENTS.md).
+- **ETL N+1 zápisy** (M) — každý objekt/hrana = samostatný `cur.execute`; nad vzdialeným
+  Supabase škáluje s WAN latenciou → `executemany`/`COPY`.
+- **npm audit: postcss cez next** (S–M, moderate GHSA-qx2v-qp2m-jg93) — čaká na next 16.x
+  s postcss ≥ 8.5.10; otestovať build.
+- **Kozmetické (S):** `aggregate_objects` fallback `ORDER BY 1` (chce migráciu); hardcoded
+  Supabase projekt v `lib/data/ifc.ts`; `page` query param bez clampu v `drawing/[id]`;
+  `fetchSpaceSiblings` maskuje DB chybu ako „bez súrodencov" (`lib/data/filter.ts`);
+  `style_in_3d` bez capu dĺžky URL pri merge akcií; `relationships` bez sémantickej
+  unikátnosti `(rel_type, from_id, to_id)` — aspoň zaznamenať do `SCHEMA.md`.
 
 ## ETL + Dokumenty — paralelný track (E-sprinty)
 
@@ -306,6 +334,7 @@ naming convention finálny tvar) sú v DECISIONS §7.
 > Kompaktný reverse-chrono log. Detail ku každému bodu je v `DECISIONS.md` (D-0xx);
 > aktuálny stav je hore v sekcii „Stav".
 
+- **2026-07-16** — **CI brána (D-075) + dokumentačná hygiena:** GitHub Actions `ci.yml` (lint + `npm run typecheck` + vitest + ETL pytest na push/PR; evaly mimo CI podľa D-057); `react-hooks/set-state-in-effect` preladené na warn (7 legitímnych vzorov). Zmazané stray audit súbory `MORNING_REPORT.md`/`NEXT_STEPS.md` (AGENTS.md pravidlo 5) — otvorené položky auditu presunuté do sekcie „Technický dlh" vyššie; „Stav" zosynchronizovaný so zmergovanými F7/F8/D-074.
 - **2026-07-16** — **S1: strom zoskupený podľa IFC triedy (D-074):** pod podlažím/priestorom sa potomkovia už nevysypú naplocho — zoskupia sa do rozbaľovacích skupín podľa `ifc_type` s počtom členov (`IfcSpace` prvá, zvyšok abecedne), skupina bez `/node/` odkazu. Prezentačná zmena v `components/spatial-tree.tsx`, bez zásahu do data vrstvy. Overené na 3NP (34× IfcSpace + 13 tried prvkov).
 - **2026-07-15** — **F8 dodatok: RC prístupná z 3D vieweru (D-073):** po výbere prvku v 3D sa v AIM karte („AIM platforma", D-067) zobrazí akcia „Reality Capture (N)" → otvorí galériu/360° priestoru ako **overlay nad 3D scénou** (`/ifc?captures=<space>` soft-nav → `ifc-workspace` overlay, iframe sa neremountuje). Host-only (schéma karty host-driven, bez redeployu forku): `fetchCaptureSummaryForObject` (asset→priestor), `GET /api/captures/summary`, `nodeSummaryToAimPanel` akcia, `CaptureGallery` `autoLoad`. tsc čistý, vitest 32/32.
 - **2026-07-15** — **F8 dodatok: 2D plán pin authoring (D-073):** overlay Reality Capture pinov v drawing vieweri (`capture-plan-overlay.tsx`) — čítanie (klik → priestor) + umiestňovací režim `?placeCapture` (klik na plán → normalizované u,v → `PATCH /api/captures/[id]` `{plan}`, merge do `_capture`); „umiestniť na pláne" v galérii cez `fetchPlanDocumentForSpace` (space→floor→drawing). `GET /api/captures?document=`. Zostáva 3D-click authoring (fork, live overenie). tsc čistý, vitest 32/32.
