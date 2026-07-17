@@ -1,4 +1,5 @@
 import { fetchUnderlayDrawings } from "@/lib/data/drawing";
+import { fetchProjectDocuments } from "@/lib/data/documents";
 import { fetchCapturePins } from "@/lib/data/captures";
 import { fetchGuidMap, getIfcModels } from "@/lib/data/ifc";
 import IFCWorkspace from "@/components/ifc-workspace";
@@ -11,16 +12,19 @@ export default async function IFCPage({
 }: {
   /** `focus` = IFC GUID(y) na zvýraznenie (čiarkou oddelené); `ops` = viewer
    *  operácie AI docku (ofarbenie/skrytie/izolácia, D-066); `r` = nonce
-   *  akcie AI docku — nová hodnota vynúti re-aplikáciu focusu/ops (D-056). */
-  searchParams: Promise<{ focus?: string; ops?: string; r?: string }>;
+   *  akcie AI docku — nová hodnota vynúti re-aplikáciu focusu/ops (D-056);
+   *  `doc` = id dokumentu na otvorenie ako karta vo viewri (D-075). */
+  searchParams: Promise<{ focus?: string; ops?: string; r?: string; doc?: string }>;
 }) {
-  const { focus, ops, r } = await searchParams;
+  const { focus, ops, r, doc } = await searchParams;
 
-  const [models, guidMap, underlays, captures] = await Promise.all([
+  const [models, guidMap, underlays, documents, captures] = await Promise.all([
     Promise.resolve(getIfcModels()),
     fetchGuidMap(),
     // Georeferencované PDF podklady (D-072) — viewer ich dostane po MODELS_LOADED.
     fetchUnderlayDrawings(),
+    // Knižnica dokumentov pre in-viewer Documents panel (D-075).
+    fetchProjectDocuments(),
     // Reality Capture piny (D-073) — world-ukotvené capture pointy do 3D.
     fetchCapturePins(),
   ]);
@@ -29,7 +33,7 @@ export default async function IFCPage({
   // scroll cez :has(.full-bleed)); navigácia a strom ostávajú v ľavom sidebari.
   return (
     <div className="full-bleed h-full">
-      <IFCWorkspace models={models} guidMap={guidMap} focus={focus} focusNonce={r} ops={ops} underlays={underlays} captures={captures} />
+      <IFCWorkspace models={models} guidMap={guidMap} focus={focus} focusNonce={r} ops={ops} underlays={underlays} documents={documents} openDocumentId={doc} captures={captures} />
     </div>
   );
 }

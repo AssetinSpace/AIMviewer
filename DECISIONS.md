@@ -2300,11 +2300,107 @@ vrstva v `components/spatial-tree.tsx`, bez zásahu do data vrstvy, DB a bez ďa
 v klientskom komponente zduplikovaný oproti `SPATIAL_TYPES` — `lib/data/spatial.ts` je
 `server-only` modul, import hodnoty by zhodil klientský build.
 
+### D-075 — Projektová dokumentácia v jednom rozhraní (2D/3D prepínač, dokumenty v kartách)
+**Status:** rozhodnuté (2026-07-16) — koncept odsúhlasený, **M1–M3 implementované na vetve**
+`claude/pdf-rendering-document-view-v6nivv` (oba repá; stav → ROADMAP F9). Stavia na D-072
+(kalibrácia + split view, F7).
+
+**Kontext:** Cieľ je Dalux-like zážitok — celá projektová dokumentácia (PDF výkresy,
+textové PDF, fotky/skeny) prehliadateľná priamo v ifc-lite viewri, aby 2D výkresy a 3D
+model pôsobili ako jedno rozhranie. D-072 už dodal kalibráciu, PDF rovinu v 3D, Drawing
+view a jednoduchý split so zelenou značkou; chýba (1) prvotriedny **prepínač 2D / 3D /
+Split** (dnes zakopaný v `DrawingUnderlayPanel`), (2) prehliadanie **ne-kalibrovaných
+dokumentov** vo viewri a (3) **karty / viac okien** pre dokumenty.
+
+*Analýza CDE prístupov:* **Dalux** (primárny vzor): „Locations" = budova → podlažie →
+výkresy (2-bodové mapovanie = D-072); režimy 2D / 3D / Split (split = 2D naviguje 3D,
+zelený kruh + smerový klin, kamera zamknutá na podlažie); dokumentový modul s **file
+tabs**, karty možno otvoriť v novom okne prehliadača, hyperlinky sa otvárajú ako nové
+karty, väzby objekt↔dokument z modelu. **Revizto:** jednotné 2D/3D prostredie, overlay
+sheetov v 3D, „related sheets" podľa polohy kamery, issues v 2D aj 3D. **ACC:** Sheets
+& Views, „Align 2D drawing", porovnanie verzií 2D/3D. **Procore:** revízie, OCR
+auto-split sád, markup vrstvy. Spoločné vzory: výkresy per podlažie kalibrované na model
+(✅ D-072), explicitný top-level prepínač režimu, sync polohy 2D↔3D (✅ D-072), dokumenty
+v kartách s pop-out, prepojenia objekt↔dokument (✅ `rel_associates_document`,
+`_drawing_links`).
+
+**Návrh (validovaný proti kódu oboch repov):**
+1. **Architektúra = línia D-071/D-072:** feature žije **genericky v ifc-lite**
+   (upstreamovateľná, standalone s lokálnymi súbormi cez drag&drop, `local:` id vzor),
+   AIMviewer dodá dáta cez bridge adapter. Formáty v1: PDF + obrázky; Office/DWG neskôr.
+2. **Prepínač 3D | 2D | Split** — segmented control v `MainToolbar` (jednoriadková
+   inzercia, logika v novom `ViewModeSwitcher.tsx`) + storey dropdown pri režime ≠ 3D.
+   Žiadny nový slice: režim je *derivovaný* z existujúcich flagov (`underlaySplitView`,
+   `underlayViewLocked`); do `drawingUnderlaySlice` pribudne len `underlayPlanFull`
+   (2D na celú plochu — `viewport-3d-panel` sa kolabuje na 0 cez ref, WebGPU canvas sa
+   neremountuje, zrkadlový trik k `drawing-plan-panel`) a `underlayLastStoreyGuid`.
+   Nový hook `useViewMode.ts` orchestruje existujúce `enterSplitView`/`enterDrawingView`/
+   `exit*` (`useFloorplanView.ts`); fallback bez kalibrovaného výkresu = locked ortho
+   top-down model (Dalux správanie). 2D plocha = zovšeobecnený `DrawingPlanPane`
+   (+ výber výkresu pri >1 na podlažie). Vektorová 2D (`packages/drawing-2d`) mimo scope
+   — neskôr ako alternatívny zdroj do tej istej plochy. Režim je session-only (iframe
+   `src` vlastní host; deep-linky len postMessage).
+3. **Documents panel + karty dokumentov** — karty v **resizable center pane**: tretí
+   Panel `document-pane-panel` vo vnútornom PanelGroup (vedľa `drawing-plan-panel`
+   a `viewport-3d-panel`); split dokument↔3D aj dokument↔2D vypadne z resize handles
+   zadarmo. (Zamietnuté: plávajúce okná ako primár — 360×460 default je na A1 malé;
+   top-level tab bar nad viewportom — prestavba shellu.) Nový
+   `store/slices/documentsSlice.ts` (`viewerDocuments: Map`, `docTabs` s per-tab
+   page/zoom/scroll, `openDocument` dedupe→focus, `documentEventHandler` vzor
+   `underlaySaveHandler`); panel `'documents'` append do `lib/panels/registry.ts`
+   (zadarmo sidebar dock, floating, OS-window pop-out; `documentsPanelVisible` pristúpi
+   k exclusivity subscription v `store/index.ts`). Komponenty: `DocumentsPanel.tsx`
+   (strom podľa `folder`, filter, drag&drop, „Show in 2D/Split" pri výkresoch),
+   `DocumentPane.tsx` (Radix Tabs strip), `PdfDocumentView.tsx` (virtualizovaný zoznam
+   strán nad existujúcim `rasterizePdfPage`, raster len viditeľné ±1, LRU ≤ 4, strop
+   ~2400 px), `ImageDocumentView.tsx`. Mobil: doc tab = full-screen overlay (vzor
+   mobilného split view). Doc↔doc split a per-tab pop-out do OS okna (kľúč
+   `panel-windows.ts` zovšeobecniť na `doc:${tabId}`) = neskorší míľnik.
+4. **Bridge / dáta:** `DOCUMENTS_LOAD` ako **súrodenec** `UNDERLAYS_LOAD` (nie superset
+   — georef kontrakt sa nekazí; kalibrované výkresy prídu v oboch, prepoja sa cez
+   `documentId`/`storeyGuid`), `DOCUMENT_OPEN` (host→viewer deep link po
+   `MODELS_LOADED`), `DOCUMENT_EVENT` (viewer→host opened/closed). Wire typ
+   `DocumentDescriptorWire` (`kind: 'drawing'|'document'|'image'`, `storeyGuid?`,
+   `folder?`, `meta?`) v `aim/bridge-protocol.ts`. AIMviewer: nové `lib/data/documents.ts`
+   — `fetchProjectDocuments()` z `objects`/`documents`, `folder` z
+   `rel_associates_document` hrán, kind podľa role/mime; push v `components/ifc-viewer.tsx`;
+   voliteľný `?doc=` param. **`/drawing/[id]` ostáva natrvalo** — `_drawing_links` (SNIM
+   regióny) sú AIM-doménové UI (D-071 drží generické jadro čisté), route beží bez bootu
+   WebGPU viewera (rýchla, shareable, cieľ full-text výsledkov D-063). In-viewer
+   workspace = flow „dokumenty v kontexte modelu"; `/drawing/[id]` = „dokument ako cieľ".
+5. **Fázovanie (každý míľnik shippable):** **M1** View modes (len ifc-lite) →
+   **M2** Documents workspace s lokálnymi súbormi (len ifc-lite) → **M3** host integrácia
+   (bridge + `fetchProjectDocuments` + AimCard doc linky in-viewer; oba repá) = v1 →
+   **M4** power features (doc↔doc split, per-tab OS pop-out, raster tuning, voliteľný
+   `VIEW_SET` deep link).
+
+**Vedomé limity / riziká:** pamäť iframe = riziko #1 (IFC geometria + underlay textúry +
+doc taby v jednom procese; plan pane rastruje až 8192 px ≈ ~190 MB RGBA transient) —
+mitigácie sú súčasť návrhu (strop ≤ 2400 px, okno ±1 strany, LRU ≤ 4, neaktívne taby
+zahodia rastre, `ImageBitmap.close()` ihneď); fork friction — M1/M2 je generický kód
+v upstream súboroch → jednoriadkové inzercie + logika v nových súboroch + registry len
+append (Alt mapping frozen), kandidát na upstream PR do LTplus-AG; mobil bez center pane,
+pop-out len desktop (PiP API); PostgREST 1000-row cap pri raste počtu dokumentov.
+
+**Dodatok — odchýlky implementácie M1–M3 od návrhu (2026-07-16):** `document-pane-panel`
+je NAPRAVO od `viewport-3d-panel` (nie vedľa plan pane) — resize handle tak nikdy nesusedí
+s kolabovaným prázdnym panelom a pôvodný split handle ostáva nedotknutý; karty sú kľúčované
+`docId` (dokument = max 1 karta, dedupe→focus), nie `tabId`; tab strip je vlastný flex row
+(Radix Tabs by pre close buttons pridával ceremóniu); `DOCUMENT_EVENT` sa pre `local:` súbory
+hostovi neposiela (nemá ich ako resolvnúť); LRU canvasov nikdy nevyprázdni canvas pripojený
+v DOM. Host `DOCUMENT_EVENT` zatiaľ len prijíma (no-op) — recents/analytics je kandidát.
+
+**Závislosti:** D-072 (kalibrácia/split/`_georef`), D-071 (fork vrstvenie), D-044/D-067
+(bridge/AIM karta), D-042/D-054 (`/drawing/[id]` + `_drawing_links`), D-063 (full-text
+deep-linky), E3/D-032/D-036 (documents + Storage).
+
 ---
 
 > Kompaktný reverse-chrono log pridaných/zmenených rozhodnutí. Plný kontext = príslušný
 > D-záznam vyššie.
 
+- **2026-07-16** — **D-075 M1–M3 implementované (projektová dokumentácia v jednom rozhraní):** fork — prepínač 3D|2D|Split v `MainToolbar`/`MobileToolbar` (`ViewModeSwitcher` + `useViewMode`, derivovaný režim; `underlayPlanFull`/`underlayLastStoreyGuid` v `drawingUnderlaySlice`, `enterPlanView` v `useFloorplanView`, kolabovateľný `viewport-3d-panel`, výber výkresu pri >1 v `DrawingPlanPane`); documents workspace (`documentsSlice` + testy, panel `documents` v registry, `DocumentsPanel` drag&drop, `DocumentPane` karty napravo od 3D, `PdfDocumentView` virtualizovaný ≤2400 px LRU ≤4, `ImageDocumentView`, mobil overlay); bridge `DOCUMENTS_LOAD`/`DOCUMENT_OPEN`/`DOCUMENT_EVENT` (+ testy). AIMviewer — `lib/data/documents.ts` `fetchProjectDocuments()` (kind podľa E3 role/prípony, folder = Výkresy/podlažie alebo purpose, meta revision/status/purpose), push v `ifc-viewer.tsx` po MODELS_LOADED, `?doc=` deep link cez `/ifc` page. Odchýlky v dodatku D-075.
+- **2026-07-16** — **D-075 (kandidát: projektová dokumentácia v jednom rozhraní):** koncept z analýzy CDE prístupov (Dalux/Revizto/ACC/Procore) — prvotriedny prepínač 3D|2D|Split v toolbare ifc-lite (derivovaný režim nad D-072 flagmi, `underlayPlanFull`), documents panel + karty dokumentov v resizable center pane (textové PDF virtualizovane, obrázky), bridge `DOCUMENTS_LOAD`/`DOCUMENT_OPEN`/`DOCUMENT_EVENT`; genericky vo forku (standalone s lokálnymi súbormi), AIMviewer dodá dáta; `/drawing/[id]` ostáva. Fázy M1–M4; implementácia až po diskusii.
 - **2026-07-16** — **D-074 (zoskupenie stromu podľa IFC triedy):** pod uzlom s assetmi (≥2 triedy) sa potomkovia zoskupia do rozbaľovacích skupín podľa `ifc_type` s počtom členov (`IfcSpace` prvá, zvyšok abecedne); skupina nie je AIM objekt (bez `/node/` odkazu, open-stav pod `${parentId}::${ifcType}`); čisto prezentačná vrstva v `components/spatial-tree.tsx`, bez zmien data vrstvy/DB.
 - **2026-07-14** — **D-073 (Reality Capture v1):** modul fotiek + statických 360° panorám ukotvených 2D/3D/IfcSpace, obojsmerne. Model „ako dokumenty" (D-018): `object_type='capture'` + prípona `captures`, `object_type='capture_media'` + prípona `capture_media` (analóg `documents`), ukotvenie v rezervovanom `properties._capture` (vzor `_georef`). Prvé `aim_` hrany manifestu (`aim_rel_capture_located`, `aim_rel_capture_media`, export ICDD). Úložisko = Supabase bucket `captures` + server-side `sharp` thumbnaily; 360 = Photo Sphere Viewer host-side (BIM engine je WebGPU → žiadna three.js kolízia). Zápis za env bránou `CAPTURE_WRITE_ENABLED` (D-068/D-072), single-project. 3D piny vo forku (reuse `annotationsSlice`/`AnnotationLayer`). Migrácia `20260716120000`. Zatvára otvorené body D-065.
 - **2026-07-14** — **D-072 (georeferencované PDF podklady):** Dalux-style „Locations" — PDF pôdorys naviazaný na podlažie (2-bodová kalibrácia → similarity transform, Z z elevácie podlažia, väzba cez IFC storey GlobalId); nový upstreamovateľný balík `@ifc-lite/drawing-underlay` vo forku (WGSL textúrovaná rovina) + AIM bridge `UNDERLAYS_LOAD`/`UNDERLAY_SAVE`; perzistencia `_georef` v `objects.properties` dokumentu (bez migrácie). Supersedovuje D-038/D-039.

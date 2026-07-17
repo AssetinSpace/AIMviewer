@@ -6,6 +6,7 @@ import { useRef, useState } from "react";
 import { X } from "lucide-react";
 
 import type { UnderlayDrawingWire } from "@/lib/data/drawing";
+import type { DocumentWire } from "@/lib/data/documents";
 import type { CaptureViewerWire } from "@/lib/data/captures";
 import type { GuidMap, IfcModel } from "@/lib/data/ifc";
 import type { ViewerApi } from "@/lib/viewer-api";
@@ -41,6 +42,8 @@ export default function IFCWorkspace({
   focusNonce,
   ops,
   underlays,
+  documents,
+  openDocumentId,
   captures,
 }: {
   models: IfcModel[];
@@ -52,6 +55,10 @@ export default function IFCWorkspace({
   ops?: string;
   /** Georeferencované PDF podklady pre embed viewer (D-072). */
   underlays?: UnderlayDrawingWire[];
+  /** Knižnica dokumentov pre in-viewer Documents panel (D-075). */
+  documents?: DocumentWire[];
+  /** Deep link (D-075): dokument, ktorý sa má otvoriť ako karta (`?doc=`). */
+  openDocumentId?: string;
   /** Reality Capture piny s 3D ukotvením (D-073). */
   captures?: CaptureViewerWire[];
 }) {
@@ -100,6 +107,8 @@ export default function IFCWorkspace({
         focusNonce={focusNonce}
         ops={ops}
         underlays={underlays}
+        documents={documents}
+        openDocumentId={openDocumentId}
         captures={captures}
         apiRef={viewerApiRef}
         onPickedElement={handlePickedElement}
