@@ -2494,7 +2494,13 @@ nastavenia sa otvárajú **ozubeným kolieskom v hlavičke Documents panelu**
 CAD-exportované PDF emitujú text po jednotlivých glyphoch — `mergeTextItems` ich pred
 matchovaním skladá do riadkov/slov (smer baseline + kolmý offset; dotyk = spojenie,
 medzera slova = space, väčšia medzera = nový run); PyMuPDF to v referenčnej
-`pdf_link.py` robil implicitne.
+`pdf_link.py` robil implicitne. Rotované strany (`/Rotate 90`, bežné CAD sheets):
+text transformy sa remapujú do zobrazeného viewport rámca (`mapTextTransformToViewport`,
+pre nerotované strany identita) a čítacie poradie proximity-joinu sa vyhodnocuje
+v lokálnom ráme textu — bez toho boxy padali mimo stránku. Nastavenia zobrazujú
+diagnostiku posledného skenu (text items / codes / matched + hint pre každú nulu).
+Overené live Playwright behom (11/11: textová vrstva + selekcia s overlay,
+rotovaná strana, spájanie bublín).
 
 **Závislosti:** D-072 (plan pane + `storeyGuid`), D-075 (pdf.js infra), D-071 (fork),
 D-044 (GUID bridge); referenčné správanie D-042/D-054 (`_drawing_links`).
