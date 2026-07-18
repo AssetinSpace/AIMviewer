@@ -1,0 +1,275 @@
+{
+  "version": 2,
+  "identifier": "FE7390E9-0104-5A2D-92CA-1DA646A3F0E7",
+  "story": 1,
+  "walls": [
+    {
+      "identifier": "CEAB94B0-3CA4-52D9-AE51-C878DFC0716F",
+      "parentIdentifier": null,
+      "category": {
+        "wall": {}
+      },
+      "confidence": {
+        "high": {}
+      },
+      "dimensions": [
+        4.0,
+        2.4,
+        0.0
+      ],
+      "transform": [
+        1.0,
+        0.0,
+        -0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        2.0,
+        1.2,
+        0.0,
+        1.0
+      ],
+      "curve": null,
+      "polygonCorners": [],
+      "completedEdges": [],
+      "story": 1
+    },
+    {
+      "identifier": "AD0FD63B-F8E3-56CB-8D57-9E4DF81E7476",
+      "parentIdentifier": null,
+      "category": {
+        "wall": {}
+      },
+      "confidence": {
+        "high": {}
+      },
+      "dimensions": [
+        3.0,
+        2.4,
+        0.0
+      ],
+      "transform": [
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        -1.0,
+        0.0,
+        0.0,
+        0.0,
+        4.0,
+        1.2,
+        1.5,
+        1.0
+      ],
+      "curve": null,
+      "polygonCorners": [],
+      "completedEdges": [],
+      "story": 1
+    },
+    {
+      "identifier": "F15D207B-CB7E-5C6C-B637-27F7A02AB427",
+      "parentIdentifier": null,
+      "category": {
+        "wall": {}
+      },
+      "confidence": {
+        "high": {}
+      },
+      "dimensions": [
+        2.0,
+        2.4,
+        0.0
+      ],
+      "transform": [
+        -1.0,
+        0.0,
+        -0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        -1.0,
+        0.0,
+        3.0,
+        1.2,
+        3.0,
+        1.0
+      ],
+      "curve": null,
+      "polygonCorners": [],
+      "completedEdges": [],
+      "story": 1
+    },
+    {
+      "identifier": "4DDCC5E0-1347-5694-A0D1-37FB068C60A4",
+      "parentIdentifier": null,
+      "category": {
+        "wall": {}
+      },
+      "confidence": {
+        "high": {}
+      },
+      "dimensions": [
+        2.0,
+        2.4,
+        0.0
+      ],
+      "transform": [
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        -1.0,
+        0.0,
+        0.0,
+        0.0,
+        2.0,
+        1.2,
+        4.0,
+        1.0
+      ],
+      "curve": null,
+      "polygonCorners": [],
+      "completedEdges": [],
+      "story": 1
+    },
+    {
+      "identifier": "5AAC4E79-3831-5373-94E6-A5AFC5D8F493",
+      "parentIdentifier": null,
+      "category": {
+        "wall": {}
+      },
+      "confidence": {
+        "high": {}
+      },
+      "dimensions": [
+        2.0,
+        2.4,
+        0.0
+      ],
+      "transform": [
+        -1.0,
+        0.0,
+        -0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        -1.0,
+        0.0,
+        1.0,
+        1.2,
+        5.0,
+        1.0
+      ],
+      "curve": null,
+      "polygonCorners": [],
+      "completedEdges": [],
+      "story": 1
+    },
+    {
+      "identifier": "4A87B2D6-FB88-561B-ACCB-091F9E41344F",
+      "parentIdentifier": null,
+      "category": {
+        "wall": {}
+      },
+      "confidence": {
+        "high": {}
+      },
+      "dimensions": [
+        5.0,
+        2.4,
+        0.0
+      ],
+      "transform": [
+        0.0,
+        0.0,
+        -1.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.2,
+        2.5,
+        1.0
+      ],
+      "curve": null,
+      "polygonCorners": [],
+      "completedEdges": [],
+      "story": 1
+    }
+  ],
+  "doors": [
+    {
+      "identifier": "4C980687-4EFF-53D5-9A67-4A58EBEBDC19",
+      "parentIdentifier": "CEAB94B0-3CA4-52D9-AE51-C878DFC0716F",
+      "category": {
+        "door": {
+          "isOpen": false
+        }
+      },
+      "confidence": {
+        "high": {}
+      },
+      "dimensions": [
+        0.9,
+        2.0,
+        0.0
+      ],
+      "transform": [
+        1.0,
+        0.0,
+        -0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        1.2,
+        1.0,
+        0.0,
+        1.0
+      ],
+      "curve": null,
+      "polygonCorners": [],
+      "completedEdges": [],
+      "story": 1
+    }
+  ],
+  "windows": [],
+  "openings": [],
+  "floors": [],
+  "objects": [],
+  "sections": []
+}

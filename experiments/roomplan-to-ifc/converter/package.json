@@ -1,0 +1,13 @@
+{
+  "name": "roomplan-to-ifc-webifc-check",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Headless web-ifc parse check for the RoomPlan->IFC experiment (D-078)",
+  "type": "module",
+  "scripts": {
+    "check": "node webifc_check.mjs"
+  },
+  "dependencies": {
+    "web-ifc": "^0.0.77"
+  }
+}

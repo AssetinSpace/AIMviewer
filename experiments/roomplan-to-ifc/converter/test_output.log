@@ -1,0 +1,42 @@
+
+== room_simple.json ==
+  schema: IFC4, 167 entities, 8506 bytes
+  ok   IfcProject               expected 1, got 1
+  ok   IfcSite                  expected 1, got 1
+  ok   IfcBuilding              expected 1, got 1
+  ok   IfcBuildingStorey        expected 1, got 1
+  ok   IfcSpace                 expected 1, got 1
+  ok   IfcWall                  expected 4, got 4
+  ok   IfcDoor                  expected 1, got 1
+  ok   IfcWindow                expected 1, got 1
+  ok   IfcFurnishingElement     expected 0, got 0
+  validate: clean (no schema violations)
+
+== room_with_furniture.json ==
+  schema: IFC4, 243 entities, 12795 bytes
+  ok   IfcProject               expected 1, got 1
+  ok   IfcSite                  expected 1, got 1
+  ok   IfcBuilding              expected 1, got 1
+  ok   IfcBuildingStorey        expected 1, got 1
+  ok   IfcSpace                 expected 1, got 1
+  ok   IfcWall                  expected 4, got 4
+  ok   IfcDoor                  expected 1, got 1
+  ok   IfcWindow                expected 1, got 1
+  ok   IfcFurnishingElement     expected 4, got 4
+  validate: clean (no schema violations)
+
+== room_l_shaped.json ==
+  schema: IFC4, 186 entities, 9566 bytes
+  ok   IfcProject               expected 1, got 1
+  ok   IfcSite                  expected 1, got 1
+  ok   IfcBuilding              expected 1, got 1
+  ok   IfcBuildingStorey        expected 1, got 1
+  ok   IfcSpace                 expected 1, got 1
+  ok   IfcWall                  expected 6, got 6
+  ok   IfcDoor                  expected 1, got 1
+  ok   IfcWindow                expected 0, got 0
+  ok   IfcFurnishingElement     expected 0, got 0
+  validate: clean (no schema violations)
+
+==================================================
+PASS — all 3 fixtures converted, reparsed and validated

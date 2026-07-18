@@ -1,0 +1,23 @@
+ok   room_l_shaped.ifc: schema=IFC4 meshes=7 {
+  IfcWall: 6,
+  IfcDoor: 1,
+  IfcWindow: 0,
+  IfcFurnishingElement: 0,
+  IfcSpace: 1
+}
+ok   room_simple.ifc: schema=IFC4 meshes=6 {
+  IfcWall: 4,
+  IfcDoor: 1,
+  IfcWindow: 1,
+  IfcFurnishingElement: 0,
+  IfcSpace: 1
+}
+ok   room_with_furniture.ifc: schema=IFC4 meshes=10 {
+  IfcWall: 4,
+  IfcDoor: 1,
+  IfcWindow: 1,
+  IfcFurnishingElement: 4,
+  IfcSpace: 1
+}
+
+PASS — web-ifc (?) parsed all 3 files

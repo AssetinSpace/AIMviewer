@@ -2584,9 +2584,37 @@ AskDock zmenu nepotreboval — default je zbalený pill.
 
 ---
 
+### D-078 — Experiment: iPhone LiDAR (RoomPlan) → IFC4
+**Status:** experiment implementovaný a headless overený (2026-07-18); **nie je to produkčná feature**.
+
+**Kontext:** overiť koncept, že sken miestnosti z iPhone LiDAR (Apple RoomPlan API)
+vieme previesť na minimálny validný IFC4 súbor, ktorý načíta náš existujúci stack
+(IfcOpenShell + web-ifc). Žiadny oficiálny JSON Schema od Apple neexistuje — len Swift
+`Codable` štruktúry.
+
+**Rozhodnutie:** izolovaný experiment v `experiments/roomplan-to-ifc/` (nedotýka sa
+`objects`/bitemporálneho modelu ani DB), dve stopy:
+1. **Track A (headless testované):** `converter/roomplan_to_ifc.py` — CapturedRoom JSON
+   → IFC4 (`IfcProject>Site>Building>Storey>Space`, steny ako extrudované kvádre
+   s nominálnou hrúbkou 0.10 m, dvere/okná standalone bez opening voidov, nábytok ako
+   `IfcFurnishingElement` bounding boxy, pset `AIM_RoomPlanCapture` s proveniensiou).
+   Reverse-engineered schéma → `converter/ROOMPLAN_SCHEMA.md`; 3 syntetické fixtures;
+   `test_roundtrip.py` (reparse + počty entít + `ifcopenshell.validate`) a
+   `webifc_check.mjs` (web-ifc parser) — všetko PASS, logy commitnuté.
+2. **Track B (netestovaný scaffold):** `ios-scanner/` SwiftUI app — `RoomCaptureView`
+   + manuálny `JSONEncoder().encode(capturedRoom)` (lebo `.export()` píše len USD/USDZ),
+   share sheet. Vyžaduje fyzické LiDAR zariadenie; otestuje sa ručne.
+
+**Dôsledky/limity:** pravouhlé steny, bez `IfcRelVoidsElement`, Space = plan bbox
+(L-shape over-covers), RoomPlan presnosť ~cm (nie geodetická). Stretch: opening voidy,
+multi-room merge, napojenie na ETL. Detail → `experiments/roomplan-to-ifc/README.md`.
+
+---
+
 > Kompaktný reverse-chrono log pridaných/zmenených rozhodnutí. Plný kontext = príslušný
 > D-záznam vyššie.
 
+- **2026-07-18** — **D-078 (experiment RoomPlan → IFC4):** izolovaný PoC v `experiments/roomplan-to-ifc/` — Python konvertor CapturedRoom JSON → IFC4 (ifcopenshell 0.8.5, roundtrip testy + web-ifc smoke check PASS na 3 syntetických fixtures), reverse-engineered schéma `CapturedRoom` JSON, netestovaný SwiftUI RoomPlan scanner scaffold (vyžaduje LiDAR hardware). Mimo produkčného dátového modelu.
 - **2026-07-17** — **D-077 (AIM inspector — viewer-first konsolidácia):** audit duplicít (dva ľavé stromy na `/ifc`, dva vzory detailu prvku) + rešerš 7 CDE nástrojov → rozhodnutie viewer-first: `AimPanelData v2` (zodpovednosti/captures/história) + tab lišta AIM | IFC v `PropertiesPanel` forku, per-GUID badge dekorácie natívneho stromu (`AIM_TREE_DECORATIONS`, `lib/data/decorations.ts` bez migrácie), host sidebar sa na `/ifc` nerenderuje (`SidebarGate`), jednotný render detailu `AimPanelView` (2D `ElementInfoPanel` = tá istá schéma), `/api/element` obohatený (reuse `fetchNodeSections`), `filter-bar.tsx` zmazaný. Logika ostáva v hoste (D-071); deploy fork-first. Implementované na vetve `claude/aim-viewer-ifc-consolidation-r7z04q` (oba repá).
 - **2026-07-17** — **D-076 (identifikátorové hyperlinky v 2D IFC-lite prehliadači):** kódy prvkov v texte PDF pôdorysu (pdf.js text items) sa rozpoznávajú konfigurovateľným regexom a renderujú ako klikateľné linky v `DrawingPlanPane`; klik = tie isté selection akcie ako pick v scéne (select + Information panel). Zdroj identifikátora konfigurovateľný per projekt (Name/Description/ObjectType/Tag/Pset.property, fallback poradie), index kód→GlobalId nad všetkými modelmi budovaný raz s cache, duplicity preferujú podlažie výkresu + výber kandidátov, not-found = plain text (debug obrys). Celé genericky vo forku ifc-lite (`lib/identifier-links/`, `identifierLinksSlice`, `IdentifierLinkLayer`, settings v underlay paneli), AIMviewer bez zmien kódu. Testy 27/27 nové, viewer 1768 pass, typecheck čistý.
 - **2026-07-17** — **D-070 dodatok (aplikované na IFClite fork):** viewer fork prebrandovaný cez design kit — `@assetinspace/design-kit` git závislosť v `apps/viewer`, nová vrstva `src/aim/assetin-theme.css` (import po `index.css`): remap upstream Tokyo Night palety (`--tokyo-*`) na semantické `--ds-*` aliasy (povrchy navy, primary/ring brand green, cyan→info, teal/green→success, red→danger, yellow→warning) + shadcn `--color-*` a hierarchy/tabs premenné pre light aj dark; Inter font, assetin favicony a brand `theme-color` v `index.html` (AIM-FORK markery). `.colorful` režim ostáva zámerne upstream. AIMviewer už zmeny nepotreboval.
