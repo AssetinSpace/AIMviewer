@@ -2500,7 +2500,16 @@ pre nerotované strany identita) a čítacie poradie proximity-joinu sa vyhodnoc
 v lokálnom ráme textu — bez toho boxy padali mimo stránku. Nastavenia zobrazujú
 diagnostiku posledného skenu (text items / codes / matched + hint pre každú nulu).
 Overené live Playwright behom (11/11: textová vrstva + selekcia s overlay,
-rotovaná strana, spájanie bublín).
+rotovaná strana, spájanie bublín). Ladenie na reálnom výkrese (spustenie skenu
+nad skutočným PDF v Node): (a) `getTextContent` na niektorých PDF hádže —
+sken číta `streamTextContent` (rovnaká cesta ako textová vrstva); (b) klastrovanie
+riadkov bolo reťazové a na hustom výkrese zlievalo cudzie riadky do pásma
+(bubliny skenovali ako `02.01DD01`) — teraz je ukotvené na prvý run riadku
+a priame zlepenie glyphov vyžaduje kompatibilnú výšku písma; výsledok na
+reálnom liste 63→101 kódov (25→61 joinov). Join preferuje kódy existujúce
+v modeli (kóty nekradnú fragmenty), otvory (IfcOpeningElement) sa neindexujú,
+mobilné bottom sheets sú nad fullscreen dokumentom (z-50) — klik na link
+otvorí properties aj na telefóne.
 
 **Závislosti:** D-072 (plan pane + `storeyGuid`), D-075 (pdf.js infra), D-071 (fork),
 D-044 (GUID bridge); referenčné správanie D-042/D-054 (`_drawing_links`).
