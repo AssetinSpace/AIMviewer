@@ -2518,6 +2518,16 @@ typový kľúč ostáva. Na reálnom modeli 50→176 kódov, 121/126 occurrence 
 → presne 1 prvok (priamy preview); zvyšných 5 sú skutočné duplicity v dátach
 (dve families zdieľajú typový kód, každá čísluje Mark od 01).
 
+**Dodatok — dvojúrovňová schéma + auto-analýza (2026-07-18):** konfigurácia má
+explicitné dve úrovne: **typový kód** (vlastný regex + zdroje) a **occurrence
+kód** (vlastný regex + režim `auto`/`direct`/`composed`; composed =
+`<typový kód>.<diskriminátor>`, zdroje diskriminátora konfigurovateľné, prázdny
+pset = hľadaj vo všetkých). Tlačidlo **Analyze model** navrhne celú konfiguráciu
+z dát modelu (polia s kódmi, syntéza regexov z pozorovaných tvarov,
+direct-vs-composed, probe Mark parametra) — beží aj automaticky pri prvom
+kontakte s projektom (bez uloženého configu) a návrh sa persistuje; v1 configy
+migrujú (starý pattern → occurrence pattern). Stránkový sken akceptuje oba tvary.
+
 **Závislosti:** D-072 (plan pane + `storeyGuid`), D-075 (pdf.js infra), D-071 (fork),
 D-044 (GUID bridge); referenčné správanie D-042/D-054 (`_drawing_links`).
 
