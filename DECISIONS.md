@@ -2509,7 +2509,14 @@ a priame zlepenie glyphov vyžaduje kompatibilnú výšku písma; výsledok na
 reálnom liste 63→101 kódov (25→61 joinov). Join preferuje kódy existujúce
 v modeli (kóty nekradnú fragmenty), otvory (IfcOpeningElement) sa neindexujú,
 mobilné bottom sheets sú nad fullscreen dokumentom (z-50) — klik na link
-otvorí properties aj na telefóne.
+otvorí properties aj na telefóne. **Composite occurrence kľúče (overené na
+reálnom ASR modeli):** autorský nástroj exportuje v Name len TYPOVÝ kód
+(`Family.CC:DD01.02 - popis:id`) a inštančný diskriminátor drží v Revit `Mark`
+parametri — occurrence kód z bubliny (`DD01.02.03`) sa SKLADÁ a nie je v žiadnom
+jednom poli. Index registruje aj `<kód>.<Mark>` (validované anchored vzorom);
+typový kľúč ostáva. Na reálnom modeli 50→176 kódov, 121/126 occurrence kódov
+→ presne 1 prvok (priamy preview); zvyšných 5 sú skutočné duplicity v dátach
+(dve families zdieľajú typový kód, každá čísluje Mark od 01).
 
 **Závislosti:** D-072 (plan pane + `storeyGuid`), D-075 (pdf.js infra), D-071 (fork),
 D-044 (GUID bridge); referenčné správanie D-042/D-054 (`_drawing_links`).
