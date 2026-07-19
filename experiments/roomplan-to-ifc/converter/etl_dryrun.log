@@ -1,0 +1,48 @@
+# ETL dry-run proof (D-078 follow-up) — RoomPlan-generated IFC through the AIM ETL
+#
+# Command (from repo root, no DATABASE_URL — --dry-run never touches the DB):
+#   python -m etl.main --file experiments/roomplan-to-ifc/converter/out/room_with_furniture.ifc --dry-run
+#
+# Proves the converter output is ingestible by the production ETL: it stages
+# site/building/floor/space + 10 assets (4 walls, door, window, 4 furniture).
+# Openings (IfcOpeningElement) are correctly excluded by the D-034 import scope
+# filter ("asset, bez otvorov: 10"); all refs fall back to ifc_guid because the
+# synthetic Names carry no SNIM Assembly Code — counted, not an error.
+# ================================================================================
+
+IFC schéma: IFC4
+Staged: objects=14 edges=13 class_links=0 systems=0 refs=0 guid_history=14
+--dry-run → do DB sa nezapisuje.
+
+Vzorka SNIM uzlov (object_ref zo schémy, D-033):
+  site        Site                         Site
+  building    Building                     Building
+  floor       Storey 1                     Storey 1
+  space       Space 1                      Space 1
+  asset       0frB7CcNfCK8rQZgUzv2Rt       Door 1
+  asset       1Jm10npnj43uhmItHs6ddl       Wall 1
+  asset       3KIrRJBAv3FwcaaYKc0oe7       Wall 2
+  asset       1faPsXuFz8lArAK$UGkO2Z       Wall 3
+  asset       1PDMFtEpbAggHLBLSfkAu7       Wall 4
+  asset       1_omItBIL18eBmu_wD1RM6       Window 1
+  asset       3I09NoeTjApB8PoclrGC21       Table 1
+  asset       0PK4gkAm1AZhxRDPKSE6B8       Chair 2
+
+================================================================
+COVERAGE — object_ref / SNIM (D-033, len extrakcia, NIE IDS)
+================================================================
+Prvky (asset, bez otvorov):           10
+  platný inštančný SNIM kód:              0  (0.0% zo všetkých)
+  z prvkov so SNIM dátami:                0/0  (—)  [prvky s 'Assembly Code']
+  fallback na ifc_guid:               10
+         10  bez SNIM kódu (žiadny Assembly Code)
+
+asset_type (typové SNIM kódy z occurrence):
+      0 zdieľaných kódov z 0 IFC typov (0 zlúčených)
+
+Triedy/psety s fallbackom (kde kód chýba alebo je mimo schémy):
+          4  IfcWall
+          4  IfcFurnishingElement
+          1  IfcDoor
+          1  IfcWindow
+================================================================

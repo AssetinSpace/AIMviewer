@@ -1,6 +1,6 @@
 
 == room_simple.json ==
-  schema: IFC4, 167 entities, 8506 bytes
+  schema: IFC4, 204 entities, 10245 bytes
   ok   IfcProject               expected 1, got 1
   ok   IfcSite                  expected 1, got 1
   ok   IfcBuilding              expected 1, got 1
@@ -10,10 +10,14 @@
   ok   IfcDoor                  expected 1, got 1
   ok   IfcWindow                expected 1, got 1
   ok   IfcFurnishingElement     expected 0, got 0
+  ok   IfcOpeningElement        expected 2, got 2
+  ok   IfcRelVoidsElement       expected 2, got 2
+  ok   IfcRelFillsElement       expected 2, got 2
+  ok   space footprint corners  expected 4, got 4
   validate: clean (no schema violations)
 
 == room_with_furniture.json ==
-  schema: IFC4, 243 entities, 12795 bytes
+  schema: IFC4, 280 entities, 14534 bytes
   ok   IfcProject               expected 1, got 1
   ok   IfcSite                  expected 1, got 1
   ok   IfcBuilding              expected 1, got 1
@@ -23,10 +27,14 @@
   ok   IfcDoor                  expected 1, got 1
   ok   IfcWindow                expected 1, got 1
   ok   IfcFurnishingElement     expected 4, got 4
+  ok   IfcOpeningElement        expected 2, got 2
+  ok   IfcRelVoidsElement       expected 2, got 2
+  ok   IfcRelFillsElement       expected 2, got 2
+  ok   space footprint corners  expected 4, got 4
   validate: clean (no schema violations)
 
 == room_l_shaped.json ==
-  schema: IFC4, 186 entities, 9566 bytes
+  schema: IFC4, 208 entities, 10572 bytes
   ok   IfcProject               expected 1, got 1
   ok   IfcSite                  expected 1, got 1
   ok   IfcBuilding              expected 1, got 1
@@ -36,6 +44,10 @@
   ok   IfcDoor                  expected 1, got 1
   ok   IfcWindow                expected 0, got 0
   ok   IfcFurnishingElement     expected 0, got 0
+  ok   IfcOpeningElement        expected 1, got 1
+  ok   IfcRelVoidsElement       expected 1, got 1
+  ok   IfcRelFillsElement       expected 1, got 1
+  ok   space footprint corners  expected 6, got 6
   validate: clean (no schema violations)
 
 ==================================================

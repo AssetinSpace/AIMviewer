@@ -39,11 +39,12 @@ sofa), `room_l_shaped` (6-wall L footprint).
 | RoomPlan | IFC | Notes |
 |---|---|---|
 | capture | `IfcProject > IfcSite > IfcBuilding > IfcBuildingStorey` | fixed single-storey hierarchy |
-| wall extents (plan bbox) | `IfcSpace` (aggregated to storey) | axis-aligned bbox of wall centerlines |
+| wall centerline loop | `IfcSpace` (aggregated to storey) | polyline footprint chained from wall segments; bbox fallback if the loop won't close |
 | `walls[]` | `IfcWall` | extruded rectangle: width × nominal **0.10 m** thickness × height |
-| `doors[]` | `IfcDoor` | standalone box at own transform, 0.05 m leaf; `OverallWidth/Height` set |
-| `windows[]` | `IfcWindow` | same as doors (sill height falls out of `center.y − h/2`) |
+| `doors[]` | `IfcDoor` + `IfcOpeningElement` | leaf box (0.05 m) **cuts the host wall** via `IfcRelVoidsElement`/`IfcRelFillsElement`; `OverallWidth/Height` set |
+| `windows[]` | `IfcWindow` + `IfcOpeningElement` | same voiding as doors (sill height falls out of `center.y − h/2`) |
 | `objects[]` | `IfcFurnishingElement` | oriented bounding box; category kept in `Name`/`Description` |
+| `parentIdentifier` | host-wall resolution | door/window → wall it voids; nearest-wall fallback when unresolved |
 | `openings[]`, `floors[]`, `sections[]` | *ignored* | space footprint derives from walls instead |
 | identifier + confidence | pset `AIM_RoomPlanCapture` | provenance on every element |
 
@@ -58,9 +59,9 @@ rotation from the transform's local X column; geometry = `IfcExtrudedAreaSolid`
 - **Rectangular-wall assumption** — every surface is a straight extruded box;
   `curve`/`polygonCorners` (curved & non-rect walls) are ignored.
 - **Nominal wall thickness** (0.10 m) — RoomPlan surfaces are zero-thickness planes.
-- **Doors/windows don't cut the wall** — standalone elements overlapping the wall
-  body; no `IfcOpeningElement`/`IfcRelVoidsElement`/`IfcRelFillsElement`.
-- **Space is a plan bounding box** — over-covers non-convex rooms (L-shape).
+- **Space footprint chains wall centerlines** with a 5 cm endpoint tolerance — real
+  scans with gaps/overlaps beyond that fall back to the bounding box (over-covers
+  non-convex rooms). No wall corner mitring/joining.
 - **Furniture = 16-category bounding boxes** — no meshes; sanitary/appliance
   categories are not yet split into finer IFC classes (`IfcSanitaryTerminal`…).
 - **RoomPlan accuracy is approximate, not survey-grade** (±cm, rectangle-snapped).
@@ -68,8 +69,27 @@ rotation from the transform's local X column; geometry = `IfcExtrudedAreaSolid`
   samples (converter also accepts nested 4×4); re-verify against a real device
   export, fields flagged ⚠️ in the schema doc.
 
+## ETL ingestion (proven, dry-run)
+
+The generated IFC is ingestible by the production AIM ETL. From the repo root:
+
+```bash
+pip install -r ../../../etl/requirements.txt   # or just: ifcopenshell python-dotenv
+python -m etl.main --file experiments/roomplan-to-ifc/converter/out/room_with_furniture.ifc --dry-run
+```
+
+`--dry-run` needs no `DATABASE_URL` and never writes. It stages site/building/floor/
+space + 10 assets (walls, door, window, furniture); openings are correctly excluded
+by the D-034 import scope filter and refs fall back to `ifc_guid` (no SNIM Assembly
+Code in the synthetic Names — counted, not an error). Committed output:
+[`converter/etl_dryrun.log`](converter/etl_dryrun.log). This stays a **dry-run
+experiment** — no writes to the production model.
+
 ## Stretch goals (not blockers)
 
-Proper opening voids, multi-room/multi-storey merge, `floors[]`-driven space
-footprints, finer object→IFC class mapping, direct ETL ingestion into AIM.
-Out of scope for the MVP: any backend/upload service, AIM Viewer integration.
+Multi-room/multi-storey merge, `floors[]`-driven space footprints, wall corner
+joining, finer object→IFC class mapping, real (non-dry-run) ETL load. Out of scope
+for the MVP: any backend/upload service, AIM Viewer integration.
+
+**Done since the MVP:** opening voids (doors/windows cut their host wall), true
+polyline space footprint for the L-shape, ETL dry-run proof.

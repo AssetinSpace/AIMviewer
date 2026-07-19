@@ -16,22 +16,31 @@ import roomplan_to_ifc
 HERE = Path(__file__).parent
 OUT = HERE / "out"
 
-# fixture -> expected entity counts in the generated IFC
+# fixture -> expected entity counts in the generated IFC. IfcOpeningElement /
+# IfcRelVoidsElement / IfcRelFillsElement track one void per door+window (the
+# opening that cuts the host wall). space_corners = distinct corners of the
+# IfcSpace footprint polyline (None if the fixture is expected to fall back to bbox).
 EXPECTED = {
     "room_simple.json": {
         "IfcProject": 1, "IfcSite": 1, "IfcBuilding": 1, "IfcBuildingStorey": 1,
         "IfcSpace": 1, "IfcWall": 4, "IfcDoor": 1, "IfcWindow": 1,
         "IfcFurnishingElement": 0,
+        "IfcOpeningElement": 2, "IfcRelVoidsElement": 2, "IfcRelFillsElement": 2,
+        "space_corners": 4,
     },
     "room_with_furniture.json": {
         "IfcProject": 1, "IfcSite": 1, "IfcBuilding": 1, "IfcBuildingStorey": 1,
         "IfcSpace": 1, "IfcWall": 4, "IfcDoor": 1, "IfcWindow": 1,
         "IfcFurnishingElement": 4,
+        "IfcOpeningElement": 2, "IfcRelVoidsElement": 2, "IfcRelFillsElement": 2,
+        "space_corners": 4,
     },
     "room_l_shaped.json": {
         "IfcProject": 1, "IfcSite": 1, "IfcBuilding": 1, "IfcBuildingStorey": 1,
         "IfcSpace": 1, "IfcWall": 6, "IfcDoor": 1, "IfcWindow": 0,
         "IfcFurnishingElement": 0,
+        "IfcOpeningElement": 1, "IfcRelVoidsElement": 1, "IfcRelFillsElement": 1,
+        "space_corners": 6,
     },
 }
 
@@ -60,6 +69,8 @@ def check_fixture(name, expected):
     print(f"  schema: {f.schema}, {len(list(f))} entities, {out.stat().st_size} bytes")
 
     for ifc_class, want in expected.items():
+        if ifc_class == "space_corners":
+            continue  # handled below (not an entity type)
         got = len(f.by_type(ifc_class, include_subtypes=False))
         status = "ok" if got == want else "FAIL"
         print(f"  {status:4} {ifc_class:24} expected {want}, got {got}")
@@ -70,6 +81,34 @@ def check_fixture(name, expected):
     for wall in f.by_type("IfcWall"):
         if not wall.Representation or not wall.ObjectPlacement:
             errors.append(f"{name}: {wall} missing representation/placement")
+
+    # every door/window must be filled into exactly one opening (voids its host wall)
+    filled = {}
+    for rel in f.by_type("IfcRelFillsElement"):
+        filled[rel.RelatedBuildingElement.id()] = filled.get(rel.RelatedBuildingElement.id(), 0) + 1
+    for leaf in f.by_type("IfcDoor") + f.by_type("IfcWindow"):
+        n = filled.get(leaf.id(), 0)
+        if n != 1:
+            errors.append(f"{name}: {leaf.is_a()} #{leaf.id()} in {n} IfcRelFillsElement (expected 1)")
+    # every opening must void exactly one wall
+    voided = {rel.RelatedOpeningElement.id() for rel in f.by_type("IfcRelVoidsElement")}
+    for op in f.by_type("IfcOpeningElement"):
+        if op.id() not in voided:
+            errors.append(f"{name}: {op} has no IfcRelVoidsElement")
+
+    # IfcSpace footprint: distinct corners of the profile polyline
+    want_corners = expected.get("space_corners")
+    if want_corners is not None:
+        prof = f.by_type("IfcSpace")[0].Representation.Representations[0].Items[0].SweptArea
+        if prof.is_a("IfcArbitraryClosedProfileDef"):
+            pts = prof.OuterCurve.Points
+            distinct = len(pts) - 1 if pts[0].Coordinates == pts[-1].Coordinates else len(pts)
+        else:
+            distinct = 4  # bbox rectangle
+        status = "ok" if distinct == want_corners else "FAIL"
+        print(f"  {status:4} {'space footprint corners':24} expected {want_corners}, got {distinct}")
+        if distinct != want_corners:
+            errors.append(f"{name}: space corners expected {want_corners}, got {distinct}")
     units = f.by_type("IfcUnitAssignment")
     if not units:
         errors.append(f"{name}: no IfcUnitAssignment")

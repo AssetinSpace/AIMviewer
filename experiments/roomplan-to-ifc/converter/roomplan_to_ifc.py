@@ -22,6 +22,8 @@ import ifcopenshell.guid
 WALL_THICKNESS = 0.10   # m — RoomPlan surfaces are zero-thickness planes
 LEAF_THICKNESS = 0.05   # m — nominal door/window leaf depth
 MIN_SPACE_HEIGHT = 2.2  # m — fallback if no walls carry height
+OPENING_MARGIN = 0.02   # m — extra depth each side so the void fully pierces the wall body
+CORNER_TOL = 0.05       # m — endpoint-matching tolerance when chaining wall segments
 
 OBJECT_CATEGORY_TO_PREDEFINED = {
     # CapturedRoom.Object.Category -> IfcFurnishingElement description (MVP: all
@@ -212,6 +214,105 @@ class IfcBuilder:
                         OwnerHistory=self.owner_history,
                         RelatedObjects=[product], RelatingPropertyDefinition=pset)
 
+    def void_and_fill(self, wall, filler, el, wall_thickness):
+        """Cut `filler` (door/window) through `wall` via an IfcOpeningElement.
+
+        IfcRelVoidsElement(wall -> opening) + IfcRelFillsElement(opening -> filler).
+        Opening spans the full wall thickness (+ margin both sides) so the boolean
+        pierces cleanly. Placed in the same storey-relative frame as the filler.
+        """
+        f = self.f
+        opening = f.create_entity(
+            "IfcOpeningElement", GlobalId=ifcopenshell.guid.new(),
+            OwnerHistory=self.owner_history, Name=f"Opening for {filler.Name}",
+            PredefinedType="OPENING",
+            ObjectPlacement=self.placement((el.center[0], el.center[1], el.base_z),
+                                           el.direction,
+                                           relative_to=filler.ObjectPlacement.PlacementRelTo),
+            Representation=self.box_representation(
+                el.width, wall_thickness + 2 * OPENING_MARGIN, el.height))
+        f.create_entity("IfcRelVoidsElement", GlobalId=ifcopenshell.guid.new(),
+                        OwnerHistory=self.owner_history,
+                        RelatingBuildingElement=wall, RelatedOpeningElement=opening)
+        f.create_entity("IfcRelFillsElement", GlobalId=ifcopenshell.guid.new(),
+                        OwnerHistory=self.owner_history,
+                        RelatingOpeningElement=opening, RelatedBuildingElement=filler)
+        return opening
+
+    def polyline_area_representation(self, corners, height):
+        """Extruded IfcArbitraryClosedProfileDef over `corners` (absolute plan XY)."""
+        f = self.f
+        points = [f.create_entity("IfcCartesianPoint", Coordinates=(float(x), float(y)))
+                  for x, y in corners]
+        polyline = f.create_entity("IfcPolyline", Points=points + [points[0]])  # closed
+        profile = f.create_entity("IfcArbitraryClosedProfileDef", ProfileType="AREA",
+                                  OuterCurve=polyline)
+        solid = f.create_entity(
+            "IfcExtrudedAreaSolid", SweptArea=profile,
+            Position=f.create_entity(
+                "IfcAxis2Placement3D",
+                Location=f.create_entity("IfcCartesianPoint", Coordinates=(0.0, 0.0, 0.0))),
+            ExtrudedDirection=f.create_entity("IfcDirection",
+                                              DirectionRatios=(0.0, 0.0, 1.0)),
+            Depth=float(max(height, 0.01)))
+        shape = f.create_entity("IfcShapeRepresentation",
+                                ContextOfItems=self.body_context,
+                                RepresentationIdentifier="Body",
+                                RepresentationType="SweptSolid", Items=[solid])
+        return f.create_entity("IfcProductDefinitionShape", Representations=[shape])
+
+
+# --------------------------------------------------------------------------- geometry helpers
+
+def chain_wall_loop(walls, tol=CORNER_TOL):
+    """Chain wall plan segments into an ordered closed corner loop.
+
+    Returns a counter-clockwise list of (x, y) corners, or None if the segments
+    do not form a single closed loop (open/disjoint) — caller falls back to bbox.
+    """
+    segments = [w.plan_endpoints() for w in walls]
+    if len(segments) < 3:
+        return None
+
+    def close(a, b):
+        return math.hypot(a[0] - b[0], a[1] - b[1]) <= tol
+
+    remaining = segments[1:]
+    start, cursor = segments[0]
+    corners = [start, cursor]
+    while remaining:
+        for i, (p, q) in enumerate(remaining):
+            if close(p, cursor):
+                cursor = q
+            elif close(q, cursor):
+                cursor = p
+            else:
+                continue
+            remaining.pop(i)
+            corners.append(cursor)
+            break
+        else:
+            return None  # dangling segment — not a single loop
+    if not close(corners[-1], corners[0]):
+        return None
+    corners = corners[:-1]  # drop the duplicate closing point
+    # dedup near-coincident consecutive corners
+    deduped = [corners[0]]
+    for c in corners[1:]:
+        if not close(c, deduped[-1]):
+            deduped.append(c)
+    if len(deduped) < 3:
+        return None
+    # enforce counter-clockwise winding (positive signed area) for a valid outer profile
+    area = 0.0
+    for i in range(len(deduped)):
+        x1, y1 = deduped[i]
+        x2, y2 = deduped[(i + 1) % len(deduped)]
+        area += x1 * y2 - x2 * y1
+    if area < 0:
+        deduped.reverse()
+    return deduped
+
 
 # --------------------------------------------------------------------------- conversion
 
@@ -244,17 +345,39 @@ def convert(data, project_name):
         products.append(product)
         return product
 
+    wall_by_id = {}          # RoomPlan identifier -> (element, wall product, thickness)
     for i, w in enumerate(walls, 1):
         thickness = w.depth if w.depth > 0.01 else WALL_THICKNESS
-        build_box("IfcWall", f"Wall {i}", w, thickness, w.height)
+        wall = build_box("IfcWall", f"Wall {i}", w, thickness, w.height)
+        wall_by_id[w.identifier] = (w, wall, thickness)
 
-    for i, d in enumerate(doors, 1):
+    def host_wall(el, item):
+        """Resolve the wall a door/window pierces: parentIdentifier, else nearest."""
+        parent = item.get("parentIdentifier")
+        if parent and parent in wall_by_id:
+            return wall_by_id[parent]
+        if not walls:
+            return None
+        cx, cy, _ = el.center
+        best = min(wall_by_id.values(),
+                   key=lambda rec: math.hypot(rec[0].center[0] - cx, rec[0].center[1] - cy))
+        return best
+
+    door_items = data.get("doors") or []
+    for i, (d, item) in enumerate(zip(doors, door_items), 1):
         door = build_box("IfcDoor", f"Door {i}", d, LEAF_THICKNESS, d.height)
         door.OverallWidth, door.OverallHeight = d.width, d.height
+        rec = host_wall(d, item)
+        if rec:
+            b.void_and_fill(rec[1], door, d, rec[2])
 
-    for i, w in enumerate(windows, 1):
+    window_items = data.get("windows") or []
+    for i, (w, item) in enumerate(zip(windows, window_items), 1):
         win = build_box("IfcWindow", f"Window {i}", w, LEAF_THICKNESS, w.height)
         win.OverallWidth, win.OverallHeight = w.width, w.height
+        rec = host_wall(w, item)
+        if rec:
+            b.void_and_fill(rec[1], win, w, rec[2])
 
     for i, o in enumerate(objects, 1):
         label = OBJECT_CATEGORY_TO_PREDEFINED.get(o.category, o.category or "Unknown")
@@ -263,21 +386,28 @@ def convert(data, project_name):
         build_box("IfcFurnishingElement", f"{label} {i}", o, o.depth, o.height,
                   description=f"RoomPlan category: {o.category}")
 
-    # IfcSpace: plan bounding box of the wall centerlines, extruded to max wall height.
-    # (MVP: axis-aligned bbox, so the L-shape space over-covers — see README limitations.)
+    # IfcSpace footprint: chain the wall centerlines into a closed polyline (exact for
+    # L-shapes); fall back to an axis-aligned bounding box when the loop won't close.
     space = None
     if walls:
-        points = [p for w in walls for p in w.plan_endpoints()]
-        xs, ys = [p[0] for p in points], [p[1] for p in points]
         height = max((w.height for w in walls), default=MIN_SPACE_HEIGHT)
         base = min(w.base_z for w in walls)
         space = b.entity("IfcSpace", "Space 1")
-        space.ObjectPlacement = b.placement(
-            (((min(xs) + max(xs)) / 2.0), ((min(ys) + max(ys)) / 2.0), base),
-            relative_to=storey.ObjectPlacement)
-        space.Representation = b.box_representation(
-            max(xs) - min(xs), max(ys) - min(ys), height)
         space.CompositionType = "ELEMENT"
+        corners = chain_wall_loop(walls)
+        if corners:
+            # placement at origin; absolute plan coords live in the profile polyline
+            space.ObjectPlacement = b.placement((0.0, 0.0, base),
+                                                relative_to=storey.ObjectPlacement)
+            space.Representation = b.polyline_area_representation(corners, height)
+        else:
+            points = [p for w in walls for p in w.plan_endpoints()]
+            xs, ys = [p[0] for p in points], [p[1] for p in points]
+            space.ObjectPlacement = b.placement(
+                (((min(xs) + max(xs)) / 2.0), ((min(ys) + max(ys)) / 2.0), base),
+                relative_to=storey.ObjectPlacement)
+            space.Representation = b.box_representation(
+                max(xs) - min(xs), max(ys) - min(ys), height)
         b.aggregate(storey, [space])
 
     if products:

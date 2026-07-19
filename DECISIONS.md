@@ -2605,15 +2605,32 @@ vieme previesť na minimálny validný IFC4 súbor, ktorý načíta náš existu
    + manuálny `JSONEncoder().encode(capturedRoom)` (lebo `.export()` píše len USD/USDZ),
    share sheet. Vyžaduje fyzické LiDAR zariadenie; otestuje sa ručne.
 
-**Dôsledky/limity:** pravouhlé steny, bez `IfcRelVoidsElement`, Space = plan bbox
-(L-shape over-covers), RoomPlan presnosť ~cm (nie geodetická). Stretch: opening voidy,
-multi-room merge, napojenie na ETL. Detail → `experiments/roomplan-to-ifc/README.md`.
+**Dôsledky/limity:** pravouhlé steny, RoomPlan presnosť ~cm (nie geodetická).
+Detail → `experiments/roomplan-to-ifc/README.md`.
+
+**Dodatok (2026-07-19) — opening voidy, polyline space, ETL dry-run proof:** dotiahnuté
+dva odložené stretch ciele + integračný dôkaz (stále experiment mimo produkčného modelu):
+1. **Opening voidy:** dvere/okná režú hostiteľskú stenu — `IfcOpeningElement` +
+   `IfcRelVoidsElement` (stena→otvor) + `IfcRelFillsElement` (otvor→dvere/okno). Hostiteľ
+   sa rezolvuje cez `parentIdentifier`, fallback = najbližšia stena. Otvor NIE je
+   priestorovo containovaný (len voids väzba). Overené: hostiteľská stena teseluje na 16
+   vrcholov (kváder s dierou), web-ifc 0.0.77 boolean rešpektuje (žiadne extra meshe).
+2. **Space footprint:** `IfcArbitraryClosedProfileDef` z reťazenia stien do uzavretej
+   slučky (tolerancia 5 cm), fallback na bbox keď sa slučka neuzavrie. L-shape = 6 rohov
+   (predtým bbox over-cover).
+3. **ETL dry-run proof:** `python -m etl.main --file <ifc> --dry-run` (bez DB) stageuje
+   site/building/floor/space + 10 assetov; otvory správne vylúčené D-034 scope filtrom;
+   refy fallback na `ifc_guid` (žiadny SNIM kód). Log `converter/etl_dryrun.log`.
+
+Stále odložené: multi-room merge, wall corner joining, jemnejšie object→IFC triedy,
+reálny (nie dry-run) ETL load. Track B ostáva netestovaný (hardware).
 
 ---
 
 > Kompaktný reverse-chrono log pridaných/zmenených rozhodnutí. Plný kontext = príslušný
 > D-záznam vyššie.
 
+- **2026-07-19** — **D-078 dodatok (opening voidy + polyline space + ETL dry-run proof):** dvere/okná režú stenu (`IfcOpeningElement`+`IfcRelVoidsElement`/`IfcRelFillsElement`, host cez `parentIdentifier`), `IfcSpace` = polyline footprint z reťazenia stien (L-shape 6 rohov, bbox fallback), a generovaný IFC prejde `etl.main --dry-run` (14 objektov staged, otvory vylúčené D-034, GUID fallback refy) — log `converter/etl_dryrun.log`. Roundtrip+web-ifc PASS. Stále experiment mimo produkčného modelu.
 - **2026-07-18** — **D-078 (experiment RoomPlan → IFC4):** izolovaný PoC v `experiments/roomplan-to-ifc/` — Python konvertor CapturedRoom JSON → IFC4 (ifcopenshell 0.8.5, roundtrip testy + web-ifc smoke check PASS na 3 syntetických fixtures), reverse-engineered schéma `CapturedRoom` JSON, netestovaný SwiftUI RoomPlan scanner scaffold (vyžaduje LiDAR hardware). Mimo produkčného dátového modelu.
 - **2026-07-17** — **D-077 (AIM inspector — viewer-first konsolidácia):** audit duplicít (dva ľavé stromy na `/ifc`, dva vzory detailu prvku) + rešerš 7 CDE nástrojov → rozhodnutie viewer-first: `AimPanelData v2` (zodpovednosti/captures/história) + tab lišta AIM | IFC v `PropertiesPanel` forku, per-GUID badge dekorácie natívneho stromu (`AIM_TREE_DECORATIONS`, `lib/data/decorations.ts` bez migrácie), host sidebar sa na `/ifc` nerenderuje (`SidebarGate`), jednotný render detailu `AimPanelView` (2D `ElementInfoPanel` = tá istá schéma), `/api/element` obohatený (reuse `fetchNodeSections`), `filter-bar.tsx` zmazaný. Logika ostáva v hoste (D-071); deploy fork-first. Implementované na vetve `claude/aim-viewer-ifc-consolidation-r7z04q` (oba repá).
 - **2026-07-17** — **D-076 (identifikátorové hyperlinky v 2D IFC-lite prehliadači):** kódy prvkov v texte PDF pôdorysu (pdf.js text items) sa rozpoznávajú konfigurovateľným regexom a renderujú ako klikateľné linky v `DrawingPlanPane`; klik = tie isté selection akcie ako pick v scéne (select + Information panel). Zdroj identifikátora konfigurovateľný per projekt (Name/Description/ObjectType/Tag/Pset.property, fallback poradie), index kód→GlobalId nad všetkými modelmi budovaný raz s cache, duplicity preferujú podlažie výkresu + výber kandidátov, not-found = plain text (debug obrys). Celé genericky vo forku ifc-lite (`lib/identifier-links/`, `identifierLinksSlice`, `IdentifierLinkLayer`, settings v underlay paneli), AIMviewer bez zmien kódu. Testy 27/27 nové, viewer 1768 pass, typecheck čistý.
