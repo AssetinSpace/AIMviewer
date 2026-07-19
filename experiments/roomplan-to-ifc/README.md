@@ -85,6 +85,25 @@ Code in the synthetic Names — counted, not an error). Committed output:
 [`converter/etl_dryrun.log`](converter/etl_dryrun.log). This stays a **dry-run
 experiment** — no writes to the production model.
 
+## No Mac? Off-the-shelf scanner path
+
+Building the Track B Swift app needs Xcode (macOS). The **converter is pure Python
+and needs no Mac** — so without one, capture with an off-the-shelf App Store app on a
+LiDAR iPhone/iPad instead of our own app, export a standard format, and adapt the
+converter's input to it. `inspect_scan.py` reports the structure of a real export so
+the adapter is written against real data, not guesses:
+
+```bash
+pip install usd-core trimesh          # optional, only for inspecting scans
+python3 inspect_scan.py <scan.usdz|scan.obj|scan.json>
+```
+
+- **USDZ from a RoomPlan-based app** (e.g. Polycam Spaces) is the best case — it can
+  keep walls/doors/windows/objects as separate named prims, close to our JSON.
+- **Raw mesh** (OBJ/PLY/GLB) has no labelled openings; converting it to IFC walls
+  needs plane segmentation (a separate, larger step — not MVP).
+- **Apple `CapturedRoom` JSON** feeds `roomplan_to_ifc.py` directly.
+
 ## Stretch goals (not blockers)
 
 Multi-room/multi-storey merge, `floors[]`-driven space footprints, wall corner
