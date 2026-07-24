@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import { Inter, Geist_Mono } from "next/font/google";
 import "./globals.css";
 
+import { VersionWatcher } from "@/components/version-watcher";
+
 // Inter = brand font (assetin design kit, D-070); premenná --font-sans ju
 // prepojí na @theme mapovanie v globals.css.
 const interSans = Inter({
@@ -29,7 +31,10 @@ export default function RootLayout({
       lang="en"
       className={`${interSans.variable} ${geistMono.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col">{children}</body>
+      <body className="min-h-full flex flex-col">
+        {children}
+        <VersionWatcher />
+      </body>
     </html>
   );
 }

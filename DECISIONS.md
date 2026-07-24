@@ -2584,9 +2584,39 @@ AskDock zmenu nepotreboval — default je zbalený pill.
 
 ---
 
+### D-078 — Detekcia nového deployu → ponuka obnovy ("staré UI po deployi")
+**Status:** rozhodnuté (2026-07-24).
+
+**Kontext:** po nasadení nového buildu používateľ v už otvorenom tabe stále videl staré UI.
+Nešlo o HTTP cache — HTML má `no-store`, JS chunky sú content-hashované, WASM je jediná
+dlho-cachovaná statika a nie je service worker. Príčina: otvorený tab ďalej beží starý
+klientský bundle a sám o novom deployi nevie; „otvorenie" = prepnutie na už bežiaci tab
+bez reálneho reloadu.
+
+**Rozhodnutie:** klientský ostrov `<VersionWatcher>` (v root `app/layout.tsx`) sleduje SHA
+živého deployu a pri jeho zmene ponúkne obnovu.
+- Zdroj pravdy = `GET /api/version` (`force-dynamic` + `Cache-Control: no-store`), vracia
+  `VERCEL_GIT_COMMIT_SHA` (fallback `VERCEL_DEPLOYMENT_ID`, inak `"dev"`).
+- Klient si **zapamätá prvé videné SHA** a porovnáva ho každých 60 s + pri `visibilitychange`
+  (návrat na tab). Bez závislosti na `NEXT_PUBLIC_*` — funguje aj pri vypnutých systémových
+  env premenných; v dev je SHA vždy `"dev"` → nikdy nefalošne nevyskočí.
+- **Toast, nie auto-reload:** obnova je na kliknutie (tlačidlo „Obnoviť"), aby to nevyhodilo
+  používateľa uprostred rozrobenej selekcie/práce; toast sa dá aj zavrieť.
+
+**Dôvod:** HTTP vrstva bola už správna (revalidácia), chýbal len signál smerom ku klientovi.
+Porovnanie prvého-videného SHA (namiesto zapečeného build-SHA) je bulletproof voči tomu,
+či Vercel `NEXT_PUBLIC_*` premenné exponuje.
+
+**Dôsledok:** medzi deployom a zbadaním novej verzie je latencia ≤60 s (alebo hneď po
+prepnutí na tab). Endpoint je zámerne dynamický (necachovaný) — zanedbateľný payload
+(`{"sha":...}`), volaný raz za minútu na klienta.
+
+---
+
 > Kompaktný reverse-chrono log pridaných/zmenených rozhodnutí. Plný kontext = príslušný
 > D-záznam vyššie.
 
+- **2026-07-24** — **D-078 (detekcia nového deployu):** `<VersionWatcher>` v root layoute polluje `GET /api/version` (`no-store`, `VERCEL_GIT_COMMIT_SHA`) každých 60 s + pri návrate na tab; pri zmene oproti prvému videnému SHA ukáže toast „Obnoviť" (nie auto-reload). Rieši „staré UI po deployi" — otvorený tab bežal starý JS. Bez závislosti na `NEXT_PUBLIC_*`; v dev SHA=`"dev"` → nevyskočí.
 - **2026-07-17** — **D-077 (AIM inspector — viewer-first konsolidácia):** audit duplicít (dva ľavé stromy na `/ifc`, dva vzory detailu prvku) + rešerš 7 CDE nástrojov → rozhodnutie viewer-first: `AimPanelData v2` (zodpovednosti/captures/história) + tab lišta AIM | IFC v `PropertiesPanel` forku, per-GUID badge dekorácie natívneho stromu (`AIM_TREE_DECORATIONS`, `lib/data/decorations.ts` bez migrácie), host sidebar sa na `/ifc` nerenderuje (`SidebarGate`), jednotný render detailu `AimPanelView` (2D `ElementInfoPanel` = tá istá schéma), `/api/element` obohatený (reuse `fetchNodeSections`), `filter-bar.tsx` zmazaný. Logika ostáva v hoste (D-071); deploy fork-first. Implementované na vetve `claude/aim-viewer-ifc-consolidation-r7z04q` (oba repá).
 - **2026-07-17** — **D-076 (identifikátorové hyperlinky v 2D IFC-lite prehliadači):** kódy prvkov v texte PDF pôdorysu (pdf.js text items) sa rozpoznávajú konfigurovateľným regexom a renderujú ako klikateľné linky v `DrawingPlanPane`; klik = tie isté selection akcie ako pick v scéne (select + Information panel). Zdroj identifikátora konfigurovateľný per projekt (Name/Description/ObjectType/Tag/Pset.property, fallback poradie), index kód→GlobalId nad všetkými modelmi budovaný raz s cache, duplicity preferujú podlažie výkresu + výber kandidátov, not-found = plain text (debug obrys). Celé genericky vo forku ifc-lite (`lib/identifier-links/`, `identifierLinksSlice`, `IdentifierLinkLayer`, settings v underlay paneli), AIMviewer bez zmien kódu. Testy 27/27 nové, viewer 1768 pass, typecheck čistý.
 - **2026-07-17** — **D-070 dodatok (aplikované na IFClite fork):** viewer fork prebrandovaný cez design kit — `@assetinspace/design-kit` git závislosť v `apps/viewer`, nová vrstva `src/aim/assetin-theme.css` (import po `index.css`): remap upstream Tokyo Night palety (`--tokyo-*`) na semantické `--ds-*` aliasy (povrchy navy, primary/ring brand green, cyan→info, teal/green→success, red→danger, yellow→warning) + shadcn `--color-*` a hierarchy/tabs premenné pre light aj dark; Inter font, assetin favicony a brand `theme-color` v `index.html` (AIM-FORK markery). `.colorful` režim ostáva zámerne upstream. AIMviewer už zmeny nepotreboval.
