@@ -2302,9 +2302,39 @@ v klientskom komponente zduplikovaný oproti `SPATIAL_TYPES` — `lib/data/spati
 
 ---
 
+### D-077 — Detekcia nového deployu → ponuka obnovy ("staré UI po deployi")
+**Status:** rozhodnuté (2026-07-24).
+
+**Kontext:** po nasadení nového buildu používateľ v už otvorenom tabe stále videl staré UI.
+Nešlo o HTTP cache — HTML má `no-store`, JS chunky sú content-hashované, WASM je jediná
+dlho-cachovaná statika a nie je service worker. Príčina: otvorený tab ďalej beží starý
+klientský bundle a sám o novom deployi nevie; „otvorenie" = prepnutie na už bežiaci tab
+bez reálneho reloadu.
+
+**Rozhodnutie:** klientský ostrov `<VersionWatcher>` (v root `app/layout.tsx`) sleduje SHA
+živého deployu a pri jeho zmene ponúkne obnovu.
+- Zdroj pravdy = `GET /api/version` (`force-dynamic` + `Cache-Control: no-store`), vracia
+  `VERCEL_GIT_COMMIT_SHA` (fallback `VERCEL_DEPLOYMENT_ID`, inak `"dev"`).
+- Klient si **zapamätá prvé videné SHA** a porovnáva ho každých 60 s + pri `visibilitychange`
+  (návrat na tab). Bez závislosti na `NEXT_PUBLIC_*` — funguje aj pri vypnutých systémových
+  env premenných; v dev je SHA vždy `"dev"` → nikdy nefalošne nevyskočí.
+- **Toast, nie auto-reload:** obnova je na kliknutie (tlačidlo „Obnoviť"), aby to nevyhodilo
+  používateľa uprostred rozrobenej selekcie/práce; toast sa dá aj zavrieť.
+
+**Dôvod:** HTTP vrstva bola už správna (revalidácia), chýbal len signál smerom ku klientovi.
+Porovnanie prvého-videného SHA (namiesto zapečeného build-SHA) je bulletproof voči tomu,
+či Vercel `NEXT_PUBLIC_*` premenné exponuje.
+
+**Dôsledok:** medzi deployom a zbadaním novej verzie je latencia ≤60 s (alebo hneď po
+prepnutí na tab). Endpoint je zámerne dynamický (necachovaný) — zanedbateľný payload
+(`{"sha":...}`), volaný raz za minútu na klienta.
+
+---
+
 > Kompaktný reverse-chrono log pridaných/zmenených rozhodnutí. Plný kontext = príslušný
 > D-záznam vyššie.
 
+- **2026-07-24** — **D-077 (detekcia nového deployu):** `<VersionWatcher>` v root layoute polluje `GET /api/version` (`no-store`, `VERCEL_GIT_COMMIT_SHA`) každých 60 s + pri návrate na tab; pri zmene oproti prvému videnému SHA ukáže toast „Obnoviť" (nie auto-reload). Rieši „staré UI po deployi" — otvorený tab bežal starý JS. Bez závislosti na `NEXT_PUBLIC_*`; v dev SHA=`"dev"` → nevyskočí.
 - **2026-07-16** — **D-074 (zoskupenie stromu podľa IFC triedy):** pod uzlom s assetmi (≥2 triedy) sa potomkovia zoskupia do rozbaľovacích skupín podľa `ifc_type` s počtom členov (`IfcSpace` prvá, zvyšok abecedne); skupina nie je AIM objekt (bez `/node/` odkazu, open-stav pod `${parentId}::${ifcType}`); čisto prezentačná vrstva v `components/spatial-tree.tsx`, bez zmien data vrstvy/DB.
 - **2026-07-14** — **D-073 (Reality Capture v1):** modul fotiek + statických 360° panorám ukotvených 2D/3D/IfcSpace, obojsmerne. Model „ako dokumenty" (D-018): `object_type='capture'` + prípona `captures`, `object_type='capture_media'` + prípona `capture_media` (analóg `documents`), ukotvenie v rezervovanom `properties._capture` (vzor `_georef`). Prvé `aim_` hrany manifestu (`aim_rel_capture_located`, `aim_rel_capture_media`, export ICDD). Úložisko = Supabase bucket `captures` + server-side `sharp` thumbnaily; 360 = Photo Sphere Viewer host-side (BIM engine je WebGPU → žiadna three.js kolízia). Zápis za env bránou `CAPTURE_WRITE_ENABLED` (D-068/D-072), single-project. 3D piny vo forku (reuse `annotationsSlice`/`AnnotationLayer`). Migrácia `20260716120000`. Zatvára otvorené body D-065.
 - **2026-07-14** — **D-072 (georeferencované PDF podklady):** Dalux-style „Locations" — PDF pôdorys naviazaný na podlažie (2-bodová kalibrácia → similarity transform, Z z elevácie podlažia, väzba cez IFC storey GlobalId); nový upstreamovateľný balík `@ifc-lite/drawing-underlay` vo forku (WGSL textúrovaná rovina) + AIM bridge `UNDERLAYS_LOAD`/`UNDERLAY_SAVE`; perzistencia `_georef` v `objects.properties` dokumentu (bez migrácie). Supersedovuje D-038/D-039.
