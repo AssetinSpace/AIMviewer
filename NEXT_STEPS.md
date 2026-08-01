@@ -28,12 +28,11 @@ Prioritizované odporúčania z auditu (vetva `claude/overnight-repo-audit-vky8t
    re-exporte sa identita (QR kódy!) môže ticho presunúť na iný fyzický prvok.
    Návrh: tie-break GlobalId-om alebo hard-fail pri ambiguite. Architektonické.
 
-4. **Duálne viewer komponenty + stale-closure race** (M) — `components/ifc-viewer.tsx`
-   (živý) vs `components/ifc-viewer-embed.tsx` (mŕtvy, 343 riadkov, iný env var
-   `NEXT_PUBLIC_VIEWER_URL`). Mŕtvy embed pritom má správnu pending-queue pre
-   FOCUS pred MODELS_LOADED, živý komponent príkaz v tom okne zahodí (klik na
-   „3D: N prvkov" počas parsovania = nič). Rozhodnúť, ktorý prežije, preniesť
-   queue, druhý zmazať (zmaže aj lint warning v `hooks/use-ifc-query.ts`).
+4. ~~**Duálne viewer komponenty + stale-closure race**~~ — VYRIEŠENÉ: prežil
+   `components/ifc-viewer.tsx`, pending-queue pre GUID-nosné príkazy pred
+   MODELS_LOADED prenesená (`send()` + flush v handleri MODELS_LOADED),
+   `ifc-viewer-embed.tsx` zmazaný, `.env.example` prepnutý na
+   `NEXT_PUBLIC_IFC_VIEWER_URL`.
 
 5. **Mŕtvy filter reťazec** (S) — `components/filter-bar.tsx` (nepoužívaný) →
    `app/api/filter/route.ts` (živý verejný endpoint bez volajúceho) →
