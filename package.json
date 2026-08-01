@@ -13,9 +13,9 @@
   },
   "dependencies": {
     "@assetinspace/design-kit": "github:AssetinSpace/design-kit#main",
-    "@ifc-lite/geometry": "^2.9.2",
-    "@ifc-lite/query": "^1.14.10",
-    "@ifc-lite/wasm": "^2.12.0",
+    "@ifc-lite/geometry": "2.9.2",
+    "@ifc-lite/query": "1.14.10",
+    "@ifc-lite/wasm": "2.13.4",
     "@photo-sphere-viewer/compass-plugin": "^5.14.3",
     "@photo-sphere-viewer/core": "^5.14.3",
     "@photo-sphere-viewer/gallery-plugin": "^5.14.3",
