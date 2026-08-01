@@ -329,11 +329,11 @@ export function IFCViewer({
       switch (e.data.type) {
         case "READY": {
           readyRef.current = true;
-          // READY = ifc-lite appka nabehla, ale ?models= autoload ešte len
-          // beží — overlay drž až po MODELS_LOADED, inak presvitne ifc-lite
-          // úvodná obrazovka s ich logom. Bez modelov MODELS_LOADED nikdy
-          // nepríde, vtedy overlay zhoď už tu.
-          if (models.length === 0) setStatus("ready");
+          // Overlay zhoď už na READY: počas ?models= autoloadu si viewer
+          // úvodku prekrýva sám vlastným veilom (AimBridge vo forku) a po
+          // prvom modeli sa odkrýva progresívne — držať overlay do
+          // MODELS_LOADED by znamenalo čakať naslepo na celú federáciu.
+          setStatus("ready");
           // Naplň ViewerApi až po READY — presne ako pôvodný kontrakt, kde
           // apiRef.current bol null pred načítaním scény.
           if (apiRef) apiRef.current = makeApi();
