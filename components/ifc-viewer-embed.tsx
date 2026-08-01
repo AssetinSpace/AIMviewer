@@ -123,6 +123,10 @@ export function IFCViewerEmbed({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [modelsKey]);
 
+  // Či od viewera vôbec čakáme modely — bez nich MODELS_LOADED nikdy nepríde
+  // a overlay smie zmiznúť už na READY.
+  const modelsRequested = models.some((m) => Boolean(m.url));
+
   // objectId → IFC GUID (reverse of guidMap) for DB→3D commands.
   const objectIdToGuid = useMemo(() => {
     const m = new Map<string, string>();
@@ -230,7 +234,9 @@ export function IFCViewerEmbed({
 
       switch (e.data.type) {
         case "READY":
-          setStatus("ready");
+          // READY = ifc-lite appka beží, ale federácia sa ešte len sťahuje —
+          // overlay drž až po MODELS_LOADED, inak presvitne ifc-lite úvodka.
+          if (!modelsRequested) setStatus("ready");
           break;
         case "MODELS_LOADED":
           modelsLoadedRef.current = true;
@@ -263,7 +269,7 @@ export function IFCViewerEmbed({
     }
     window.addEventListener("message", onMessage);
     return () => window.removeEventListener("message", onMessage);
-  }, [viewerOrigin, guidMap, onSelect, onPickedElement, onNavigate, sendAimPanel, flushPending]);
+  }, [viewerOrigin, guidMap, onSelect, onPickedElement, onNavigate, sendAimPanel, flushPending, modelsRequested]);
 
   // Focus (card / AI dock → 3D). Comma-separated GUIDs; queued until load.
   // focusNonce in deps: every AI action carries a fresh nonce so an identical
@@ -322,8 +328,10 @@ export function IFCViewerEmbed({
         allow="fullscreen; xr-spatial-tracking; cross-origin-isolated"
       />
 
+      {/* Nepriehľadný overlay — kým sa nenačíta federácia, nesmie presvitať
+          ifc-lite úvodná obrazovka s ich logom. */}
       {status === "loading" && (
-        <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-2 bg-muted/60 backdrop-blur-sm">
+        <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-2 bg-background">
           <div className="h-5 w-5 animate-spin rounded-full border-2 border-primary border-t-transparent" />
           <span className="text-sm text-muted-foreground">Načítavam 3D model…</span>
           {slow && (
