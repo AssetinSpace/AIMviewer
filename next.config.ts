@@ -12,6 +12,12 @@ const nextConfig: NextConfig = {
     // verejný read-only s ISR 60 s, takže krátka klientská staleness je OK.
     staleTimes: { dynamic: 30, static: 300 },
   },
+  // Koreň → IFC workspace (D-077 viewer-first) na úrovni configu: žiadna
+  // stránka `/` = žiadny build-time prerender (layout ťahá Supabase a build
+  // padal na prechodnom „JWT issued at future" clock skewe build stroja).
+  async redirects() {
+    return [{ source: "/", destination: "/ifc", permanent: false }];
+  },
   async headers() {
     return [
       {
