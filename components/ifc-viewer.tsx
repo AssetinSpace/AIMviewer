@@ -319,7 +319,11 @@ export function IFCViewer({
       switch (e.data.type) {
         case "READY": {
           readyRef.current = true;
-          setStatus("ready");
+          // READY = ifc-lite appka nabehla, ale ?models= autoload ešte len
+          // beží — overlay drž až po MODELS_LOADED, inak presvitne ifc-lite
+          // úvodná obrazovka s ich logom. Bez modelov MODELS_LOADED nikdy
+          // nepríde, vtedy overlay zhoď už tu.
+          if (models.length === 0) setStatus("ready");
           // Naplň ViewerApi až po READY — presne ako pôvodný kontrakt, kde
           // apiRef.current bol null pred načítaním scény.
           if (apiRef) apiRef.current = makeApi();
@@ -329,6 +333,7 @@ export function IFCViewer({
           // Modely sú naparsované — až teraz vie resolveGuids nájsť prvok.
           // Počiatočný deep-link focus/ops (?focus=…&ops=…) aplikuj tu, nie na READY.
           loadedRef.current = true;
+          setStatus("ready");
           if (focus) post({ type: "FOCUS", guids: focus.split(",") });
           if (ops) applyOps(ops);
           // PDF podklady (D-072) — až po naparsovaní modelov, aby viewer vedel
@@ -519,8 +524,10 @@ export function IFCViewer({
         allow="fullscreen"
       />
 
+      {/* Nepriehľadný overlay — kým sa nenačíta federácia, nesmie presvitať
+          ifc-lite úvodná obrazovka s ich logom. */}
       {status === "loading" && (
-        <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-2 bg-muted/60 backdrop-blur-sm">
+        <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-2 bg-background">
           <div className="h-5 w-5 animate-spin rounded-full border-2 border-primary border-t-transparent" />
           <span className="text-sm text-muted-foreground">Načítavam 3D scénu…</span>
         </div>
