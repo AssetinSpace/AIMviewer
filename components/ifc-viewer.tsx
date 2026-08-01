@@ -236,6 +236,16 @@ export function IFCViewer({
     );
   }
 
+  // GUID-nosné príkazy vydané pred MODELS_LOADED (klik na „3D: N prvkov" počas
+  // parsovania, soft-nav focus) by viewer zahodil — resolveGuids pred
+  // naparsovaním modelov nič nenájde. Queue-ujú sa a flushnú v handleri
+  // MODELS_LOADED (prenesené z už zmazaného ifc-viewer-embed.tsx).
+  const pendingRef = useRef<Record<string, unknown>[]>([]);
+  function send(msg: Record<string, unknown>) {
+    if (loadedRef.current) post(msg);
+    else pendingRef.current.push(msg);
+  }
+
   /**
    * Po selekcii vo viewri dotiahne DB súhrn a pošle ho do AIM karty
    * v natívnom paneli viewera (AIM_PANEL_DATA / AIM_PANEL_EMPTY).
@@ -329,7 +339,7 @@ export function IFCViewer({
           if (apiRef) apiRef.current = makeApi();
           break;
         }
-        case "MODELS_LOADED":
+        case "MODELS_LOADED": {
           // Modely sú naparsované — až teraz vie resolveGuids nájsť prvok.
           // Počiatočný deep-link focus/ops (?focus=…&ops=…) aplikuj tu, nie na READY.
           loadedRef.current = true;
@@ -359,7 +369,12 @@ export function IFCViewer({
           if (decorations && Object.keys(decorations).length > 0) {
             post({ type: "AIM_TREE_DECORATIONS", decorations });
           }
+          // Flush príkazov vydaných pred načítaním modelov (viď send()).
+          const queued = pendingRef.current;
+          pendingRef.current = [];
+          for (const msg of queued) post(msg);
           break;
+        }
         case "ENTITY_SELECTED": {
           const objectId = guidMap[e.data.guid];
           sendAimPanel(e.data.guid, objectId);
@@ -424,11 +439,11 @@ export function IFCViewer({
 
       return {
         highlightFilter: (oids, excludeOid) =>
-          post({ type: "HIGHLIGHT_FILTER", guids: toGuids(oids, excludeOid) }),
+          send({ type: "HIGHLIGHT_FILTER", guids: toGuids(oids, excludeOid) }),
         highlightSiblings: (oids, excludeOid) =>
-          post({ type: "HIGHLIGHT_FILTER", guids: toGuids(oids, excludeOid) }),
-        clearFilter: () => post({ type: "CLEAR_FILTER" }),
-        focusObject: (guid) => post({ type: "FOCUS", guids: [guid] }),
+          send({ type: "HIGHLIGHT_FILTER", guids: toGuids(oids, excludeOid) }),
+        clearFilter: () => send({ type: "CLEAR_FILTER" }),
+        focusObject: (guid) => send({ type: "FOCUS", guids: [guid] }),
         getIfcBuffer: () => null,
       };
     }
@@ -438,6 +453,7 @@ export function IFCViewer({
       window.removeEventListener("message", onMessage);
       readyRef.current = false;
       loadedRef.current = false;
+      pendingRef.current = [];
       aimAbortRef.current?.abort();
       aimAbortRef.current = null;
       aimGuidRef.current = null;
@@ -446,10 +462,12 @@ export function IFCViewer({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [modelsKey, viewerOrigin]);
 
-  // ── Focus (karta/AI dock → 3D), reaktívne pri soft-nav (D-056) ──────────
+  // ── Focus (karta/AI dock → 3D), reaktívne pri soft-nav (D-056). Pred
+  // MODELS_LOADED sa cez send() queue-uje (počiatočný ?focus= z URL posiela
+  // handler MODELS_LOADED sám — pred READY sa preto neposiela nič).
   useEffect(() => {
     if (!readyRef.current || !focus) return;
-    post({ type: "FOCUS", guids: focus.split(",") });
+    send({ type: "FOCUS", guids: focus.split(",") });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [focus, focusNonce]);
 
