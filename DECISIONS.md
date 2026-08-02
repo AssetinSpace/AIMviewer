@@ -2433,6 +2433,24 @@ v DOM. Host `DOCUMENT_EVENT` zatiaľ len prijíma (no-op) — recents/analytics 
 (bridge/AIM karta), D-042/D-054 (`/drawing/[id]` + `_drawing_links`), D-063 (full-text
 deep-linky), E3/D-032/D-036 (documents + Storage).
 
+**Dodatok — záložka „Documents" v ribbone (2026-08-02, D-072/D-075/D-071):** upstream
+sync priniesol tabbed **ribbon** ako default toolbar (ich #1880: File · Home · View ·
+Elements · Analyze · Author). Náš toolbar zásah (`ViewModeSwitcher`, toggle Drawing
+Underlays) žije v *klasickom* stripe, takže v defaultnom UI ostali naše funkcie
+dosiahnuteľné len cez ikonovú lištu vpravo — v ribbone neboli nikde. Doplnená
+**fork-only záložka `Documents`** (posledná v strip poradí, aby upstream pridával
+tabs nad nás): skupina **Library** = Documents (D-075) + Underlays (D-072), skupina
+**View mode** = 3D | 2D | Split + výber podlažia (D-075). *Iba presun vstupných
+bodov, nula zmien správania:* tlačidlá volajú tie isté store akcie ako rail aj
+klasický toolbar, ktorý si všetko ponecháva (obidva štýly majú naďalej rovnakú
+sadu príkazov). Telo záložky je v izolovanej vrstve `apps/viewer/src/aim/
+DocumentsRibbonTab.tsx` (upstream taký súbor nemá → nulový konflikt), zapojenie do
+ribbonu = 3 riadky v `AIM-FORK` sentineloch; zoznam režimov, storey picker a gate
+(kalibrácia/žiadne podlažia) sú teraz zdieľané jedinou definíciou, aby sa klasický
+a ribbon prepínač nerozišli. Tabuľka touchpointov v `docs/FORK_MAINTENANCE.md`
+regenerovaná zo sentinelov (chýbalo v nej 5 súborov — dlh zaznamenaný v D-071
+dodatku 2026-07-27). AIMviewer bez zmien kódu.
+
 ### D-076 — Identifikátorové hyperlinky v 2D IFC-lite prehliadači
 **Status:** rozhodnuté + implementované (2026-07-17), vetva
 `claude/ifc-identifier-hyperlinks-jzd5p5` (fork ifc-lite; AIMviewer len docs).
@@ -2584,24 +2602,6 @@ neobjaviteľný. Fix vo forku (`aim/AimBridge.tsx`, selection effect): používa
 selekcia v embede na mobile automaticky otvorí Properties bottom sheet (default
 tab AIM); FOCUS z hosta sheet neotvára, standalone režim bez zmeny. Hostovský
 AskDock zmenu nepotreboval — default je zbalený pill.
-
-**Dodatok — záložka „Documents" v ribbone (2026-08-02, D-072/D-075/D-071):** upstream
-sync priniesol tabbed **ribbon** ako default toolbar (ich #1880: File · Home · View ·
-Elements · Analyze · Author). Náš toolbar zásah (`ViewModeSwitcher`, toggle Drawing
-Underlays) žije v *klasickom* stripe, takže v defaultnom UI ostali naše funkcie
-dosiahnuteľné len cez ikonovú lištu vpravo — v ribbone neboli nikde. Doplnená
-**fork-only záložka `Documents`** (posledná v strip poradí, aby upstream pridával
-tabs nad nás): skupina **Library** = Documents (D-075) + Underlays (D-072), skupina
-**View mode** = 3D | 2D | Split + výber podlažia (D-075). *Iba presun vstupných
-bodov, nula zmien správania:* tlačidlá volajú tie isté store akcie ako rail aj
-klasický toolbar, ktorý si všetko ponecháva (obidva štýly majú naďalej rovnakú
-sadu príkazov). Telo záložky je v izolovanej vrstve `apps/viewer/src/aim/
-DocumentsRibbonTab.tsx` (upstream taký súbor nemá → nulový konflikt), zapojenie do
-ribbonu = 3 riadky v `AIM-FORK` sentineloch; zoznam režimov, storey picker a gate
-(kalibrácia/žiadne podlažia) sú teraz zdieľané jedinou definíciou, aby sa klasický
-a ribbon prepínač nerozišli. Tabuľka touchpointov v `docs/FORK_MAINTENANCE.md`
-regenerovaná zo sentinelov (chýbalo v nej 5 súborov — dlh zaznamenaný v D-071
-dodatku 2026-07-27). AIMviewer bez zmien kódu.
 
 ---
 
