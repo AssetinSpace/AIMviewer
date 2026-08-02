@@ -1,0 +1,57 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended"],
+  "timezone": "Europe/Bratislava",
+
+  "description": [
+    "Prečo to tu je: do 2026-08-01 nás o novej verzii @ifc-lite/* neinformovalo nič.",
+    "Lock zamrzol na e83ef55 (2026-06-28) a nikto si nevšimol, že @ifc-lite/wasm",
+    "medzitým vyskočil z 2.13.4 na 4.2.0 — dva majory.",
+    "AIMviewer nemá GitHub Actions CI, takže Renovate PR-ka NIČ neodgejtuje. Každé sa musí",
+    "overiť ručne receptom z .claude/skills/verify (devtest + Playwright) pred mergom.",
+    "Preto sú limity nízke a všetko je zoskupené — cieľom je málo PR-iek, ktoré sa dajú",
+    "poriadne overiť, nie zelená nástenka.",
+    "Kadencia je zladená s upstream syncom forku (pondelok) — jeden deň v týždni, keď sa",
+    "pozerá na všetko okolo IFClite naraz."
+  ],
+
+  "dependencyDashboard": true,
+  "dependencyDashboardTitle": "Dependency dashboard",
+  "schedule": ["* 0-6 * * 1"],
+  "prConcurrentLimit": 3,
+  "prHourlyLimit": 2,
+  "rangeStrategy": "pin",
+  "separateMajorMinor": true,
+  "labels": ["dependencies"],
+
+  "packageRules": [
+    {
+      "description": "IFClite npm balíky idú vždy spolu — sú navzájom previazané cez peer/transitívne verzie, bumpovať ich po jednom je zdroj nekonzistentného lockfile.",
+      "matchPackageNames": ["@ifc-lite/**"],
+      "groupName": "IFClite npm packages",
+      "labels": ["dependencies", "ifc-lite"]
+    },
+    {
+      "description": "Majory dostanú label, nech je na prvý pohľad vidieť, čo si vyžaduje poriadne overenie — @ifc-lite/wasm 2.x → 4.x nie je patch.",
+      "matchUpdateTypes": ["major"],
+      "addLabels": ["major"]
+    },
+    {
+      "description": "Design kit je git závislosť na plávajúcom #main — Renovate ju sleduje samostatne, aby bolo vidieť, kedy sa brand tokeny menia.",
+      "matchPackageNames": ["@assetinspace/design-kit"],
+      "groupName": "assetin design kit",
+      "labels": ["dependencies", "design-kit"]
+    },
+    {
+      "description": "Next a React sú v package.json zámerne pinnuté na presnú verziu — nech ich Renovate nerozvoľňuje späť na rozsahy.",
+      "matchPackageNames": ["next", "eslint-config-next", "react", "react-dom"],
+      "rangeStrategy": "pin",
+      "groupName": "Next.js + React"
+    }
+  ],
+
+  "lockFileMaintenance": {
+    "enabled": true,
+    "schedule": ["* 0-6 1 * *"]
+  }
+}
